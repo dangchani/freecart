@@ -8,9 +8,11 @@ const returnSchema = z.object({
   description: z.string().optional().default(''),
 });
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function POST(
   request: NextRequest,
-  { params }: { params: { orderNumber: string } }
+  { params }: { params: { orderId: string } }
 ) {
   try {
     const supabase = await createClient();
@@ -25,19 +27,15 @@ export async function POST(
     const body = await request.json();
     const { itemIds, reason, description } = returnSchema.parse(body);
 
-    // Fetch order and validate ownership
-    const { data: order, error: fetchError } = await supabase
-      .from('orders')
-      .select('id, status, user_id')
-      .eq('order_number', params.orderNumber)
-      .eq('user_id', user.id)
-      .single();
+    const isUUID = UUID_REGEX.test(params.orderId);
+    const query = supabase.from('orders').select('id, status, user_id').eq('user_id', user.id);
+    const { data: order, error: fetchError } = await (isUUID
+      ? query.eq('id', params.orderId)
+      : query.eq('order_number', params.orderId)
+    ).single();
 
     if (fetchError || !order) {
-      return NextResponse.json(
-        { success: false, error: '주문을 찾을 수 없습니다.' },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, error: '주문을 찾을 수 없습니다.' }, { status: 404 });
     }
 
     if (order.status !== 'delivered') {
@@ -47,10 +45,9 @@ export async function POST(
       );
     }
 
-    // Check if a return request already exists for this order
     const { data: existingReturn } = await supabase
       .from('returns')
-      .select('id, status')
+      .select('id')
       .eq('order_id', order.id)
       .single();
 
@@ -61,7 +58,6 @@ export async function POST(
       );
     }
 
-    // Create return request
     const { data: returnRequest, error: insertError } = await supabase
       .from('returns')
       .insert({
@@ -76,19 +72,12 @@ export async function POST(
       .single();
 
     if (insertError) {
-      return NextResponse.json(
-        { success: false, error: '반품 신청 중 오류가 발생했습니다.' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: '반품 신청 중 오류가 발생했습니다.' }, { status: 400 });
     }
 
-    // Update order status
     await supabase
       .from('orders')
-      .update({
-        status: 'return_requested',
-        updated_at: new Date().toISOString(),
-      })
+      .update({ status: 'return_requested', updated_at: new Date().toISOString() })
       .eq('id', order.id);
 
     return NextResponse.json({ success: true, data: returnRequest }, { status: 201 });
@@ -99,10 +88,6 @@ export async function POST(
         { status: 400 }
       );
     }
-    console.error('POST /orders/[orderNumber]/return error:', error);
-    return NextResponse.json(
-      { success: false, error: '반품 신청 중 오류가 발생했습니다.' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: '반품 신청 중 오류가 발생했습니다.' }, { status: 500 });
   }
 }

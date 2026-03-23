@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function POST(
   _request: NextRequest,
-  { params }: { params: { orderNumber: string } }
+  { params }: { params: { orderId: string } }
 ) {
   try {
     const supabase = await createClient();
@@ -15,24 +17,19 @@ export async function POST(
       return NextResponse.json({ success: false, error: '인증이 필요합니다.' }, { status: 401 });
     }
 
-    // Fetch original order and its items
-    const { data: order, error: fetchError } = await supabase
+    const isUUID = UUID_REGEX.test(params.orderId);
+    const query = supabase
       .from('orders')
-      .select(`
-        id, order_number, user_id,
-        items:order_items(
-          id, product_id, variant_id, quantity, options
-        )
-      `)
-      .eq('order_number', params.orderNumber)
-      .eq('user_id', user.id)
-      .single();
+      .select(`id, order_number, user_id, items:order_items(id, product_id, variant_id, quantity, options)`)
+      .eq('user_id', user.id);
+
+    const { data: order, error: fetchError } = await (isUUID
+      ? query.eq('id', params.orderId)
+      : query.eq('order_number', params.orderId)
+    ).single();
 
     if (fetchError || !order) {
-      return NextResponse.json(
-        { success: false, error: '주문을 찾을 수 없습니다.' },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, error: '주문을 찾을 수 없습니다.' }, { status: 404 });
     }
 
     const items = order.items as Array<{
@@ -44,10 +41,7 @@ export async function POST(
     }>;
 
     if (!items || items.length === 0) {
-      return NextResponse.json(
-        { success: false, error: '재주문할 상품이 없습니다.' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: '재주문할 상품이 없습니다.' }, { status: 400 });
     }
 
     const results: Array<{
@@ -58,7 +52,6 @@ export async function POST(
     }> = [];
 
     for (const item of items) {
-      // Check stock
       if (item.variant_id) {
         const { data: variant } = await supabase
           .from('product_variants')
@@ -83,7 +76,6 @@ export async function POST(
         }
       }
 
-      // Check if already in cart
       let cartQuery = supabase
         .from('cart_items')
         .select('id, quantity')
@@ -97,69 +89,47 @@ export async function POST(
       const { data: existing } = await cartQuery.single();
 
       if (existing) {
-        // Update quantity
         const { data: updated } = await supabase
           .from('cart_items')
-          .update({
-            quantity: existing.quantity + item.quantity,
-            updated_at: new Date().toISOString(),
-          })
+          .update({ quantity: existing.quantity + item.quantity, updated_at: new Date().toISOString() })
           .eq('id', existing.id)
           .select('id')
           .single();
 
         results.push({ productId: item.product_id, variantId: item.variant_id, status: 'updated', cartItemId: updated?.id });
       } else {
-        // Add to cart
         const insertData: Record<string, unknown> = {
           user_id: user.id,
           product_id: item.product_id,
           quantity: item.quantity,
           options: item.options,
         };
-        if (item.variant_id) {
-          insertData.variant_id = item.variant_id;
-        }
+        if (item.variant_id) insertData.variant_id = item.variant_id;
 
-        const { data: cartItem } = await supabase
-          .from('cart_items')
-          .insert(insertData)
-          .select('id')
-          .single();
+        const { data: cartItem } = await supabase.from('cart_items').insert(insertData).select('id').single();
 
         results.push({ productId: item.product_id, variantId: item.variant_id, status: 'added', cartItemId: cartItem?.id });
       }
     }
 
-    // Fetch updated cart summary
     const { data: cartItems } = await supabase
       .from('cart_items')
-      .select(`
-        *,
-        product:products(id, name, price, thumbnail_url)
-      `)
+      .select(`*, product:products(id, name, price, thumbnail_url)`)
       .eq('user_id', user.id);
-
-    const addedCount = results.filter((r) => r.status === 'added' || r.status === 'updated').length;
-    const outOfStockCount = results.filter((r) => r.status === 'out_of_stock').length;
 
     return NextResponse.json({
       success: true,
       data: {
         results,
         summary: {
-          addedCount,
-          outOfStockCount,
+          addedCount: results.filter((r) => r.status === 'added' || r.status === 'updated').length,
+          outOfStockCount: results.filter((r) => r.status === 'out_of_stock').length,
           totalItems: cartItems?.length ?? 0,
         },
         cart: cartItems ?? [],
       },
     });
   } catch (error) {
-    console.error('POST /orders/[orderNumber]/reorder error:', error);
-    return NextResponse.json(
-      { success: false, error: '재주문 처리 중 오류가 발생했습니다.' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: '재주문 처리 중 오류가 발생했습니다.' }, { status: 500 });
   }
 }

@@ -8,9 +8,11 @@ const exchangeSchema = z.object({
   exchangeVariantId: z.string().uuid('교환할 옵션을 선택해 주세요.'),
 });
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function POST(
   request: NextRequest,
-  { params }: { params: { orderNumber: string } }
+  { params }: { params: { orderId: string } }
 ) {
   try {
     const supabase = await createClient();
@@ -25,19 +27,15 @@ export async function POST(
     const body = await request.json();
     const { itemIds, reason, exchangeVariantId } = exchangeSchema.parse(body);
 
-    // Fetch order and validate ownership
-    const { data: order, error: fetchError } = await supabase
-      .from('orders')
-      .select('id, status, user_id')
-      .eq('order_number', params.orderNumber)
-      .eq('user_id', user.id)
-      .single();
+    const isUUID = UUID_REGEX.test(params.orderId);
+    const query = supabase.from('orders').select('id, status, user_id').eq('user_id', user.id);
+    const { data: order, error: fetchError } = await (isUUID
+      ? query.eq('id', params.orderId)
+      : query.eq('order_number', params.orderId)
+    ).single();
 
     if (fetchError || !order) {
-      return NextResponse.json(
-        { success: false, error: '주문을 찾을 수 없습니다.' },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, error: '주문을 찾을 수 없습니다.' }, { status: 404 });
     }
 
     if (order.status !== 'delivered') {
@@ -47,10 +45,9 @@ export async function POST(
       );
     }
 
-    // Check if an exchange request already exists for this order
     const { data: existingExchange } = await supabase
       .from('exchanges')
-      .select('id, status')
+      .select('id')
       .eq('order_id', order.id)
       .single();
 
@@ -61,7 +58,6 @@ export async function POST(
       );
     }
 
-    // Validate exchangeVariantId exists
     const { data: variant } = await supabase
       .from('product_variants')
       .select('id, stock_quantity')
@@ -69,20 +65,13 @@ export async function POST(
       .single();
 
     if (!variant) {
-      return NextResponse.json(
-        { success: false, error: '교환할 상품 옵션을 찾을 수 없습니다.' },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, error: '교환할 상품 옵션을 찾을 수 없습니다.' }, { status: 404 });
     }
 
     if (variant.stock_quantity !== null && variant.stock_quantity <= 0) {
-      return NextResponse.json(
-        { success: false, error: '선택한 옵션의 재고가 없습니다.' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: '선택한 옵션의 재고가 없습니다.' }, { status: 400 });
     }
 
-    // Create exchange request
     const { data: exchangeRequest, error: insertError } = await supabase
       .from('exchanges')
       .insert({
@@ -97,19 +86,12 @@ export async function POST(
       .single();
 
     if (insertError) {
-      return NextResponse.json(
-        { success: false, error: '교환 신청 중 오류가 발생했습니다.' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: '교환 신청 중 오류가 발생했습니다.' }, { status: 400 });
     }
 
-    // Update order status to exchange_requested
     await supabase
       .from('orders')
-      .update({
-        status: 'exchange_requested',
-        updated_at: new Date().toISOString(),
-      })
+      .update({ status: 'exchange_requested', updated_at: new Date().toISOString() })
       .eq('id', order.id);
 
     return NextResponse.json({ success: true, data: exchangeRequest }, { status: 201 });
@@ -120,10 +102,6 @@ export async function POST(
         { status: 400 }
       );
     }
-    console.error('POST /orders/[orderNumber]/exchange error:', error);
-    return NextResponse.json(
-      { success: false, error: '교환 신청 중 오류가 발생했습니다.' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: '교환 신청 중 오류가 발생했습니다.' }, { status: 500 });
   }
 }

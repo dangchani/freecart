@@ -6,9 +6,11 @@ const cancelSchema = z.object({
   reason: z.string().min(1),
 });
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function POST(
   request: NextRequest,
-  { params }: { params: { orderNumber: string } }
+  { params }: { params: { orderId: string } }
 ) {
   try {
     const supabase = await createClient();
@@ -23,27 +25,19 @@ export async function POST(
     const body = await request.json();
     const { reason } = cancelSchema.parse(body);
 
-    // 주문 조회
-    const { data: order, error: fetchError } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('order_number', params.orderNumber)
-      .eq('user_id', user.id)
-      .single();
+    const isUUID = UUID_REGEX.test(params.orderId);
+    const query = supabase.from('orders').select('*').eq('user_id', user.id);
+    const { data: order, error: fetchError } = await (isUUID
+      ? query.eq('id', params.orderId)
+      : query.eq('order_number', params.orderId)
+    ).single();
 
     if (fetchError || !order) {
-      return NextResponse.json(
-        { success: false, error: '주문을 찾을 수 없습니다.' },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, error: '주문을 찾을 수 없습니다.' }, { status: 404 });
     }
 
-    // 취소 가능한 상태 확인
     if (order.status === 'cancelled') {
-      return NextResponse.json(
-        { success: false, error: '이미 취소된 주문입니다.' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: '이미 취소된 주문입니다.' }, { status: 400 });
     }
 
     if (order.status === 'shipped' || order.status === 'delivered') {
@@ -53,16 +47,10 @@ export async function POST(
       );
     }
 
-    // 주문 취소
     const { data, error } = await supabase
       .from('orders')
-      .update({
-        status: 'cancelled',
-        memo: reason,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('order_number', params.orderNumber)
-      .eq('user_id', user.id)
+      .update({ status: 'cancelled', memo: reason, updated_at: new Date().toISOString() })
+      .eq('id', order.id)
       .select()
       .single();
 
@@ -73,15 +61,8 @@ export async function POST(
     return NextResponse.json({ success: true, data });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { success: false, error: '입력값이 올바르지 않습니다.' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: '입력값이 올바르지 않습니다.' }, { status: 400 });
     }
-
-    return NextResponse.json(
-      { success: false, error: '주문 취소 중 오류가 발생했습니다.' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: '주문 취소 중 오류가 발생했습니다.' }, { status: 500 });
   }
 }
