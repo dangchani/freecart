@@ -44,17 +44,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // TODO: 토스페이먼츠 API 연동
-    // 현재는 기본 구조만 제공
-    const paymentKey = `payment_${Date.now()}`;
-
     return NextResponse.json({
       success: true,
       data: {
-        paymentKey,
         orderId: order.order_number,
-        amount: paymentData.amount,
-        method: paymentData.method,
+        amount: order.total_amount,
+        clientKey: process.env.NEXT_PUBLIC_TOSS_PAYMENTS_CLIENT_KEY,
       },
     });
   } catch (error) {

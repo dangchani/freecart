@@ -26,6 +26,10 @@ export async function GET(request: NextRequest, { params }: { params: { slug: st
   }
 }
 
+export async function PATCH(request: NextRequest, { params }: { params: { slug: string } }) {
+  return PUT(request, { params });
+}
+
 export async function PUT(request: NextRequest, { params }: { params: { slug: string } }) {
   try {
     const supabase = await createClient();

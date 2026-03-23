@@ -22,8 +22,22 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const paymentData = confirmPaymentSchema.parse(body);
 
-    // TODO: 토스페이먼츠 승인 API 호출
-    // 현재는 기본 구조만 제공
+    // Call Toss Payments confirmation API
+    const tossResponse = await fetch('https://api.tosspayments.com/v1/payments/confirm', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(`${process.env.TOSS_PAYMENTS_SECRET_KEY}:`).toString('base64')}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ paymentKey: paymentData.paymentKey, orderId: paymentData.orderId, amount: paymentData.amount }),
+    });
+
+    if (!tossResponse.ok) {
+      const tossError = await tossResponse.json();
+      return NextResponse.json({ success: false, error: tossError.message || '결제 확인 실패' }, { status: 400 });
+    }
+
+    const tossData = await tossResponse.json();
 
     // 주문 상태 업데이트
     const { data: order, error } = await supabase
@@ -31,6 +45,9 @@ export async function POST(request: NextRequest) {
       .update({
         payment_status: 'paid',
         status: 'processing',
+        payment_key: tossData.paymentKey,
+        payment_method: tossData.method,
+        paid_at: tossData.approvedAt,
         updated_at: new Date().toISOString(),
       })
       .eq('order_number', paymentData.orderId)

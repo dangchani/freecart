@@ -6,6 +6,13 @@ const updateQuantitySchema = z.object({
   quantity: z.number().int().positive(),
 });
 
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { itemId: string } }
+) {
+  return PUT(request, { params });
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: { itemId: string } }
