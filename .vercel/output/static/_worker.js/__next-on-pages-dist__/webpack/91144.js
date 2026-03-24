@@ -1,1 +1,0 @@
-var s={},c=(o,r,_)=>(s.__chunk_91144=(a,t,e)=>{"use strict";e.d(t,{A:()=>l});let l=(0,e(55889).A)("MessageCircle",[["path",{d:"M7.9 20A9 9 0 1 0 4 16.1L2 22Z",key:"vv11sd"}]])},s);export{c as __getNamedExports};
