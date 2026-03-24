@@ -1,5 +1,3 @@
-const { setupDevPlatform } = require('@cloudflare/next-on-pages/next-dev');
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Cloudflare Workers Edge Runtime 배포용
@@ -70,6 +68,7 @@ const nextConfig = {
 
 // 로컬 개발 시 Cloudflare 바인딩 시뮬레이션
 if (process.env.NODE_ENV === 'development') {
+  const { setupDevPlatform } = require('@cloudflare/next-on-pages/next-dev');
   setupDevPlatform().catch(console.error);
 }
 
