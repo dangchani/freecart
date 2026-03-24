@@ -1,4 +1,5 @@
 'use client';
+export const runtime = 'edge';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -83,10 +84,11 @@ export default function AdminMenusPage() {
     });
     const roots: MenuItem[] = [];
     items.forEach((item) => {
-      if (item.parentId && map[item.parentId]) {
-        map[item.parentId].children!.push(map[item.id]);
+      const parent = item.parentId ? map[item.parentId] : undefined;
+      if (parent) {
+        parent.children!.push(map[item.id]!);
       } else {
-        roots.push(map[item.id]);
+        roots.push(map[item.id]!);
       }
     });
     return roots;

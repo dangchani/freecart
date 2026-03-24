@@ -1,0 +1,1 @@
+var t={},_=(o,s,p)=>(t.__chunk_48813=(i,l,e)=>{"use strict";e.d(l,{A:()=>n});let n=(0,e(55889).A)("TrendingUp",[["polyline",{points:"22 7 13.5 15.5 8.5 10.5 2 17",key:"126l90"}],["polyline",{points:"16 7 22 7 22 13",key:"kwv8wd"}]])},t);export{_ as __getNamedExports};

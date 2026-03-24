@@ -1,4 +1,5 @@
 'use client';
+export const runtime = 'edge';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -33,7 +34,7 @@ function generateCode() {
 
 export default function AdminCouponNewPage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { loading: authLoading } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 

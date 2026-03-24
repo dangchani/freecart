@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
-import crypto from 'crypto';
 
 export const runtime = 'edge';
 
@@ -10,8 +9,10 @@ const lookupSchema = z.object({
   password: z.string().min(1, '비밀번호를 입력해 주세요.'),
 });
 
-function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password).digest('hex');
+async function hashPassword(password: string): Promise<string> {
+  const data = new TextEncoder().encode(password);
+  const hash = await globalThis.crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 export async function POST(request: NextRequest) {
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify password
-    const hashedInput = hashPassword(password);
+    const hashedInput = await hashPassword(password);
     if (order.guest_password !== hashedInput) {
       return NextResponse.json(
         { success: false, error: '비밀번호가 일치하지 않습니다.' },

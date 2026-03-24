@@ -1,0 +1,1 @@
+var t={},_=(s,a,l)=>(t.__chunk_24846=(o,c,e)=>{"use strict";e.d(c,{A:()=>r});let r=(0,e(55889).A)("Search",[["circle",{cx:"11",cy:"11",r:"8",key:"4ej97u"}],["path",{d:"m21 21-4.3-4.3",key:"1qie3q"}]])},t);export{_ as __getNamedExports};

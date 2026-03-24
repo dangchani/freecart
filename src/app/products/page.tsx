@@ -1,3 +1,4 @@
+export const runtime = 'edge';
 import { ProductCard } from '@/components/product-card';
 import { getProducts } from '@/services/products';
 

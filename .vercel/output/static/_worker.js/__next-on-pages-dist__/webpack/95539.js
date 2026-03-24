@@ -1,0 +1,1 @@
+var s={},m=(o,u,c)=>(s.__chunk_95539=(d,r,e)=>{"use strict";e.d(r,{A:()=>a});var n=e(38286),i=e(1009);function a(){let[t,_]=(0,n.useState)(null),[l,g]=(0,n.useState)(!0);return(0,i.U)(),{user:t,loading:l,isAuthenticated:!!t,isAdmin:t?.role==="admin"}}},s);export{m as __getNamedExports};

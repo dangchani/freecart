@@ -1,19 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import crypto from 'crypto';
 
 export const runtime = 'edge';
 
-function verifyTossWebhookSignature(
+async function verifyTossWebhookSignature(
   rawBody: string,
   signature: string,
   secretKey: string
-): boolean {
+): Promise<boolean> {
   try {
-    const hmac = crypto.createHmac('sha256', secretKey);
-    hmac.update(rawBody);
-    const digest = hmac.digest('base64');
-    return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signature));
+    const enc = new TextEncoder();
+    const key = await globalThis.crypto.subtle.importKey(
+      'raw', enc.encode(secretKey),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false, ['sign']
+    );
+    const signatureBuffer = await globalThis.crypto.subtle.sign('HMAC', key, enc.encode(rawBody));
+    const digest = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
+    return digest === signature;
   } catch {
     return false;
   }
@@ -27,7 +31,7 @@ export async function POST(request: NextRequest) {
 
     // Verify webhook signature if secret is configured
     if (webhookSecret) {
-      const isValid = verifyTossWebhookSignature(rawBody, webhookSignature, webhookSecret);
+      const isValid = await verifyTossWebhookSignature(rawBody, webhookSignature, webhookSecret);
       if (!isValid) {
         return NextResponse.json(
           { success: false, error: '유효하지 않은 웹훅 서명입니다.' },

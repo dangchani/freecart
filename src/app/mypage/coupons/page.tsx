@@ -1,4 +1,5 @@
 'use client';
+export const runtime = 'edge';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -6,7 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tag, TicketX } from 'lucide-react';
+import { Tag, Ticket } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/utils';
 
@@ -154,7 +155,7 @@ export default function CouponsPage() {
         <div className="p-8 text-center text-gray-500">로딩 중...</div>
       ) : coupons.length === 0 ? (
         <Card className="p-12 text-center">
-          <TicketX className="mx-auto mb-4 h-12 w-12 text-gray-300" />
+          <Ticket className="mx-auto mb-4 h-12 w-12 text-gray-300" />
           <p className="text-gray-500">{filterLabels[filter]} 쿠폰이 없습니다.</p>
         </Card>
       ) : (

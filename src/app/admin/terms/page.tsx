@@ -1,4 +1,5 @@
 'use client';
+export const runtime = 'edge';
 
 import { useState, useEffect } from 'react';
 import { FileText, Edit2, Plus, X, Save } from 'lucide-react';

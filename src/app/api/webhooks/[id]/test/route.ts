@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
-import crypto from 'crypto';
 
 export const runtime = 'edge';
 
@@ -145,16 +144,20 @@ export async function POST(
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-Freecart-Event': eventToTest,
-      'X-Freecart-Delivery': crypto.randomUUID(),
+      'X-Freecart-Delivery': globalThis.crypto.randomUUID(),
       'X-Freecart-Test': 'true',
     };
 
     // Sign payload if secret is configured
     if (webhook.secret) {
-      const signature = crypto
-        .createHmac('sha256', webhook.secret)
-        .update(payloadString)
-        .digest('hex');
+      const enc = new TextEncoder();
+      const key = await globalThis.crypto.subtle.importKey(
+        'raw', enc.encode(webhook.secret),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false, ['sign']
+      );
+      const sigBuffer = await globalThis.crypto.subtle.sign('HMAC', key, enc.encode(payloadString));
+      const signature = Array.from(new Uint8Array(sigBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
       headers['X-Freecart-Signature'] = `sha256=${signature}`;
     }
 
