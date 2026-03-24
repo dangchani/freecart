@@ -1,9 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -38,7 +34,7 @@ const categoryLabels: Record<string, string> = {
 };
 
 export default function InquiriesPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,12 +43,12 @@ export default function InquiriesPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       fetchInquiries();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function fetchInquiries() {
     try {
@@ -78,7 +74,7 @@ export default function InquiriesPage() {
     <div>
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">1:1 문의</h1>
-        <Link href="/mypage/inquiries/new">
+        <Link to="/mypage/inquiries/new">
           <Button size="sm">
             <Plus className="mr-1.5 h-4 w-4" />
             문의하기
@@ -90,7 +86,7 @@ export default function InquiriesPage() {
         <Card className="p-12 text-center">
           <MessageCircle className="mx-auto mb-4 h-12 w-12 text-gray-300" />
           <p className="mb-4 text-gray-500">문의 내역이 없습니다.</p>
-          <Link href="/mypage/inquiries/new">
+          <Link to="/mypage/inquiries/new">
             <Button>문의하기</Button>
           </Link>
         </Card>

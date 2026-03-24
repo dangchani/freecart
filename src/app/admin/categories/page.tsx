@@ -1,8 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -28,7 +25,7 @@ interface CategoryForm {
 const emptyForm: CategoryForm = { name: '', slug: '', parentId: '', sortOrder: 0 };
 
 export default function AdminCategoriesPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,12 +38,12 @@ export default function AdminCategoriesPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       fetchCategories();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function fetchCategories() {
     try {

@@ -1,9 +1,6 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -46,7 +43,7 @@ const statusOptions = [
 ];
 
 export default function AdminOrdersPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,12 +51,12 @@ export default function AdminOrdersPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadOrders();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadOrders() {
     try {
@@ -103,7 +100,7 @@ export default function AdminOrdersPage() {
 
   return (
     <div className="container py-8">
-      <Link href="/admin" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+      <Link to="/admin" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
         <ArrowLeft className="mr-1 h-4 w-4" />
         대시보드로 돌아가기
       </Link>
@@ -155,7 +152,7 @@ export default function AdminOrdersPage() {
                       </SelectContent>
                     </Select>
 
-                    <Link href={`/mypage/orders/${order.orderNumber}`}>
+                    <Link to={`/mypage/orders/${order.orderNumber}`}>
                       <Button size="sm" variant="outline">
                         상세보기
                       </Button>

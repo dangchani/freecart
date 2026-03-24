@@ -1,8 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { MessageSquare, Users } from 'lucide-react';
 
@@ -56,7 +53,7 @@ export default function BoardsPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {boards.map((board) => (
-            <Link key={board.id} href={`/boards/${board.slug}`}>
+            <Link key={board.id} to={`/boards/${board.slug}`}>
               <Card className="p-6 transition-shadow hover:shadow-md cursor-pointer h-full">
                 <div className="mb-3 flex items-center gap-3">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100">

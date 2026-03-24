@@ -1,8 +1,5 @@
-'use client';
-
 import { useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
-import Link from 'next/link';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import {
   LayoutDashboard,
@@ -42,16 +39,16 @@ const navItems = [
   { href: '/admin/subscriptions', label: '정기배송', icon: Repeat },
 ];
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-  const pathname = usePathname();
+export default function AdminLayout() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const { user, loading: authLoading } = useAuth();
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/auth/login');
+      navigate('/auth/login');
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   if (authLoading) {
     return <div className="flex h-screen items-center justify-center">로딩 중...</div>;
@@ -61,7 +58,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="flex min-h-screen bg-gray-50">
       <aside className="w-64 shrink-0 bg-white shadow-sm">
         <div className="border-b px-6 py-4">
-          <Link href="/admin" className="text-lg font-bold text-gray-900">
+          <Link to="/admin" className="text-lg font-bold text-gray-900">
             관리자 패널
           </Link>
         </div>
@@ -69,11 +66,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <ul className="space-y-1">
             {navItems.map(({ href, label, icon: Icon }) => {
               const isActive =
-                href === '/admin' ? pathname === '/admin' : pathname.startsWith(href);
+                href === '/admin' ? location.pathname === '/admin' : location.pathname.startsWith(href);
               return (
                 <li key={href}>
                   <Link
-                    href={href}
+                    to={href}
                     className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors ${
                       isActive
                         ? 'bg-blue-50 text-blue-700 font-medium'
@@ -90,7 +87,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
       </aside>
       <main className="flex-1 overflow-auto">
-        {children}
+        <Outlet />
       </main>
     </div>
   );

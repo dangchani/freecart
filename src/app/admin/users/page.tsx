@@ -1,13 +1,9 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
-import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Search } from 'lucide-react';
 
@@ -38,7 +34,7 @@ const levelLabels: Record<string, string> = {
 };
 
 export default function AdminUsersPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,12 +45,12 @@ export default function AdminUsersPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadUsers();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadUsers() {
     try {
@@ -167,7 +163,7 @@ export default function AdminUsersPage() {
                   <tr
                     key={u.id}
                     className="cursor-pointer hover:bg-gray-50 transition-colors"
-                    onClick={() => router.push(`/admin/users/${u.id}`)}
+                    onClick={() => navigate(`/admin/users/${u.id}`)}
                   >
                     <td className="px-4 py-3 font-medium">{u.name}</td>
                     <td className="px-4 py-3 text-gray-600">{u.email}</td>

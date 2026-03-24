@@ -1,15 +1,11 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { format } from 'date-fns';
 import { Plus, Edit, Trash2 } from 'lucide-react';
-import Image from 'next/image';
 
 interface Banner {
   id: string;
@@ -46,7 +42,7 @@ const emptyForm: BannerForm = {
 };
 
 export default function AdminBannersPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [banners, setBanners] = useState<Banner[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,12 +55,12 @@ export default function AdminBannersPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadBanners();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadBanners() {
     try {
@@ -216,11 +212,10 @@ export default function AdminBannersPage() {
                     <td className="px-4 py-3">
                       {banner.imageUrl ? (
                         <div className="relative h-12 w-24 overflow-hidden rounded bg-gray-100">
-                          <Image
+                          <img
                             src={banner.imageUrl}
                             alt={banner.name}
-                            fill
-                            className="object-cover"
+                            className="object-cover w-full h-full"
                           />
                         </div>
                       ) : (

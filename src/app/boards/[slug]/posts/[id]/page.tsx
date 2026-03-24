@@ -1,9 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -29,8 +25,9 @@ interface Comment {
   createdAt: string;
 }
 
-export default function PostDetailPage({ params }: { params: { slug: string; id: string } }) {
-  const router = useRouter();
+export default function PostDetailPage() {
+  const navigate = useNavigate();
+  const { slug, id } = useParams<{ slug: string; id: string }>();
   const { user } = useAuth();
   const [post, setPost] = useState<Post | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -41,18 +38,18 @@ export default function PostDetailPage({ params }: { params: { slug: string; id:
   useEffect(() => {
     loadPost();
     loadComments();
-  }, [params.id]);
+  }, [id]);
 
   async function loadPost() {
     try {
-      const response = await fetch(`/api/posts/${params.id}`);
+      const response = await fetch(`/api/posts/${id}`);
       const data = await response.json();
 
       if (data.success) {
         setPost(data.data);
       } else {
         alert('게시글을 찾을 수 없습니다.');
-        router.push(`/boards/${params.slug}`);
+        navigate(`/boards/${slug}`);
       }
     } catch (error) {
       console.error('Failed to load post:', error);
@@ -63,7 +60,7 @@ export default function PostDetailPage({ params }: { params: { slug: string; id:
 
   async function loadComments() {
     try {
-      const response = await fetch(`/api/posts/${params.id}/comments`);
+      const response = await fetch(`/api/posts/${id}/comments`);
       const data = await response.json();
 
       if (data.success) {
@@ -80,7 +77,7 @@ export default function PostDetailPage({ params }: { params: { slug: string; id:
     }
 
     try {
-      const response = await fetch(`/api/posts/${params.id}`, {
+      const response = await fetch(`/api/posts/${id}`, {
         method: 'DELETE',
       });
 
@@ -91,7 +88,7 @@ export default function PostDetailPage({ params }: { params: { slug: string; id:
       }
 
       alert('게시글이 삭제되었습니다.');
-      router.push(`/boards/${params.slug}`);
+      navigate(`/boards/${slug}`);
     } catch (error) {
       console.error('Failed to delete post:', error);
       alert(error instanceof Error ? error.message : '게시글 삭제 중 오류가 발생했습니다.');
@@ -101,7 +98,7 @@ export default function PostDetailPage({ params }: { params: { slug: string; id:
   async function handleSubmitComment() {
     if (!user) {
       alert('로그인이 필요합니다.');
-      router.push('/auth/login');
+      navigate('/auth/login');
       return;
     }
 
@@ -113,7 +110,7 @@ export default function PostDetailPage({ params }: { params: { slug: string; id:
     try {
       setSubmitting(true);
 
-      const response = await fetch(`/api/posts/${params.id}/comments`, {
+      const response = await fetch(`/api/posts/${id}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: newComment }),
@@ -170,7 +167,7 @@ export default function PostDetailPage({ params }: { params: { slug: string; id:
 
   return (
     <div className="container py-8">
-      <Link href={`/boards/${params.slug}`} className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+      <Link to={`/boards/${slug}`} className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
         <ArrowLeft className="mr-1 h-4 w-4" />
         목록으로
       </Link>
@@ -190,7 +187,7 @@ export default function PostDetailPage({ params }: { params: { slug: string; id:
           </div>
           {isAuthor && (
             <div className="flex gap-2">
-              <Link href={`/boards/${params.slug}/posts/${post.id}/edit`}>
+              <Link to={`/boards/${slug}/posts/${post.id}/edit`}>
                 <Button size="sm" variant="outline">
                   <Edit className="h-4 w-4" />
                 </Button>

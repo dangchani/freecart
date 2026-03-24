@@ -1,8 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
@@ -17,7 +14,7 @@ interface Settings {
 }
 
 export default function AdminSettingsPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [settings, setSettings] = useState<Settings>({
     siteName: '',
@@ -35,12 +32,12 @@ export default function AdminSettingsPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadSettings();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadSettings() {
     try {

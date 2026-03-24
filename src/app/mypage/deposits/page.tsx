@@ -1,8 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -27,7 +24,7 @@ interface DepositData {
 }
 
 export default function DepositsPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [data, setData] = useState<DepositData>({ balance: 0, history: [], totalPages: 1, totalCount: 0 });
   const [loading, setLoading] = useState(true);
@@ -36,12 +33,12 @@ export default function DepositsPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       fetchDeposits();
     }
-  }, [user, authLoading, page, router]);
+  }, [user, authLoading, page, navigate]);
 
   async function fetchDeposits() {
     setLoading(true);

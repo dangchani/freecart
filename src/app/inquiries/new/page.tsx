@@ -1,9 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate, Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
@@ -19,7 +15,7 @@ const categoryOptions = [
 ];
 
 export default function InquiryNewPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [category, setCategory] = useState('order');
   const [title, setTitle] = useState('');
@@ -28,7 +24,7 @@ export default function InquiryNewPage() {
   const [error, setError] = useState('');
 
   if (!authLoading && !user) {
-    router.push('/auth/login');
+    navigate('/auth/login');
     return null;
   }
 
@@ -49,7 +45,7 @@ export default function InquiryNewPage() {
       const data = await response.json();
       if (!data.success) throw new Error(data.error);
       alert('문의가 등록되었습니다.');
-      router.push('/mypage/inquiries');
+      navigate('/mypage/inquiries');
     } catch (err) {
       setError(err instanceof Error ? err.message : '문의 등록 중 오류가 발생했습니다.');
     } finally {
@@ -62,7 +58,7 @@ export default function InquiryNewPage() {
   return (
     <div className="container py-8 max-w-2xl">
       <Link
-        href="/mypage/inquiries"
+        to="/mypage/inquiries"
         className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
       >
         <ArrowLeft className="mr-1 h-4 w-4" />
@@ -130,7 +126,7 @@ export default function InquiryNewPage() {
             <Button type="submit" disabled={submitting}>
               {submitting ? '등록 중...' : '문의 등록'}
             </Button>
-            <Link href="/mypage/inquiries">
+            <Link to="/mypage/inquiries">
               <Button type="button" variant="outline">취소</Button>
             </Link>
           </div>

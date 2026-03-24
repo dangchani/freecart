@@ -1,5 +1,4 @@
-import Link from 'next/link';
-import Image from 'next/image';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
@@ -18,14 +17,12 @@ export function ProductCard({ product }: ProductCardProps) {
 
   return (
     <Card className="overflow-hidden transition-shadow hover:shadow-lg">
-      <Link href={`/products/${product.slug}`}>
+      <Link to={`/products/${product.slug}`}>
         <div className="relative aspect-square overflow-hidden bg-gray-100">
-          <Image
+          <img
             src={thumbnail}
             alt={product.name}
-            fill
-            className="object-cover transition-transform hover:scale-105"
-            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+            className="h-full w-full object-cover transition-transform hover:scale-105"
           />
           {hasDiscount && (
             <div className="absolute left-2 top-2 rounded-md bg-red-500 px-2 py-1 text-xs font-bold text-white">
@@ -41,7 +38,7 @@ export function ProductCard({ product }: ProductCardProps) {
       </Link>
 
       <CardContent className="p-4">
-        <Link href={`/products/${product.slug}`}>
+        <Link to={`/products/${product.slug}`}>
           <h3 className="mb-2 line-clamp-2 font-medium hover:text-primary">{product.name}</h3>
         </Link>
         <div className="flex items-center gap-2">

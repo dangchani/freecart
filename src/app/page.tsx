@@ -1,9 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import Image from 'next/image';
+import { Link } from 'react-router-dom';
 import { ChevronRight, Tag, Truck, RefreshCw, Shield, Headphones } from 'lucide-react';
 
 interface Product {
@@ -37,13 +33,12 @@ function ProductCard({ product }: { product: Product }) {
   const imageUrl = product.thumbnail || product.images?.[0] || '/placeholder.png';
 
   return (
-    <Link href={`/products/${product.slug}`} className="group block">
+    <Link to={`/products/${product.slug}`} className="group block">
       <div className="relative overflow-hidden rounded-xl bg-gray-100 aspect-square mb-3">
-        <Image
+        <img
           src={imageUrl}
           alt={product.name}
-          fill
-          className="object-cover transition-transform duration-300 group-hover:scale-105"
+          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
         />
         {hasDiscount && (
           <span className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-md">
@@ -108,7 +103,7 @@ function ProductSection({
           <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
         </div>
         <Link
-          href={`/products?${query}`}
+          to={`/products?${query}`}
           className="flex items-center text-sm text-blue-600 hover:text-blue-800 font-medium"
         >
           전체보기 <ChevronRight className="h-4 w-4 ml-0.5" />
@@ -155,7 +150,7 @@ export default function HomePage() {
                 {notices.map((n) => (
                   <Link
                     key={n.id}
-                    href={`/notices/${n.id}`}
+                    to={`/notices/${n.id}`}
                     className="hover:underline whitespace-nowrap"
                   >
                     {n.title}
@@ -190,14 +185,14 @@ export default function HomePage() {
             </p>
             <div className="flex flex-wrap gap-4">
               <Link
-                href="/products"
+                to="/products"
                 className="inline-flex items-center bg-yellow-400 hover:bg-yellow-300 text-gray-900 font-bold px-8 py-4 rounded-xl text-lg transition-colors shadow-lg"
               >
                 쇼핑 시작하기
                 <ChevronRight className="ml-2 h-5 w-5" />
               </Link>
               <Link
-                href="/products?isFeatured=true"
+                to="/products?isFeatured=true"
                 className="inline-flex items-center bg-white/20 hover:bg-white/30 text-white font-bold px-8 py-4 rounded-xl text-lg transition-colors backdrop-blur-sm border border-white/30"
               >
                 추천 상품 보기
@@ -237,7 +232,7 @@ export default function HomePage() {
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-gray-900">카테고리</h2>
             <Link
-              href="/categories"
+              to="/categories"
               className="flex items-center text-sm text-blue-600 hover:text-blue-800 font-medium"
             >
               전체보기 <ChevronRight className="h-4 w-4 ml-0.5" />
@@ -257,7 +252,7 @@ export default function HomePage() {
               {categories.slice(0, 8).map((cat, idx) => (
                 <Link
                   key={cat.id}
-                  href={`/categories/${cat.slug}`}
+                  to={`/categories/${cat.slug}`}
                   className="group flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-blue-50 transition-colors"
                 >
                   <div className="w-14 h-14 flex items-center justify-center rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 text-2xl group-hover:from-blue-200 group-hover:to-indigo-200 transition-colors">
@@ -297,7 +292,7 @@ export default function HomePage() {
                 <h3 className="text-xl font-bold mb-2">오늘의 특가</h3>
                 <p className="text-orange-100 text-sm mb-4">매일 바뀌는 특가 상품을 놓치지 마세요</p>
                 <Link
-                  href="/products?sort=discount"
+                  to="/products?sort=discount"
                   className="inline-flex items-center bg-white text-orange-600 font-bold text-sm px-4 py-2 rounded-lg hover:bg-orange-50 transition-colors"
                 >
                   특가 보러가기 <ChevronRight className="ml-1 h-4 w-4" />
@@ -311,7 +306,7 @@ export default function HomePage() {
                 <h3 className="text-xl font-bold mb-2">신규 가입 혜택</h3>
                 <p className="text-green-100 text-sm mb-4">지금 가입하면 첫 구매 10% 할인 쿠폰 증정</p>
                 <Link
-                  href="/auth/signup"
+                  to="/auth/signup"
                   className="inline-flex items-center bg-white text-green-600 font-bold text-sm px-4 py-2 rounded-lg hover:bg-green-50 transition-colors"
                 >
                   회원가입 <ChevronRight className="ml-1 h-4 w-4" />

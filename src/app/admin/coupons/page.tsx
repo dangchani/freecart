@@ -1,9 +1,6 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,7 +22,7 @@ interface Coupon {
 }
 
 export default function AdminCouponsPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,12 +31,12 @@ export default function AdminCouponsPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadCoupons();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadCoupons() {
     try {
@@ -82,7 +79,7 @@ export default function AdminCouponsPage() {
     <div className="container py-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">쿠폰 관리</h1>
-        <Link href="/admin/coupons/new">
+        <Link to="/admin/coupons/new">
           <Button>
             <Plus className="mr-2 h-4 w-4" />
             쿠폰 생성
@@ -99,7 +96,7 @@ export default function AdminCouponsPage() {
       ) : coupons.length === 0 ? (
         <Card className="p-12 text-center">
           <p className="mb-4 text-gray-500">등록된 쿠폰이 없습니다.</p>
-          <Link href="/admin/coupons/new">
+          <Link to="/admin/coupons/new">
             <Button>첫 쿠폰 생성하기</Button>
           </Link>
         </Card>

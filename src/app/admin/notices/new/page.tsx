@@ -1,16 +1,13 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft } from 'lucide-react';
 
 export default function AdminNoticeNewPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -35,7 +32,7 @@ export default function AdminNoticeNewPage() {
       const data = await response.json();
       if (!data.success) throw new Error(data.error);
       alert('공지사항이 등록되었습니다.');
-      router.push('/admin/notices');
+      navigate('/admin/notices');
     } catch (err) {
       setError(err instanceof Error ? err.message : '공지사항 등록 중 오류가 발생했습니다.');
     } finally {
@@ -48,7 +45,7 @@ export default function AdminNoticeNewPage() {
   return (
     <div className="container py-8">
       <Link
-        href="/admin/notices"
+        to="/admin/notices"
         className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
       >
         <ArrowLeft className="mr-1 h-4 w-4" />
@@ -108,7 +105,7 @@ export default function AdminNoticeNewPage() {
             <Button type="submit" disabled={submitting}>
               {submitting ? '등록 중...' : '공지 등록'}
             </Button>
-            <Link href="/admin/notices">
+            <Link to="/admin/notices">
               <Button type="button" variant="outline">취소</Button>
             </Link>
           </div>

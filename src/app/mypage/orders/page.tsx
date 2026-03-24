@@ -1,9 +1,6 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,7 +34,7 @@ const statusLabels: Record<string, { label: string; variant: 'default' | 'second
 };
 
 export default function OrdersPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,12 +42,12 @@ export default function OrdersPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadOrders();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadOrders() {
     try {
@@ -97,7 +94,7 @@ export default function OrdersPage() {
 
   return (
     <div className="container py-8">
-      <Link href="/mypage" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+      <Link to="/mypage" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
         <ArrowLeft className="mr-1 h-4 w-4" />
         마이페이지로 돌아가기
       </Link>
@@ -108,7 +105,7 @@ export default function OrdersPage() {
         <Card className="p-12 text-center">
           <Package className="mx-auto mb-4 h-12 w-12 text-gray-400" />
           <p className="mb-4 text-gray-500">주문 내역이 없습니다.</p>
-          <Link href="/products">
+          <Link to="/products">
             <Button>쇼핑하러 가기</Button>
           </Link>
         </Card>
@@ -153,7 +150,7 @@ export default function OrdersPage() {
                 )}
 
                 <div className="flex gap-2">
-                  <Link href={`/mypage/orders/${order.orderNumber}`} className="flex-1">
+                  <Link to={`/mypage/orders/${order.orderNumber}`} className="flex-1">
                     <Button variant="outline" className="w-full">
                       상세보기
                     </Button>

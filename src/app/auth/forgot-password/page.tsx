@@ -1,8 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState } from 'react';
-import Link from 'next/link';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Mail, CheckCircle } from 'lucide-react';
@@ -45,7 +42,7 @@ export default function ForgotPasswordPage() {
     <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4">
       <div className="w-full max-w-md">
         <Link
-          href="/auth/login"
+          to="/auth/login"
           className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
         >
           <ArrowLeft className="mr-1 h-4 w-4" />
@@ -110,7 +107,7 @@ export default function ForgotPasswordPage() {
 
               <p className="mt-4 text-center text-sm text-gray-500">
                 계정이 없으신가요?{' '}
-                <Link href="/auth/register" className="font-medium text-blue-600 hover:underline">
+                <Link to="/auth/register" className="font-medium text-blue-600 hover:underline">
                   회원가입
                 </Link>
               </p>

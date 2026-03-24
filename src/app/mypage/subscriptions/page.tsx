@@ -1,12 +1,8 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/utils';
@@ -37,7 +33,7 @@ const statusConfig: Record<string, { label: string; className: string }> = {
 };
 
 export default function SubscriptionsPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,12 +42,12 @@ export default function SubscriptionsPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       fetchSubscriptions();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function fetchSubscriptions() {
     try {
@@ -102,7 +98,7 @@ export default function SubscriptionsPage() {
         <Card className="p-12 text-center">
           <RefreshCw className="mx-auto mb-4 h-12 w-12 text-gray-300" />
           <p className="mb-4 text-gray-500">정기배송 중인 상품이 없습니다.</p>
-          <Button variant="outline" onClick={() => router.push('/products')}>
+          <Button variant="outline" onClick={() => navigate('/products')}>
             상품 둘러보기
           </Button>
         </Card>

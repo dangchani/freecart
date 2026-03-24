@@ -1,9 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Pin, Eye } from 'lucide-react';
@@ -75,7 +71,7 @@ export default function NoticesPage() {
             {notices.map((notice) => (
               <Link
                 key={notice.id}
-                href={`/notices/${notice.id}`}
+                to={`/notices/${notice.id}`}
                 className="flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
               >
                 <div className="flex items-center gap-3 min-w-0">

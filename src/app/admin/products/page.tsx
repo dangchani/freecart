@@ -1,16 +1,12 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
 import { ArrowLeft, Plus, Edit, Trash2 } from 'lucide-react';
-import Image from 'next/image';
 
 interface Product {
   id: string;
@@ -23,7 +19,7 @@ interface Product {
 }
 
 export default function AdminProductsPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,12 +27,12 @@ export default function AdminProductsPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadProducts();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadProducts() {
     try {
@@ -83,14 +79,14 @@ export default function AdminProductsPage() {
 
   return (
     <div className="container py-8">
-      <Link href="/admin" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+      <Link to="/admin" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
         <ArrowLeft className="mr-1 h-4 w-4" />
         대시보드로 돌아가기
       </Link>
 
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">상품 관리</h1>
-        <Link href="/admin/products/new">
+        <Link to="/admin/products/new">
           <Button>
             <Plus className="mr-2 h-4 w-4" />
             상품 등록
@@ -101,7 +97,7 @@ export default function AdminProductsPage() {
       {products.length === 0 ? (
         <Card className="p-12 text-center">
           <p className="mb-4 text-gray-500">등록된 상품이 없습니다.</p>
-          <Link href="/admin/products/new">
+          <Link to="/admin/products/new">
             <Button>첫 상품 등록하기</Button>
           </Link>
         </Card>
@@ -111,11 +107,10 @@ export default function AdminProductsPage() {
             {products.map((product) => (
               <div key={product.id} className="flex items-center gap-4 p-4">
                 <div className="relative h-16 w-16 overflow-hidden rounded-lg bg-gray-100">
-                  <Image
+                  <img
                     src={product.thumbnail || '/placeholder.png'}
                     alt={product.name}
-                    fill
-                    className="object-cover"
+                    className="object-cover w-full h-full"
                   />
                 </div>
 
@@ -133,7 +128,7 @@ export default function AdminProductsPage() {
                 </div>
 
                 <div className="flex gap-2">
-                  <Link href={`/admin/products/${product.slug}/edit`}>
+                  <Link to={`/admin/products/${product.slug}/edit`}>
                     <Button size="sm" variant="outline">
                       <Edit className="h-4 w-4" />
                     </Button>

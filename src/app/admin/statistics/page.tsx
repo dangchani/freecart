@@ -1,8 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
@@ -41,7 +38,7 @@ const levelLabels: Record<string, string> = {
 };
 
 export default function AdminStatisticsPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [period, setPeriod] = useState<Period>('daily');
   const [salesData, setSalesData] = useState<SalesData[]>([]);
@@ -53,12 +50,12 @@ export default function AdminStatisticsPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadAll();
     }
-  }, [user, authLoading, period, router]);
+  }, [user, authLoading, period, navigate]);
 
   async function loadAll() {
     try {

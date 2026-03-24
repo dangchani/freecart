@@ -1,9 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Eye, Pin } from 'lucide-react';
@@ -20,19 +16,19 @@ interface Notice {
 }
 
 export default function NoticeDetailPage() {
-  const params = useParams();
-  const router = useRouter();
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [notice, setNotice] = useState<Notice | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     fetchNotice();
-  }, [params.id]);
+  }, [id]);
 
   async function fetchNotice() {
     try {
-      const res = await fetch(`/api/notices/${params.id}`);
+      const res = await fetch(`/api/notices/${id}`);
       const json = await res.json();
       if (json.success) {
         setNotice(json.data);
@@ -58,13 +54,13 @@ export default function NoticeDetailPage() {
   if (error || !notice) {
     return (
       <div className="container py-8">
-        <Link href="/notices" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+        <Link to="/notices" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
           <ArrowLeft className="mr-1 h-4 w-4" />
           공지사항 목록
         </Link>
         <Card className="p-12 text-center">
           <p className="mb-4 text-gray-500">{error || '공지사항을 찾을 수 없습니다.'}</p>
-          <Button variant="outline" onClick={() => router.push('/notices')}>
+          <Button variant="outline" onClick={() => navigate('/notices')}>
             목록으로 돌아가기
           </Button>
         </Card>
@@ -74,7 +70,7 @@ export default function NoticeDetailPage() {
 
   return (
     <div className="container py-8">
-      <Link href="/notices" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+      <Link to="/notices" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
         <ArrowLeft className="mr-1 h-4 w-4" />
         공지사항 목록
       </Link>
@@ -109,7 +105,7 @@ export default function NoticeDetailPage() {
 
         {/* 하단 버튼 */}
         <div className="border-t p-4">
-          <Link href="/notices">
+          <Link to="/notices">
             <Button variant="outline">
               <ArrowLeft className="mr-1.5 h-4 w-4" />
               목록으로

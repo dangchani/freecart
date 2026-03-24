@@ -1,9 +1,6 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -20,7 +17,7 @@ interface Notice {
 }
 
 export default function AdminNoticesPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [notices, setNotices] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,12 +26,12 @@ export default function AdminNoticesPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadNotices();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadNotices() {
     try {
@@ -88,7 +85,7 @@ export default function AdminNoticesPage() {
     <div className="container py-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">공지사항 관리</h1>
-        <Link href="/admin/notices/new">
+        <Link to="/admin/notices/new">
           <Button>
             <Plus className="mr-2 h-4 w-4" />
             공지 작성
@@ -105,7 +102,7 @@ export default function AdminNoticesPage() {
       ) : notices.length === 0 ? (
         <Card className="p-12 text-center">
           <p className="mb-4 text-gray-500">등록된 공지사항이 없습니다.</p>
-          <Link href="/admin/notices/new">
+          <Link to="/admin/notices/new">
             <Button>첫 공지 작성하기</Button>
           </Link>
         </Card>
@@ -155,7 +152,7 @@ export default function AdminNoticesPage() {
                         >
                           <Pin className="h-3.5 w-3.5" />
                         </Button>
-                        <Link href={`/admin/notices/${notice.id}/edit`}>
+                        <Link to={`/admin/notices/${notice.id}/edit`}>
                           <Button size="sm" variant="outline">
                             <Edit className="h-3.5 w-3.5" />
                           </Button>

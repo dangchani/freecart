@@ -1,9 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -27,8 +23,9 @@ interface Board {
   description: string;
 }
 
-export default function BoardDetailPage({ params }: { params: { slug: string } }) {
-  const router = useRouter();
+export default function BoardDetailPage() {
+  const navigate = useNavigate();
+  const { slug } = useParams<{ slug: string }>();
   const { user } = useAuth();
   const [board, setBoard] = useState<Board | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -37,18 +34,18 @@ export default function BoardDetailPage({ params }: { params: { slug: string } }
   useEffect(() => {
     loadBoard();
     loadPosts();
-  }, [params.slug]);
+  }, [slug]);
 
   async function loadBoard() {
     try {
-      const response = await fetch(`/api/boards/${params.slug}`);
+      const response = await fetch(`/api/boards/${slug}`);
       const data = await response.json();
 
       if (data.success) {
         setBoard(data.data);
       } else {
         alert('게시판을 찾을 수 없습니다.');
-        router.push('/boards');
+        navigate('/boards');
       }
     } catch (error) {
       console.error('Failed to load board:', error);
@@ -57,7 +54,7 @@ export default function BoardDetailPage({ params }: { params: { slug: string } }
 
   async function loadPosts() {
     try {
-      const response = await fetch(`/api/boards/${params.slug}/posts`);
+      const response = await fetch(`/api/boards/${slug}/posts`);
       const data = await response.json();
 
       if (data.success) {
@@ -76,7 +73,7 @@ export default function BoardDetailPage({ params }: { params: { slug: string } }
 
   return (
     <div className="container py-8">
-      <Link href="/boards" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+      <Link to="/boards" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
         <ArrowLeft className="mr-1 h-4 w-4" />
         커뮤니티 목록으로
       </Link>
@@ -87,7 +84,7 @@ export default function BoardDetailPage({ params }: { params: { slug: string } }
           <p className="text-gray-600">{board?.description}</p>
         </div>
         {user && (
-          <Link href={`/boards/${params.slug}/posts/new`}>
+          <Link to={`/boards/${slug}/posts/new`}>
             <Button>
               <Edit className="mr-2 h-4 w-4" />
               글쓰기
@@ -100,7 +97,7 @@ export default function BoardDetailPage({ params }: { params: { slug: string } }
         <Card className="p-12 text-center">
           <p className="mb-4 text-gray-500">아직 게시글이 없습니다.</p>
           {user && (
-            <Link href={`/boards/${params.slug}/posts/new`}>
+            <Link to={`/boards/${slug}/posts/new`}>
               <Button>첫 게시글 작성하기</Button>
             </Link>
           )}
@@ -111,7 +108,7 @@ export default function BoardDetailPage({ params }: { params: { slug: string } }
             {posts.map((post) => (
               <Link
                 key={post.id}
-                href={`/boards/${params.slug}/posts/${post.id}`}
+                to={`/boards/${slug}/posts/${post.id}`}
                 className="block p-4 transition-colors hover:bg-gray-50"
               >
                 <div className="flex items-start justify-between">

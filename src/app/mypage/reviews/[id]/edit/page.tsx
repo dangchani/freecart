@@ -1,12 +1,8 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,8 +19,9 @@ const reviewSchema = z.object({
 
 type ReviewForm = z.infer<typeof reviewSchema>;
 
-export default function EditReviewPage({ params }: { params: { id: string } }) {
-  const router = useRouter();
+export default function EditReviewPage() {
+  const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
   const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -46,16 +43,16 @@ export default function EditReviewPage({ params }: { params: { id: string } }) {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadReview();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadReview() {
     try {
-      const response = await fetch(`/api/reviews/${params.id}`);
+      const response = await fetch(`/api/reviews/${id}`);
       const data = await response.json();
 
       if (!data.success) {
@@ -72,7 +69,7 @@ export default function EditReviewPage({ params }: { params: { id: string } }) {
     } catch (error) {
       console.error('Failed to load review:', error);
       alert(error instanceof Error ? error.message : '리뷰를 불러오는 중 오류가 발생했습니다.');
-      router.push('/mypage/reviews');
+      navigate('/mypage/reviews');
     } finally {
       setLoading(false);
     }
@@ -82,7 +79,7 @@ export default function EditReviewPage({ params }: { params: { id: string } }) {
     try {
       setSubmitting(true);
 
-      const response = await fetch(`/api/reviews/${params.id}`, {
+      const response = await fetch(`/api/reviews/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -95,7 +92,7 @@ export default function EditReviewPage({ params }: { params: { id: string } }) {
       }
 
       alert('리뷰가 수정되었습니다.');
-      router.push('/mypage/reviews');
+      navigate('/mypage/reviews');
     } catch (error) {
       console.error('Failed to update review:', error);
       alert(error instanceof Error ? error.message : '리뷰 수정 중 오류가 발생했습니다.');
@@ -115,7 +112,7 @@ export default function EditReviewPage({ params }: { params: { id: string } }) {
 
   return (
     <div className="container py-8">
-      <Link href="/mypage/reviews" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+      <Link to="/mypage/reviews" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
         <ArrowLeft className="mr-1 h-4 w-4" />
         리뷰 목록으로 돌아가기
       </Link>
@@ -168,7 +165,7 @@ export default function EditReviewPage({ params }: { params: { id: string } }) {
               <Button type="submit" disabled={submitting}>
                 {submitting ? '수정 중...' : '수정하기'}
               </Button>
-              <Button type="button" variant="outline" onClick={() => router.back()}>
+              <Button type="button" variant="outline" onClick={() => navigate(-1)}>
                 취소
               </Button>
             </div>

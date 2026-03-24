@@ -1,9 +1,7 @@
-export const runtime = 'edge';
-
-import Link from 'next/link';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 
-export default function NotFound() {
+export default function NotFoundPage() {
   return (
     <div className="container flex min-h-[calc(100vh-200px)] flex-col items-center justify-center py-8 text-center">
       <h1 className="mb-4 text-6xl font-bold">404</h1>
@@ -11,7 +9,7 @@ export default function NotFound() {
       <p className="mb-8 text-muted-foreground">
         요청하신 페이지가 존재하지 않거나 이동되었습니다.
       </p>
-      <Link href="/">
+      <Link to="/">
         <Button size="lg">홈으로 돌아가기</Button>
       </Link>
     </div>

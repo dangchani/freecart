@@ -1,10 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -28,7 +23,7 @@ interface WishlistItem {
 }
 
 export default function WishlistPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [wishlist, setWishlist] = useState<WishlistItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,12 +32,12 @@ export default function WishlistPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       fetchWishlist();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function fetchWishlist() {
     try {
@@ -87,7 +82,7 @@ export default function WishlistPage() {
         <Card className="p-12 text-center">
           <Heart className="mx-auto mb-4 h-12 w-12 text-gray-300" />
           <p className="mb-4 text-gray-500">찜한 상품이 없습니다.</p>
-          <Link href="/products">
+          <Link to="/products">
             <Button>쇼핑하러 가기</Button>
           </Link>
         </Card>
@@ -103,13 +98,12 @@ export default function WishlistPage() {
 
             return (
               <Card key={item.id} className="overflow-hidden">
-                <Link href={`/products/${product.slug}`} className="block">
+                <Link to={`/products/${product.slug}`} className="block">
                   <div className="relative aspect-square bg-gray-100">
-                    <Image
+                    <img
                       src={imageUrl}
                       alt={product.name}
-                      fill
-                      className="object-cover transition-transform hover:scale-105"
+                      className="object-cover transition-transform hover:scale-105 h-full w-full"
                     />
                     {hasDiscount && (
                       <span className="absolute left-2 top-2 rounded bg-red-500 px-1.5 py-0.5 text-xs font-bold text-white">
@@ -124,7 +118,7 @@ export default function WishlistPage() {
                   </div>
                 </Link>
                 <div className="p-4">
-                  <Link href={`/products/${product.slug}`}>
+                  <Link to={`/products/${product.slug}`}>
                     <h3 className="mb-1 line-clamp-2 text-sm font-medium hover:text-blue-600">
                       {product.name}
                     </h3>

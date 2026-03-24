@@ -1,8 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -28,7 +25,7 @@ const checkoutSchema = z.object({
 type CheckoutForm = z.infer<typeof checkoutSchema>;
 
 export default function CheckoutPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [items, setItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,12 +42,12 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadCart();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadCart() {
     try {
@@ -58,7 +55,7 @@ export default function CheckoutPage() {
       const cartItems = await getCart(user.id);
 
       if (cartItems.length === 0) {
-        router.push('/cart');
+        navigate('/cart');
         return;
       }
 
@@ -84,24 +81,24 @@ export default function CheckoutPage() {
       setSubmitting(true);
 
       // 주문 생성
-      const order = await createOrder({
-        userId: user.id,
-        items: items.map((item) => ({
+      const order = await createOrder(
+        user.id,
+        items.map((item) => ({
           productId: item.productId,
           quantity: item.quantity,
           price: item.product?.price || 0,
         })),
-        shippingAddress: `${data.postalCode} ${data.address}`,
-        recipientName: data.recipientName,
-        recipientPhone: data.recipientPhone,
-        deliveryRequest: data.deliveryRequest,
-        totalAmount: total,
-        shippingCost,
-      });
+        {
+          address: `${data.postalCode} ${data.address}`,
+          phone: data.recipientPhone,
+          name: data.recipientName,
+        },
+        '카드'
+      );
 
       // 토스페이먼츠 결제 호출
       const tossPayments = await loadTossPayments(
-        process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY || ''
+        import.meta.env.VITE_TOSS_CLIENT_KEY || ''
       );
 
       await tossPayments.requestPayment('카드', {

@@ -1,9 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,7 +15,7 @@ const categories = [
 ];
 
 export default function NewInquiryPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [form, setForm] = useState({ category: '', title: '', content: '' });
   const [submitting, setSubmitting] = useState(false);
@@ -27,9 +23,9 @@ export default function NewInquiryPage() {
 
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/auth/login');
+      navigate('/auth/login');
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -48,7 +44,7 @@ export default function NewInquiryPage() {
       });
       const json = await res.json();
       if (json.success) {
-        router.push('/mypage/inquiries');
+        navigate('/mypage/inquiries');
       } else {
         setError(json.error || '문의 등록에 실패했습니다.');
       }
@@ -67,7 +63,7 @@ export default function NewInquiryPage() {
   return (
     <div>
       <Link
-        href="/mypage/inquiries"
+        to="/mypage/inquiries"
         className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
       >
         <ArrowLeft className="mr-1 h-4 w-4" />
@@ -134,7 +130,7 @@ export default function NewInquiryPage() {
           )}
 
           <div className="flex justify-end gap-3">
-            <Link href="/mypage/inquiries">
+            <Link to="/mypage/inquiries">
               <Button type="button" variant="outline">
                 취소
               </Button>

@@ -1,12 +1,9 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import Link from 'next/link';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -36,7 +33,7 @@ const productSchema = z.object({
 type ProductForm = z.infer<typeof productSchema>;
 
 export default function NewProductPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [categories, setCategories] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -53,12 +50,12 @@ export default function NewProductPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadCategories();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadCategories() {
     try {
@@ -90,7 +87,7 @@ export default function NewProductPage() {
       }
 
       alert('상품이 등록되었습니다.');
-      router.push('/admin/products');
+      navigate('/admin/products');
     } catch (error) {
       console.error('Failed to create product:', error);
       alert(error instanceof Error ? error.message : '상품 등록 중 오류가 발생했습니다.');
@@ -105,7 +102,7 @@ export default function NewProductPage() {
 
   return (
     <div className="container py-8">
-      <Link href="/admin/products" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+      <Link to="/admin/products" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
         <ArrowLeft className="mr-1 h-4 w-4" />
         상품 관리로 돌아가기
       </Link>
@@ -204,7 +201,7 @@ export default function NewProductPage() {
               <Button type="submit" disabled={submitting}>
                 {submitting ? '등록 중...' : '등록하기'}
               </Button>
-              <Button type="button" variant="outline" onClick={() => router.back()}>
+              <Button type="button" variant="outline" onClick={() => navigate(-1)}>
                 취소
               </Button>
             </div>

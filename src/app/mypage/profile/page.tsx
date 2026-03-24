@@ -1,8 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -12,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft } from 'lucide-react';
-import Link from 'next/link';
+import { Link } from 'react-router-dom';
 
 const profileSchema = z.object({
   displayName: z.string().min(1, '이름을 입력해주세요').optional(),
@@ -23,7 +20,7 @@ const profileSchema = z.object({
 type ProfileForm = z.infer<typeof profileSchema>;
 
 export default function ProfilePage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState<any>(null);
@@ -40,12 +37,12 @@ export default function ProfilePage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadProfile();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadProfile() {
     try {
@@ -114,7 +111,7 @@ export default function ProfilePage() {
       }
 
       alert('계정이 삭제되었습니다.');
-      router.push('/');
+      navigate('/');
     } catch (error) {
       console.error('Failed to delete account:', error);
       alert(error instanceof Error ? error.message : '계정 삭제 중 오류가 발생했습니다.');
@@ -127,7 +124,7 @@ export default function ProfilePage() {
 
   return (
     <div className="container py-8">
-      <Link href="/mypage" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+      <Link to="/mypage" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
         <ArrowLeft className="mr-1 h-4 w-4" />
         마이페이지로 돌아가기
       </Link>

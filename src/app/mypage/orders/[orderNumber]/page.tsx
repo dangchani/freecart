@@ -1,9 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -40,8 +36,9 @@ const statusLabels: Record<string, { label: string; variant: 'default' | 'second
   cancelled: { label: '취소됨', variant: 'destructive' },
 };
 
-export default function OrderDetailPage({ params }: { params: { orderNumber: string } }) {
-  const router = useRouter();
+export default function OrderDetailPage() {
+  const navigate = useNavigate();
+  const { orderNumber } = useParams<{ orderNumber: string }>();
   const { user, loading: authLoading } = useAuth();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -49,28 +46,28 @@ export default function OrderDetailPage({ params }: { params: { orderNumber: str
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadOrderDetail();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadOrderDetail() {
     try {
-      const response = await fetch(`/api/orders/${params.orderNumber}`);
+      const response = await fetch(`/api/orders/${orderNumber}`);
       const data = await response.json();
 
       if (data.success) {
         setOrder(data.data);
       } else {
         alert(data.error || '주문 정보를 불러올 수 없습니다.');
-        router.push('/mypage/orders');
+        navigate('/mypage/orders');
       }
     } catch (error) {
       console.error('Failed to load order:', error);
       alert('주문 정보를 불러오는 중 오류가 발생했습니다.');
-      router.push('/mypage/orders');
+      navigate('/mypage/orders');
     } finally {
       setLoading(false);
     }
@@ -82,7 +79,7 @@ export default function OrderDetailPage({ params }: { params: { orderNumber: str
     }
 
     try {
-      const response = await fetch(`/api/orders/${params.orderNumber}/cancel`, {
+      const response = await fetch(`/api/orders/${orderNumber}/cancel`, {
         method: 'POST',
       });
 
@@ -114,7 +111,7 @@ export default function OrderDetailPage({ params }: { params: { orderNumber: str
 
   return (
     <div className="container py-8">
-      <Link href="/mypage/orders" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+      <Link to="/mypage/orders" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
         <ArrowLeft className="mr-1 h-4 w-4" />
         주문 내역으로 돌아가기
       </Link>

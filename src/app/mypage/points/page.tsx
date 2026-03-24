@@ -1,8 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -36,7 +33,7 @@ const filterLabels: Record<FilterType, string> = {
 };
 
 export default function PointsPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [data, setData] = useState<PointData>({ balance: 0, history: [], totalPages: 1, totalCount: 0 });
   const [loading, setLoading] = useState(true);
@@ -46,12 +43,12 @@ export default function PointsPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       fetchPoints();
     }
-  }, [user, authLoading, filter, page, router]);
+  }, [user, authLoading, filter, page, navigate]);
 
   async function fetchPoints() {
     setLoading(true);

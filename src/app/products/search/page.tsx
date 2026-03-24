@@ -1,10 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState, useEffect, useRef, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
-import Image from 'next/image';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
@@ -31,8 +26,8 @@ const sortLabels: Record<SortOption, string> = {
 };
 
 function SearchPageContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const initialQ = searchParams.get('q') || '';
 
   const [query, setQuery] = useState(initialQ);
@@ -110,7 +105,7 @@ function SearchPageContent() {
     setQuery(trimmed);
     setInputValue(trimmed);
     setShowAutocomplete(false);
-    router.replace(`/products/search?q=${encodeURIComponent(trimmed)}`, { scroll: false });
+    navigate(`/products/search?q=${encodeURIComponent(trimmed)}`);
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -232,14 +227,13 @@ function SearchPageContent() {
                 const imageUrl = product.thumbnail || product.images?.[0] || '/placeholder.png';
 
                 return (
-                  <Link key={product.id} href={`/products/${product.slug}`}>
+                  <Link key={product.id} to={`/products/${product.slug}`}>
                     <Card className="overflow-hidden hover:shadow-md transition-shadow">
                       <div className="relative aspect-square bg-gray-100">
-                        <Image
+                        <img
                           src={imageUrl}
                           alt={product.name}
-                          fill
-                          className="object-cover"
+                          className="object-cover w-full h-full"
                         />
                         {hasDiscount && (
                           <span className="absolute left-2 top-2 rounded bg-red-500 px-1.5 py-0.5 text-xs font-bold text-white">

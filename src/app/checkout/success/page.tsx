@@ -1,17 +1,15 @@
-'use client';
-export const runtime = 'edge';
-
-import { useEffect, useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { CheckCircle2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 
 function SuccessContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [confirming, setConfirming] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,10 +90,10 @@ function SuccessContent() {
           <p className="mb-6 text-gray-600">{error}</p>
           <div className="flex gap-2">
             <Button variant="outline" asChild className="flex-1">
-              <Link href="/cart">장바구니로</Link>
+              <Link to="/cart">장바구니로</Link>
             </Button>
             <Button asChild className="flex-1">
-              <Link href="/">홈으로</Link>
+              <Link to="/">홈으로</Link>
             </Button>
           </div>
         </Card>
@@ -129,10 +127,10 @@ function SuccessContent() {
 
         <div className="flex gap-2">
           <Button variant="outline" asChild className="flex-1">
-            <Link href="/mypage/orders">주문내역</Link>
+            <Link to="/mypage/orders">주문내역</Link>
           </Button>
           <Button asChild className="flex-1">
-            <Link href="/">홈으로</Link>
+            <Link to="/">홈으로</Link>
           </Button>
         </div>
       </Card>
@@ -141,13 +139,5 @@ function SuccessContent() {
 }
 
 export default function CheckoutSuccessPage() {
-  return (
-    <Suspense fallback={
-      <div className="container flex min-h-[60vh] items-center justify-center py-8">
-        <div className="text-center">로딩 중...</div>
-      </div>
-    }>
-      <SuccessContent />
-    </Suspense>
-  );
+  return <SuccessContent />;
 }

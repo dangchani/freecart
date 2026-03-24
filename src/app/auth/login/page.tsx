@@ -1,9 +1,6 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { signIn } from '@/lib/auth';
 
 export default function LoginPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -24,8 +21,7 @@ export default function LoginPage() {
 
     try {
       await signIn(email, password);
-      router.push('/');
-      router.refresh();
+      navigate('/');
     } catch (err) {
       setError('이메일 또는 비밀번호가 올바르지 않습니다.');
     } finally {
@@ -75,7 +71,7 @@ export default function LoginPage() {
 
             <div className="text-center text-sm">
               계정이 없으신가요?{' '}
-              <Link href="/auth/signup" className="text-primary hover:underline">
+              <Link to="/auth/signup" className="text-primary hover:underline">
                 회원가입
               </Link>
             </div>

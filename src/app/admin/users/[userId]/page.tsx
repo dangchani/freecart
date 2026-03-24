@@ -1,9 +1,6 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -51,9 +48,8 @@ const statusLabels: Record<string, string> = {
 };
 
 export default function AdminUserDetailPage() {
-  const router = useRouter();
-  const params = useParams();
-  const userId = params.userId as string;
+  const navigate = useNavigate();
+  const { userId } = useParams<{ userId: string }>();
   const { user, loading: authLoading } = useAuth();
 
   const [userDetail, setUserDetail] = useState<UserDetail | null>(null);
@@ -71,12 +67,12 @@ export default function AdminUserDetailPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadUser();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadUser() {
     try {
@@ -194,7 +190,7 @@ export default function AdminUserDetailPage() {
   return (
     <div className="container py-8">
       <Link
-        href="/admin/users"
+        to="/admin/users"
         className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
       >
         <ArrowLeft className="mr-1 h-4 w-4" />

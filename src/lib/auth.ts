@@ -8,9 +8,7 @@ export async function signUp(email: string, password: string, name: string) {
     email,
     password,
     options: {
-      data: {
-        name,
-      },
+      data: { name },
     },
   });
 

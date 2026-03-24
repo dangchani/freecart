@@ -1,10 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
-import Link from 'next/link';
-import Image from 'next/image';
+import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Tag } from 'lucide-react';
 
 interface Brand {
@@ -27,8 +22,7 @@ interface Product {
 }
 
 export default function BrandProductsPage() {
-  const params = useParams();
-  const id = params.id as string;
+  const { id } = useParams<{ id: string }>();
   const [brand, setBrand] = useState<Brand | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,7 +52,7 @@ export default function BrandProductsPage() {
     return (
       <div className="container mx-auto px-4 py-16 text-center">
         <p className="text-gray-500 mb-4">브랜드를 찾을 수 없습니다.</p>
-        <Link href="/brands" className="text-blue-600 hover:underline flex items-center justify-center gap-1">
+        <Link to="/brands" className="text-blue-600 hover:underline flex items-center justify-center gap-1">
           <ArrowLeft className="h-4 w-4" /> 브랜드 목록으로
         </Link>
       </div>
@@ -67,7 +61,7 @@ export default function BrandProductsPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-6xl">
-      <Link href="/brands" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-6">
+      <Link to="/brands" className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-6">
         <ArrowLeft className="h-4 w-4 mr-1" /> 브랜드 목록
       </Link>
 
@@ -84,7 +78,7 @@ export default function BrandProductsPage() {
         <div className="mb-10 flex items-center gap-6 p-6 bg-white border rounded-2xl shadow-sm">
           <div className="w-24 h-24 relative shrink-0 bg-gray-50 rounded-xl overflow-hidden border flex items-center justify-center">
             {brand.logoUrl ? (
-              <Image src={brand.logoUrl} alt={brand.name} fill className="object-contain p-2" />
+              <img src={brand.logoUrl} alt={brand.name} className="object-contain p-2 w-full h-full" />
             ) : (
               <span className="text-3xl font-extrabold text-gray-300">
                 {brand.name.charAt(0)}
@@ -145,13 +139,12 @@ export default function BrandProductsPage() {
                 : 0;
 
               return (
-                <Link key={product.id} href={`/products/${product.slug}`} className="group block">
+                <Link key={product.id} to={`/products/${product.slug}`} className="group block">
                   <div className="relative aspect-square overflow-hidden rounded-xl bg-gray-100 mb-3">
-                    <Image
+                    <img
                       src={imageUrl}
                       alt={product.name}
-                      fill
-                      className="object-cover transition-transform duration-300 group-hover:scale-105"
+                      className="object-cover transition-transform duration-300 group-hover:scale-105 w-full h-full"
                     />
                     {hasDiscount && (
                       <span className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-md">

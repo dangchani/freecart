@@ -1,12 +1,8 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,8 +18,9 @@ const postSchema = z.object({
 
 type PostForm = z.infer<typeof postSchema>;
 
-export default function EditPostPage({ params }: { params: { slug: string; id: string } }) {
-  const router = useRouter();
+export default function EditPostPage() {
+  const navigate = useNavigate();
+  const { slug, id } = useParams<{ slug: string; id: string }>();
   const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
 
@@ -40,16 +37,16 @@ export default function EditPostPage({ params }: { params: { slug: string; id: s
     if (!authLoading) {
       if (!user) {
         alert('로그인이 필요합니다.');
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadPost();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadPost() {
     try {
-      const response = await fetch(`/api/posts/${params.id}`);
+      const response = await fetch(`/api/posts/${id}`);
       const data = await response.json();
 
       if (!data.success) {
@@ -60,7 +57,7 @@ export default function EditPostPage({ params }: { params: { slug: string; id: s
 
       if (post.authorId !== user?.id) {
         alert('수정 권한이 없습니다.');
-        router.push(`/boards/${params.slug}/posts/${params.id}`);
+        navigate(`/boards/${slug}/posts/${id}`);
         return;
       }
 
@@ -71,7 +68,7 @@ export default function EditPostPage({ params }: { params: { slug: string; id: s
     } catch (error) {
       console.error('Failed to load post:', error);
       alert(error instanceof Error ? error.message : '게시글을 불러오는 중 오류가 발생했습니다.');
-      router.push(`/boards/${params.slug}`);
+      navigate(`/boards/${slug}`);
     } finally {
       setLoading(false);
     }
@@ -79,7 +76,7 @@ export default function EditPostPage({ params }: { params: { slug: string; id: s
 
   async function onSubmit(data: PostForm) {
     try {
-      const response = await fetch(`/api/posts/${params.id}`, {
+      const response = await fetch(`/api/posts/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -92,7 +89,7 @@ export default function EditPostPage({ params }: { params: { slug: string; id: s
       }
 
       alert('게시글이 수정되었습니다.');
-      router.push(`/boards/${params.slug}/posts/${params.id}`);
+      navigate(`/boards/${slug}/posts/${id}`);
     } catch (error) {
       console.error('Failed to update post:', error);
       alert(error instanceof Error ? error.message : '게시글 수정 중 오류가 발생했습니다.');
@@ -109,7 +106,7 @@ export default function EditPostPage({ params }: { params: { slug: string; id: s
 
   return (
     <div className="container py-8">
-      <Link href={`/boards/${params.slug}/posts/${params.id}`} className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+      <Link to={`/boards/${slug}/posts/${id}`} className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
         <ArrowLeft className="mr-1 h-4 w-4" />
         게시글로 돌아가기
       </Link>
@@ -140,7 +137,7 @@ export default function EditPostPage({ params }: { params: { slug: string; id: s
               <Button type="submit" disabled={isSubmitting}>
                 {isSubmitting ? '수정 중...' : '수정하기'}
               </Button>
-              <Button type="button" variant="outline" onClick={() => router.back()}>
+              <Button type="button" variant="outline" onClick={() => navigate(-1)}>
                 취소
               </Button>
             </div>

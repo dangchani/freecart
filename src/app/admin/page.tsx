@@ -1,9 +1,6 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
@@ -67,7 +64,7 @@ const statusConfig: Record<string, { label: string; variant: 'default' | 'second
 };
 
 export default function AdminDashboard() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,12 +73,12 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadDashboard();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadDashboard() {
     try {
@@ -203,7 +200,7 @@ export default function AdminDashboard() {
         <div>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-semibold">최근 주문</h2>
-            <Link href="/admin/orders" className="text-sm text-blue-600 hover:underline">
+            <Link to="/admin/orders" className="text-sm text-blue-600 hover:underline">
               전체 보기
             </Link>
           </div>
@@ -240,7 +237,7 @@ export default function AdminDashboard() {
         <div>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-semibold">재고 부족 상품</h2>
-            <Link href="/admin/products" className="text-sm text-blue-600 hover:underline">
+            <Link to="/admin/products" className="text-sm text-blue-600 hover:underline">
               상품 관리
             </Link>
           </div>
@@ -254,7 +251,7 @@ export default function AdminDashboard() {
                     <div className="flex items-center gap-2">
                       <AlertTriangle className="h-4 w-4 text-yellow-500" />
                       <Link
-                        href={`/admin/products/${product.id}`}
+                        to={`/admin/products/${product.id}`}
                         className="text-sm font-medium hover:text-blue-600"
                       >
                         {product.name}
@@ -282,7 +279,7 @@ export default function AdminDashboard() {
           { href: '/admin/categories', label: '카테고리 관리', desc: '카테고리 추가, 수정, 삭제' },
           { href: '/admin/boards', label: '게시판 관리', desc: '게시판 및 게시글 관리' },
         ].map(({ href, label, desc }) => (
-          <Link key={href} href={href}>
+          <Link key={href} to={href}>
             <Card className="cursor-pointer p-5 transition-shadow hover:shadow-md">
               <h3 className="mb-1 font-semibold">{label}</h3>
               <p className="text-sm text-gray-500">{desc}</p>

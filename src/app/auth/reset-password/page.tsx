@@ -1,16 +1,13 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState, useEffect, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Lock, Eye, EyeOff, CheckCircle } from 'lucide-react';
 
 function ResetPasswordForm() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const token = searchParams.get('token') || '';
 
   const [form, setForm] = useState({ password: '', confirmPassword: '' });
@@ -47,7 +44,7 @@ function ResetPasswordForm() {
       const json = await res.json();
       if (json.success) {
         setSuccess(true);
-        setTimeout(() => router.push('/auth/login'), 3000);
+        setTimeout(() => navigate('/auth/login'), 3000);
       } else {
         setError(json.error || '비밀번호 재설정에 실패했습니다.');
       }
@@ -63,7 +60,7 @@ function ResetPasswordForm() {
     <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4">
       <div className="w-full max-w-md">
         <Link
-          href="/auth/login"
+          to="/auth/login"
           className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
         >
           <ArrowLeft className="mr-1 h-4 w-4" />
@@ -80,7 +77,7 @@ function ResetPasswordForm() {
                 <br />
                 잠시 후 로그인 페이지로 이동합니다.
               </p>
-              <Link href="/auth/login">
+              <Link to="/auth/login">
                 <Button className="w-full">로그인하러 가기</Button>
               </Link>
             </div>
@@ -99,7 +96,7 @@ function ResetPasswordForm() {
               {!token ? (
                 <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-600">
                   유효하지 않은 링크입니다.{' '}
-                  <Link href="/auth/forgot-password" className="font-medium underline">
+                  <Link to="/auth/forgot-password" className="font-medium underline">
                     비밀번호 찾기를 다시 시도해주세요.
                   </Link>
                 </div>

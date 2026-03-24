@@ -1,8 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,7 +16,7 @@ interface AttendanceData {
 }
 
 export default function AttendancePage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [data, setData] = useState<AttendanceData>({
     attendedDates: [],
@@ -35,12 +32,12 @@ export default function AttendancePage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       fetchAttendance();
     }
-  }, [user, authLoading, currentMonth, router]);
+  }, [user, authLoading, currentMonth, navigate]);
 
   async function fetchAttendance() {
     setLoading(true);

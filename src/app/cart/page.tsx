@@ -1,10 +1,6 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import Image from 'next/image';
-import { useRouter } from 'next/navigation';
+import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/utils';
@@ -13,7 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import type { CartItem } from '@/types';
 
 export default function CartPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [items, setItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,12 +17,12 @@ export default function CartPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadCart();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadCart() {
     try {
@@ -76,7 +72,7 @@ export default function CartPage() {
       {items.length === 0 ? (
         <div className="py-12 text-center">
           <p className="mb-4 text-muted-foreground">장바구니가 비어있습니다.</p>
-          <Link href="/products">
+          <Link to="/products">
             <Button>쇼핑 계속하기</Button>
           </Link>
         </div>
@@ -87,11 +83,10 @@ export default function CartPage() {
               <Card key={item.id} className="mb-4 p-4">
                 <div className="flex gap-4">
                   <div className="relative h-24 w-24 overflow-hidden rounded-lg bg-gray-100">
-                    <Image
+                    <img
                       src={item.product?.thumbnail || '/placeholder.png'}
                       alt={item.product?.name || ''}
-                      fill
-                      className="object-cover"
+                      className="object-cover w-full h-full"
                     />
                   </div>
 
@@ -153,7 +148,7 @@ export default function CartPage() {
                 <span>{formatCurrency(total)}</span>
               </div>
 
-              <Link href="/checkout" className="block">
+              <Link to="/checkout" className="block">
                 <Button className="mt-6 w-full" size="lg">
                   주문하기
                 </Button>

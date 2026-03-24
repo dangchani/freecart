@@ -1,23 +1,21 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
+import { signOut } from '@/lib/auth';
 import { ShoppingBag, Star, User, LogOut } from 'lucide-react';
 
 export default function MyPage() {
-  const router = useRouter();
-  const { user, loading, signOut } = useAuth();
+  const navigate = useNavigate();
+  const { user, loading } = useAuth();
 
   useEffect(() => {
     if (!loading && !user) {
-      router.push('/auth/login');
+      navigate('/auth/login');
     }
-  }, [user, loading, router]);
+  }, [user, loading, navigate]);
 
   if (loading) {
     return <div className="container py-8">로딩 중...</div>;
@@ -29,7 +27,7 @@ export default function MyPage() {
 
   async function handleSignOut() {
     await signOut();
-    router.push('/');
+    navigate('/');
   }
 
   return (
@@ -48,7 +46,7 @@ export default function MyPage() {
               <p className="text-sm text-gray-500">{user.email}</p>
             </div>
           </div>
-          <Link href="/mypage/profile">
+          <Link to="/mypage/profile">
             <Button variant="outline" className="w-full">
               프로필 수정
             </Button>
@@ -56,7 +54,7 @@ export default function MyPage() {
         </Card>
 
         {/* 주문 내역 */}
-        <Link href="/mypage/orders">
+        <Link to="/mypage/orders">
           <Card className="p-6 transition-shadow hover:shadow-md cursor-pointer h-full">
             <div className="mb-4 flex items-center gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
@@ -71,7 +69,7 @@ export default function MyPage() {
         </Link>
 
         {/* 리뷰 관리 */}
-        <Link href="/mypage/reviews">
+        <Link to="/mypage/reviews">
           <Card className="p-6 transition-shadow hover:shadow-md cursor-pointer h-full">
             <div className="mb-4 flex items-center gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-yellow-100">

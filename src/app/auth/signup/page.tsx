@@ -1,9 +1,6 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { signUp } from '@/lib/auth';
 
 export default function SignupPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -37,7 +34,7 @@ export default function SignupPage() {
 
     try {
       await signUp(email, password, name);
-      router.push('/auth/login');
+      navigate('/auth/login');
     } catch (err: any) {
       setError(err.message || '회원가입 중 오류가 발생했습니다.');
     } finally {
@@ -111,7 +108,7 @@ export default function SignupPage() {
 
             <div className="text-center text-sm">
               이미 계정이 있으신가요?{' '}
-              <Link href="/auth/login" className="text-primary hover:underline">
+              <Link to="/auth/login" className="text-primary hover:underline">
                 로그인
               </Link>
             </div>

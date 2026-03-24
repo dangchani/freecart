@@ -1,8 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -28,7 +25,7 @@ const filterOptions = [
 ];
 
 export default function AdminProductQnaPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [qnaList, setQnaList] = useState<ProductQna[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,12 +38,12 @@ export default function AdminProductQnaPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadQna();
     }
-  }, [user, authLoading, filter, router]);
+  }, [user, authLoading, filter, navigate]);
 
   async function loadQna() {
     try {

@@ -1,8 +1,5 @@
-'use client';
-
 import { useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate, useLocation, Link, Outlet } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import {
   ShoppingBag,
@@ -34,16 +31,16 @@ const navItems = [
   { href: '/mypage/profile', label: '프로필 수정', icon: User },
 ];
 
-export default function MypageLayout({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-  const pathname = usePathname();
+export default function MypageLayout() {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { user, loading } = useAuth();
 
   useEffect(() => {
     if (!loading && !user) {
-      router.push('/auth/login');
+      navigate('/auth/login');
     }
-  }, [user, loading, router]);
+  }, [user, loading, navigate]);
 
   if (loading) {
     return <div className="container py-8">로딩 중...</div>;
@@ -75,7 +72,7 @@ export default function MypageLayout({ children }: { children: React.ReactNode }
               return (
                 <Link
                   key={href}
-                  href={href}
+                  to={href}
                   className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
                     isActive
                       ? 'bg-blue-50 font-medium text-blue-700'
@@ -91,7 +88,7 @@ export default function MypageLayout({ children }: { children: React.ReactNode }
         </aside>
 
         {/* 메인 콘텐츠 */}
-        <main className="min-w-0 flex-1">{children}</main>
+        <main className="min-w-0 flex-1"><Outlet /></main>
       </div>
     </div>
   );

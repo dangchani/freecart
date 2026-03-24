@@ -1,9 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import Image from 'next/image';
+import { Link } from 'react-router-dom';
 import { ChevronRight, Tag } from 'lucide-react';
 
 interface Brand {
@@ -56,16 +52,15 @@ export default function BrandsPage() {
           {brands.map((brand) => (
             <Link
               key={brand.id}
-              href={`/brands/${brand.id}`}
+              to={`/brands/${brand.id}`}
               className="group flex flex-col items-center border rounded-xl p-5 hover:shadow-md hover:border-blue-300 transition-all bg-white"
             >
               <div className="w-full aspect-video relative mb-3 bg-gray-50 rounded-lg overflow-hidden flex items-center justify-center">
                 {brand.logoUrl ? (
-                  <Image
+                  <img
                     src={brand.logoUrl}
                     alt={brand.name}
-                    fill
-                    className="object-contain p-2 group-hover:scale-105 transition-transform"
+                    className="object-contain p-2 group-hover:scale-105 transition-transform w-full h-full"
                   />
                 ) : (
                   <span className="text-3xl font-extrabold text-gray-200">

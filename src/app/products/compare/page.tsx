@@ -1,14 +1,9 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
-import Link from 'next/link';
+import { useSearchParams, Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
 import { ArrowLeft, Star } from 'lucide-react';
-import Image from 'next/image';
 
 interface ProductCompare {
   id: string;
@@ -28,7 +23,7 @@ interface ProductCompare {
 }
 
 function CompareContent() {
-  const searchParams = useSearchParams();
+  const [searchParams] = useSearchParams();
   const idsParam = searchParams.get('ids') || '';
   const productIds = idsParam.split(',').filter(Boolean);
 
@@ -77,7 +72,7 @@ function CompareContent() {
     return (
       <div className="container py-8 text-center">
         <p className="mb-4 text-gray-500">비교할 상품이 선택되지 않았습니다.</p>
-        <Link href="/products">
+        <Link to="/products">
           <Button>상품 목록으로</Button>
         </Link>
       </div>
@@ -140,7 +135,7 @@ function CompareContent() {
   return (
     <div className="container py-8">
       <Link
-        href="/products"
+        to="/products"
         className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
       >
         <ArrowLeft className="mr-1 h-4 w-4" />
@@ -165,15 +160,14 @@ function CompareContent() {
                   <th key={product.id} className="px-4 py-3 text-center border-b bg-white">
                     <div className="flex flex-col items-center gap-2">
                       <div className="relative h-24 w-24 overflow-hidden rounded-lg bg-gray-100">
-                        <Image
+                        <img
                           src={product.thumbnail || '/placeholder.png'}
                           alt={product.name}
-                          fill
-                          className="object-cover"
+                          className="object-cover w-full h-full"
                         />
                       </div>
                       <Link
-                        href={`/products/${product.slug}`}
+                        to={`/products/${product.slug}`}
                         className="font-medium text-gray-900 hover:text-blue-600 text-sm line-clamp-2"
                       >
                         {product.name}
@@ -200,7 +194,7 @@ function CompareContent() {
                 <td className="px-4 py-3 border-t bg-gray-50" />
                 {products.map((product) => (
                   <td key={product.id} className="px-4 py-3 text-center border-t">
-                    <Link href={`/products/${product.slug}`}>
+                    <Link to={`/products/${product.slug}`}>
                       <Button size="sm">상품 보기</Button>
                     </Link>
                   </td>

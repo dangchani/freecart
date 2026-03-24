@@ -1,12 +1,9 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import Link from 'next/link';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,8 +32,9 @@ const productSchema = z.object({
 
 type ProductForm = z.infer<typeof productSchema>;
 
-export default function EditProductPage({ params }: { params: { slug: string } }) {
-  const router = useRouter();
+export default function EditProductPage() {
+  const navigate = useNavigate();
+  const { slug } = useParams<{ slug: string }>();
   const { user, loading: authLoading } = useAuth();
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,13 +53,13 @@ export default function EditProductPage({ params }: { params: { slug: string } }
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadCategories();
       loadProduct();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadCategories() {
     try {
@@ -78,7 +76,7 @@ export default function EditProductPage({ params }: { params: { slug: string } }
 
   async function loadProduct() {
     try {
-      const response = await fetch(`/api/products/${params.slug}`);
+      const response = await fetch(`/api/products/${slug}`);
       const data = await response.json();
 
       if (!data.success) {
@@ -99,7 +97,7 @@ export default function EditProductPage({ params }: { params: { slug: string } }
     } catch (error) {
       console.error('Failed to load product:', error);
       alert('상품을 불러오는 중 오류가 발생했습니다.');
-      router.push('/admin/products');
+      navigate('/admin/products');
     } finally {
       setLoading(false);
     }
@@ -109,7 +107,7 @@ export default function EditProductPage({ params }: { params: { slug: string } }
     try {
       setSubmitting(true);
 
-      const response = await fetch(`/api/products/${params.slug}`, {
+      const response = await fetch(`/api/products/${slug}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -122,7 +120,7 @@ export default function EditProductPage({ params }: { params: { slug: string } }
       }
 
       alert('상품이 수정되었습니다.');
-      router.push('/admin/products');
+      navigate('/admin/products');
     } catch (error) {
       console.error('Failed to update product:', error);
       alert(error instanceof Error ? error.message : '상품 수정 중 오류가 발생했습니다.');
@@ -137,7 +135,7 @@ export default function EditProductPage({ params }: { params: { slug: string } }
 
   return (
     <div className="container py-8">
-      <Link href="/admin/products" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+      <Link to="/admin/products" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
         <ArrowLeft className="mr-1 h-4 w-4" />
         상품 관리로 돌아가기
       </Link>
@@ -238,7 +236,7 @@ export default function EditProductPage({ params }: { params: { slug: string } }
               <Button type="submit" disabled={submitting}>
                 {submitting ? '수정 중...' : '수정하기'}
               </Button>
-              <Button type="button" variant="outline" onClick={() => router.back()}>
+              <Button type="button" variant="outline" onClick={() => navigate(-1)}>
                 취소
               </Button>
             </div>

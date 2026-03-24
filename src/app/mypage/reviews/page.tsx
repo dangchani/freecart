@@ -1,9 +1,5 @@
-'use client';
-export const runtime = 'edge';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate, Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
@@ -22,7 +18,7 @@ interface Review {
 }
 
 export default function ReviewsPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,12 +26,12 @@ export default function ReviewsPage() {
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
-        router.push('/auth/login');
+        navigate('/auth/login');
         return;
       }
       loadReviews();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, navigate]);
 
   async function loadReviews() {
     try {
@@ -82,7 +78,7 @@ export default function ReviewsPage() {
 
   return (
     <div className="container py-8">
-      <Link href="/mypage" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+      <Link to="/mypage" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
         <ArrowLeft className="mr-1 h-4 w-4" />
         마이페이지로 돌아가기
       </Link>
@@ -93,7 +89,7 @@ export default function ReviewsPage() {
         <Card className="p-12 text-center">
           <Star className="mx-auto mb-4 h-12 w-12 text-gray-400" />
           <p className="mb-4 text-gray-500">작성한 리뷰가 없습니다.</p>
-          <Link href="/products">
+          <Link to="/products">
             <Button>쇼핑하러 가기</Button>
           </Link>
         </Card>
@@ -103,7 +99,7 @@ export default function ReviewsPage() {
             <Card key={review.id} className="p-6">
               <div className="mb-3 flex items-start justify-between">
                 <div>
-                  <Link href={`/products/${review.productId}`} className="font-bold hover:underline">
+                  <Link to={`/products/${review.productId}`} className="font-bold hover:underline">
                     {review.productName}
                   </Link>
                   <div className="mt-1 flex items-center gap-1">
@@ -121,7 +117,7 @@ export default function ReviewsPage() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Link href={`/mypage/reviews/${review.id}/edit`}>
+                  <Link to={`/mypage/reviews/${review.id}/edit`}>
                     <Button size="sm" variant="outline">
                       <Edit className="h-4 w-4" />
                     </Button>

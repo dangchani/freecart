@@ -1,7 +1,4 @@
-'use client';
-
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { ShoppingCart, User, Menu, Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,7 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 export function Header() {
   const { user } = useAuth();
   const itemCount = useCartStore((state) => state.getItemCount());
-  const router = useRouter();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -20,7 +17,7 @@ export function Header() {
     e.preventDefault();
     const q = searchQuery.trim();
     if (q) {
-      router.push(`/products/search?q=${encodeURIComponent(q)}`);
+      navigate(`/products/search?q=${encodeURIComponent(q)}`);
     }
   }
 
@@ -28,7 +25,7 @@ export function Header() {
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center gap-4">
         {/* 로고 */}
-        <Link href="/" className="flex items-center space-x-2 shrink-0">
+        <Link to="/" className="flex items-center space-x-2 shrink-0">
           <span className="text-xl font-bold">Freecart</span>
         </Link>
 
@@ -56,26 +53,14 @@ export function Header() {
 
         {/* 네비게이션 (데스크탑) */}
         <nav className="hidden md:flex items-center space-x-5 shrink-0">
-          <Link href="/products" className="text-sm font-medium hover:text-primary whitespace-nowrap">
-            상품
-          </Link>
-          <Link href="/categories" className="text-sm font-medium hover:text-primary whitespace-nowrap">
-            카테고리
-          </Link>
-          <Link href="/notices" className="text-sm font-medium hover:text-primary whitespace-nowrap">
-            공지사항
-          </Link>
-          <Link href="/faqs" className="text-sm font-medium hover:text-primary whitespace-nowrap">
-            FAQ
-          </Link>
-          <Link href="/boards/free" className="text-sm font-medium hover:text-primary whitespace-nowrap">
-            커뮤니티
-          </Link>
+          <Link to="/products" className="text-sm font-medium hover:text-primary whitespace-nowrap">상품</Link>
+          <Link to="/notices" className="text-sm font-medium hover:text-primary whitespace-nowrap">공지사항</Link>
+          <Link to="/faqs" className="text-sm font-medium hover:text-primary whitespace-nowrap">FAQ</Link>
+          <Link to="/boards/free" className="text-sm font-medium hover:text-primary whitespace-nowrap">커뮤니티</Link>
         </nav>
 
         {/* 우측 메뉴 */}
         <div className="flex items-center space-x-2 ml-auto md:ml-0 shrink-0">
-          {/* 모바일 검색 버튼 */}
           <Button
             variant="ghost"
             size="icon"
@@ -85,8 +70,7 @@ export function Header() {
             {mobileSearchOpen ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
           </Button>
 
-          {/* 장바구니 */}
-          <Link href="/cart">
+          <Link to="/cart">
             <Button variant="ghost" size="icon" className="relative">
               <ShoppingCart className="h-5 w-5" />
               {itemCount > 0 && (
@@ -97,20 +81,18 @@ export function Header() {
             </Button>
           </Link>
 
-          {/* 사용자 메뉴 */}
           {user ? (
-            <Link href="/mypage">
+            <Link to="/mypage">
               <Button variant="ghost" size="icon">
                 <User className="h-5 w-5" />
               </Button>
             </Link>
           ) : (
-            <Link href="/auth/login" className="hidden sm:block">
+            <Link to="/auth/login" className="hidden sm:block">
               <Button>로그인</Button>
             </Link>
           )}
 
-          {/* 모바일 메뉴 */}
           <Button
             variant="ghost"
             size="icon"
@@ -122,7 +104,6 @@ export function Header() {
         </div>
       </div>
 
-      {/* 모바일 검색창 */}
       {mobileSearchOpen && (
         <div className="md:hidden border-t px-4 py-3 bg-background">
           <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
@@ -134,27 +115,23 @@ export function Header() {
               autoFocus
               className="flex-1 rounded-full border border-gray-300 bg-gray-50 py-2 px-4 text-sm focus:border-blue-500 focus:outline-none"
             />
-            <Button type="submit" size="sm" className="rounded-full px-4">
-              검색
-            </Button>
+            <Button type="submit" size="sm" className="rounded-full px-4">검색</Button>
           </form>
         </div>
       )}
 
-      {/* 모바일 메뉴 */}
       {mobileMenuOpen && (
         <nav className="md:hidden border-t bg-background">
           <div className="container py-3 flex flex-col space-y-1">
             {[
-              { href: '/products', label: '상품' },
-              { href: '/categories', label: '카테고리' },
-              { href: '/notices', label: '공지사항' },
-              { href: '/faqs', label: 'FAQ' },
-              { href: '/boards/free', label: '커뮤니티' },
+              { to: '/products', label: '상품' },
+              { to: '/notices', label: '공지사항' },
+              { to: '/faqs', label: 'FAQ' },
+              { to: '/boards/free', label: '커뮤니티' },
             ].map((item) => (
               <Link
-                key={item.href}
-                href={item.href}
+                key={item.to}
+                to={item.to}
                 className="px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-100"
                 onClick={() => setMobileMenuOpen(false)}
               >
@@ -163,7 +140,7 @@ export function Header() {
             ))}
             {!user && (
               <Link
-                href="/auth/login"
+                to="/auth/login"
                 className="px-3 py-2 text-sm font-medium text-blue-600 rounded-md hover:bg-blue-50"
                 onClick={() => setMobileMenuOpen(false)}
               >

@@ -1,9 +1,6 @@
-'use client';
-export const runtime = 'edge';
-
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
@@ -33,7 +30,7 @@ function generateCode() {
 }
 
 export default function AdminCouponNewPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const { loading: authLoading } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -93,7 +90,7 @@ export default function AdminCouponNewPage() {
       const data = await response.json();
       if (!data.success) throw new Error(data.error);
       alert('쿠폰이 생성되었습니다.');
-      router.push('/admin/coupons');
+      navigate('/admin/coupons');
     } catch (err) {
       setError(err instanceof Error ? err.message : '쿠폰 생성 중 오류가 발생했습니다.');
     } finally {
@@ -106,7 +103,7 @@ export default function AdminCouponNewPage() {
   return (
     <div className="container py-8">
       <Link
-        href="/admin/coupons"
+        to="/admin/coupons"
         className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
       >
         <ArrowLeft className="mr-1 h-4 w-4" />
@@ -291,7 +288,7 @@ export default function AdminCouponNewPage() {
             <Button type="submit" disabled={submitting}>
               {submitting ? '생성 중...' : '쿠폰 생성'}
             </Button>
-            <Link href="/admin/coupons">
+            <Link to="/admin/coupons">
               <Button type="button" variant="outline">취소</Button>
             </Link>
           </div>
