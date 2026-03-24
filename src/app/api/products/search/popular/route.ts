@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+export const runtime = 'edge';
+
 const FALLBACK_POPULAR_KEYWORDS = [
   '신상품',
   '베스트셀러',

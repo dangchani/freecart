@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const adjustPointsSchema = z.object({
   amount: z.number().int(),
   description: z.string().min(1),

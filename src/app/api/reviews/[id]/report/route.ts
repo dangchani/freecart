@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const VALID_REASONS = ['spam', 'inappropriate', 'false_info', 'copyright', 'other'] as const;
 
 const reportSchema = z.object({

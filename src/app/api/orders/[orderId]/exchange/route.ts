@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const exchangeSchema = z.object({
   itemIds: z.array(z.string().uuid()).min(1, '교환할 상품을 선택해 주세요.'),
   reason: z.string().min(1, '교환 사유를 입력해 주세요.'),

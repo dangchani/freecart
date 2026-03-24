@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+export const runtime = 'edge';
+
 const DAY_OF_WEEK_MAP: Record<string, number> = {
   sunday: 0,
   monday: 1,

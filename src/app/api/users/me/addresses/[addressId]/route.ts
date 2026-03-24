@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const updateAddressSchema = z.object({
   name: z.string().min(1, '배송지 이름을 입력해 주세요.').optional(),
   recipient_name: z.string().min(2, '수령인 이름을 입력해 주세요.').optional(),

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const createUserLevelSchema = z.object({
   name: z.string().min(1).max(50),
   description: z.string().optional().nullable(),

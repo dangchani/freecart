@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+export const runtime = 'edge';
+
 const DAILY_POINTS = 10;
 const CONSECUTIVE_BONUS: Record<number, number> = {
   5: 50,

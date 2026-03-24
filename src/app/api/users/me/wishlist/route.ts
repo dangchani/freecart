@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const addWishlistSchema = z.object({
   product_id: z.string().uuid('올바른 상품 ID 형식이 아닙니다.'),
 });

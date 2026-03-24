@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const createPaymentSchema = z.object({
   orderId: z.string().uuid(),
   amount: z.number().positive(),

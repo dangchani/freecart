@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const createAdminSchema = z.object({
   email: z.string().email(),
   name: z.string().min(1).max(100),

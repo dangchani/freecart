@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const selectionSchema = z.object({
   itemIds: z.array(z.string().uuid()).min(1, '선택할 항목을 입력해주세요.'),
   selected: z.boolean(),

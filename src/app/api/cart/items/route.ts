@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const bulkDeleteSchema = z.object({
   itemIds: z.array(z.string().uuid()).min(1, '삭제할 항목을 선택해주세요.'),
 });

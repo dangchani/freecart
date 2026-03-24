@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const taxInvoiceSchema = z.object({
   businessNumber: z.string().min(1, '사업자등록번호를 입력해 주세요.'),
   companyName: z.string().min(1, '상호명을 입력해 주세요.'),

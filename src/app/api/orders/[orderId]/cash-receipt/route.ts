@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const cashReceiptSchema = z.object({
   type: z.enum(['income_deduction', 'expense_proof'], {
     errorMap: () => ({ message: '현금영수증 유형이 올바르지 않습니다.' }),

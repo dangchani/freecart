@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+export const runtime = 'edge';
+
 function maskIdentifier(identifier: string, identifierType: string): string {
   const clean = identifier.replace(/[^0-9]/g, '');
   if (identifierType === 'phone') {

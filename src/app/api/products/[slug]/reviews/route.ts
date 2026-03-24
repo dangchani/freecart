@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
+export const runtime = 'edge';
+
 type SortOption = 'latest' | 'rating_high' | 'rating_low' | 'helpful';
 
 function maskEmail(email: string): string {

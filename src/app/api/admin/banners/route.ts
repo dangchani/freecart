@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const createBannerSchema = z.object({
   name: z.string().min(1),
   imageUrl: z.string().url(),

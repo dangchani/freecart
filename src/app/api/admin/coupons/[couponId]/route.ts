@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const updateCouponSchema = z.object({
   name: z.string().min(1).optional(),
   description: z.string().optional(),

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1, '현재 비밀번호를 입력해 주세요.'),

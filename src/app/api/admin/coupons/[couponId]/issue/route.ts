@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const issueSchema = z.union([
   z.object({ userIds: z.array(z.string().uuid()).min(1), all: z.undefined().optional() }),
   z.object({ all: z.literal(true), userIds: z.undefined().optional() }),

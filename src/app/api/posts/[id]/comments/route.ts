@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const createCommentSchema = z.object({
   content: z.string().min(1),
   parentId: z.string().uuid().optional(),

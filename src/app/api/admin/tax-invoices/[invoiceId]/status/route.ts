@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const updateStatusSchema = z.object({
   status: z.enum(['issued', 'cancelled'], {
     errorMap: () => ({ message: '유효한 상태값을 입력해 주세요. (issued | cancelled)' }),

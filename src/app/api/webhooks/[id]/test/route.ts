@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 import crypto from 'crypto';
 
+export const runtime = 'edge';
+
 const VALID_EVENTS = [
   'order.created',
   'order.paid',

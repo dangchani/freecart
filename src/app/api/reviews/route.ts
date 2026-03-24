@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const createReviewSchema = z.object({
   productId: z.string().uuid(),
   rating: z.number().int().min(1).max(5),

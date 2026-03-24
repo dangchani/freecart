@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const SUPPORTED_PROVIDERS = ['kakao', 'naver', 'google'] as const;
 type SocialProvider = (typeof SUPPORTED_PROVIDERS)[number];
 

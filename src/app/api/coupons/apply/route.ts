@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const applySchema = z.object({
   couponId: z.string().uuid('유효한 쿠폰 ID를 입력해 주세요.'),
   orderAmount: z.number().positive('주문 금액이 올바르지 않습니다.'),

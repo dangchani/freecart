@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 import crypto from 'crypto';
 
+export const runtime = 'edge';
+
 const lookupSchema = z.object({
   orderNumber: z.string().min(1, '주문번호를 입력해 주세요.'),
   password: z.string().min(1, '비밀번호를 입력해 주세요.'),

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const MAX_RECENTLY_VIEWED = 20;
 
 const addRecentlyViewedSchema = z.object({

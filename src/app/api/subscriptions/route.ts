@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const DISCOUNT_RATES: Record<string, number> = {
   weekly: 0.05,
   biweekly: 0.03,

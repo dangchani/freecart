@@ -4,6 +4,8 @@ import { writeFileSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
 
+export const runtime = 'edge';
+
 export async function POST(request: NextRequest) {
   const { supabaseUrl, supabaseAnonKey, supabaseServiceRoleKey } = await request.json();
 

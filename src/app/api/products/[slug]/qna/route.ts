@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
+export const runtime = 'edge';
+
 const createQnaSchema = z.object({
   question: z.string().min(1, '질문 내용을 입력해주세요.').max(1000),
   is_secret: z.boolean().default(false),
