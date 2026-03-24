@@ -1871,9 +1871,12 @@ ALTER TABLE inquiries              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_subscriptions     ENABLE ROW LEVEL SECURITY;
 
--- users: users can read/update their own record
+-- users: users can read/update/insert their own record
 CREATE POLICY "users_select_own" ON users
   FOR SELECT USING (auth.uid()::text = id::text);
+
+CREATE POLICY "users_insert_own" ON users
+  FOR INSERT WITH CHECK (auth.uid()::text = id::text);
 
 CREATE POLICY "users_update_own" ON users
   FOR UPDATE USING (auth.uid()::text = id::text);
@@ -1970,6 +1973,53 @@ CREATE POLICY "notifications_update_own" ON notifications
 -- user_subscriptions: users manage their own subscriptions
 CREATE POLICY "user_subscriptions_own" ON user_subscriptions
   FOR ALL USING (auth.uid()::text = user_id::text);
+
+-- =============================================================================
+-- AUTO CREATE USER PROFILE ON SIGNUP (Supabase Auth Trigger)
+-- =============================================================================
+
+-- Function: 회원가입 시 자동으로 public.users에 프로필 생성
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+DECLARE
+  default_level_id UUID;
+BEGIN
+  -- 기본 회원 등급 조회 (is_default = true)
+  SELECT id INTO default_level_id FROM public.user_levels WHERE is_default = true LIMIT 1;
+
+  -- 기본 등급이 없으면 첫 번째 등급 사용
+  IF default_level_id IS NULL THEN
+    SELECT id INTO default_level_id FROM public.user_levels ORDER BY level ASC LIMIT 1;
+  END IF;
+
+  -- public.users에 새 레코드 생성
+  INSERT INTO public.users (
+    id,
+    email,
+    name,
+    level_id,
+    role,
+    created_at,
+    updated_at
+  ) VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'name', split_part(NEW.email, '@', 1)),
+    default_level_id,
+    COALESCE(NEW.raw_user_meta_data->>'role', 'user'),
+    NOW(),
+    NOW()
+  );
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger: auth.users에 새 유저 생성 시 실행
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- =============================================================================
 -- END OF SCHEMA

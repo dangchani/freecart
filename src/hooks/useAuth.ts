@@ -34,23 +34,34 @@ export function useAuth() {
   }, []);
 
   async function loadUserProfile(userId: string) {
-    const { data: profile } = await supabase
-      .from('profiles')
+    const { data: profile, error } = await supabase
+      .from('users')
       .select('*')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
 
-    if (profile) {
-      setUser({
-        id: profile.id,
-        email: profile.email,
-        name: profile.name,
-        phone: profile.phone,
-        role: profile.role,
-        createdAt: profile.created_at,
-        updatedAt: profile.updated_at,
-      });
+    if (error) {
+      console.error('[useAuth] Failed to load user profile:', error.message);
+      setLoading(false);
+      return;
     }
+
+    // 프로필이 없으면 (DB trigger가 아직 실행 안됐거나 기존 유저)
+    if (!profile) {
+      console.warn('[useAuth] Profile not found. DB trigger may not be installed.');
+      setLoading(false);
+      return;
+    }
+
+    setUser({
+      id: profile.id,
+      email: profile.email,
+      name: profile.name,
+      phone: profile.phone,
+      role: profile.role,
+      createdAt: profile.created_at,
+      updatedAt: profile.updated_at,
+    });
     setLoading(false);
   }
 
