@@ -19,6 +19,8 @@ import {
   BarChart2,
   Repeat,
   CreditCard,
+  Palette,
+  Layers,
 } from 'lucide-react';
 
 const navItems = [
@@ -36,6 +38,8 @@ const navItems = [
   { href: '/admin/boards', label: '게시판 관리', icon: BookOpen },
   { href: '/admin/notices', label: '공지사항', icon: Bell },
   { href: '/admin/banners', label: '배너/팝업', icon: Image },
+  { href: '/admin/themes', label: '테마 관리', icon: Palette },
+  { href: '/admin/skins', label: '스킨 관리', icon: Layers },
   { href: '/admin/settings', label: '설정', icon: Settings },
   { href: '/admin/statistics', label: '통계', icon: BarChart2 },
   { href: '/admin/subscriptions', label: '정기배송', icon: Repeat },

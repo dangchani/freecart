@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Outlet, Navigate } from 'react-router-dom';
 import { Header } from './components/header';
 import { Footer } from './components/footer';
+import { ThemeProvider } from './components/theme-provider';
 import { useAuth } from './hooks/useAuth';
 
 // Pages
@@ -81,6 +82,7 @@ import AdminRefundsPage from './app/admin/refunds/page';
 import AdminSettingsPage from './app/admin/settings/page';
 import AdminStatisticsPage from './app/admin/statistics/page';
 import AdminThemesPage from './app/admin/themes/page';
+import AdminLayoutEditorPage from './app/admin/themes/layout-editor/page';
 import AdminSkinsPage from './app/admin/skins/page';
 import AdminMenusPage from './app/admin/menus/page';
 import AdminTermsPage from './app/admin/terms/page';
@@ -118,6 +120,7 @@ function RequireAdmin() {
 export default function App() {
   return (
     <BrowserRouter>
+      <ThemeProvider>
       <Routes>
         {/* 설정 페이지 */}
         <Route path="/setup" element={<SetupPage />} />
@@ -206,6 +209,7 @@ export default function App() {
             <Route path="/admin/settings" element={<AdminSettingsPage />} />
             <Route path="/admin/statistics" element={<AdminStatisticsPage />} />
             <Route path="/admin/themes" element={<AdminThemesPage />} />
+            <Route path="/admin/themes/layout-editor" element={<AdminLayoutEditorPage />} />
             <Route path="/admin/skins" element={<AdminSkinsPage />} />
             <Route path="/admin/menus" element={<AdminMenusPage />} />
             <Route path="/admin/terms" element={<AdminTermsPage />} />
@@ -215,6 +219,7 @@ export default function App() {
           </Route>
         </Route>
       </Routes>
+      </ThemeProvider>
     </BrowserRouter>
   );
 }

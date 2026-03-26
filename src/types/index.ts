@@ -281,17 +281,416 @@ export interface ProductQNA {
   user?: Pick<User, 'id' | 'name'>;
 }
 
-// 알림 설정 타입
+// 알림 설정 타입 (DB 스키마와 일치)
 export interface NotificationSettings {
   id: string;
   userId: string;
   emailOrder: boolean;
-  emailPromotion: boolean;
-  emailReview: boolean;
+  emailShipping: boolean;
+  emailMarketing: boolean;
   smsOrder: boolean;
-  smsPromotion: boolean;
-  pushOrder: boolean;
-  pushPromotion: boolean;
+  smsShipping: boolean;
+  smsMarketing: boolean;
+  pushEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// =============================================================================
+// 회원 등급 시스템
+// =============================================================================
+export interface UserLevel {
+  id: string;
+  level: number;
+  name: string;
+  discountRate: number;
+  pointRate: number;
+  minPurchaseAmount: number;
+  minPurchaseCount: number;
+  description?: string;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// =============================================================================
+// 배송지 관리
+// =============================================================================
+export interface UserAddress {
+  id: string;
+  userId: string;
+  name: string;
+  recipientName: string;
+  recipientPhone: string;
+  postalCode: string;
+  address1: string;
+  address2?: string;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// =============================================================================
+// 포인트/예치금 내역
+// =============================================================================
+export interface PointHistory {
+  id: string;
+  userId: string;
+  amount: number;
+  balance: number;
+  type: 'earn' | 'use' | 'expire' | 'admin';
+  description: string;
+  referenceType?: string;
+  referenceId?: string;
+  expiresAt?: string;
+  createdAt: string;
+}
+
+export interface DepositHistory {
+  id: string;
+  userId: string;
+  amount: number;
+  balance: number;
+  type: 'charge' | 'use' | 'refund' | 'admin';
+  description: string;
+  referenceType?: string;
+  referenceId?: string;
+  createdAt: string;
+}
+
+// =============================================================================
+// 출석 체크
+// =============================================================================
+export interface UserAttendance {
+  id: string;
+  userId: string;
+  attendedDate: string;
+  pointsEarned: number;
+  createdAt: string;
+}
+
+// =============================================================================
+// 브랜드
+// =============================================================================
+export interface Brand {
+  id: string;
+  name: string;
+  slug: string;
+  logoUrl?: string;
+  description?: string;
+  isVisible: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// =============================================================================
+// 리뷰 이미지/동영상
+// =============================================================================
+export interface ReviewImage {
+  id: string;
+  reviewId: string;
+  url: string;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface ReviewVideo {
+  id: string;
+  reviewId: string;
+  url: string;
+  thumbnailUrl?: string;
+  createdAt: string;
+}
+
+// =============================================================================
+// 배송 관련
+// =============================================================================
+export interface ShippingCompany {
+  id: string;
+  name: string;
+  code: string;
+  trackingUrl?: string;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+}
+
+export interface Shipment {
+  id: string;
+  orderId: string;
+  shippingCompanyId?: string;
+  shippingCompany?: ShippingCompany;
+  trackingNumber?: string;
+  status: 'pending' | 'shipped' | 'in_transit' | 'delivered';
+  shippedAt?: string;
+  deliveredAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// =============================================================================
+// 반품/교환/환불
+// =============================================================================
+export interface Return {
+  id: string;
+  orderId: string;
+  userId: string;
+  itemIds: string[];
+  reason: string;
+  description?: string;
+  status: 'pending' | 'approved' | 'rejected' | 'completed';
+  adminMemo?: string;
+  createdAt: string;
+}
+
+export interface Exchange {
+  id: string;
+  orderId: string;
+  userId: string;
+  itemIds: string[];
+  reason: string;
+  exchangeVariantId?: string;
+  status: 'pending' | 'approved' | 'rejected' | 'completed';
+  adminMemo?: string;
+  createdAt: string;
+}
+
+export interface Refund {
+  id: string;
+  orderId: string;
+  orderItemId?: string;
+  paymentId?: string;
+  userId: string;
+  type: 'cancel' | 'return' | 'partial';
+  amount: number;
+  pointsReturned: number;
+  depositReturned: number;
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected' | 'completed';
+  pgTid?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  processedAt?: string;
+  completedAt?: string;
+  rejectedReason?: string;
+  adminMemo?: string;
+  createdAt: string;
+}
+
+// =============================================================================
+// 결제
+// =============================================================================
+export interface Payment {
+  id: string;
+  orderId: string;
+  pgProvider: string;
+  method: string;
+  amount: number;
+  status: 'pending' | 'paid' | 'failed' | 'cancelled';
+  pgTid?: string;
+  paymentKey?: string;
+  receiptUrl?: string;
+  cardCompany?: string;
+  cardNumber?: string;
+  installmentMonths?: number;
+  vbankName?: string;
+  vbankNumber?: string;
+  vbankHolder?: string;
+  vbankExpiresAt?: string;
+  paidAt?: string;
+  failedAt?: string;
+  failReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// =============================================================================
+// 공지사항 / FAQ / 1:1 문의
+// =============================================================================
+export interface Notice {
+  id: string;
+  title: string;
+  content: string;
+  isPinned: boolean;
+  viewCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FAQ {
+  id: string;
+  category: string;
+  question: string;
+  answer: string;
+  sortOrder: number;
+  isVisible: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Inquiry {
+  id: string;
+  userId: string;
+  orderId?: string;
+  category: string;
+  title: string;
+  content: string;
+  status: 'pending' | 'answered' | 'closed';
+  answer?: string;
+  answeredBy?: string;
+  answeredAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  user?: Pick<User, 'id' | 'name'>;
+}
+
+// =============================================================================
+// 배너 / 팝업 / 이벤트
+// =============================================================================
+export interface Banner {
+  id: string;
+  name: string;
+  position: string;
+  title?: string;
+  subtitle?: string;
+  imageUrl: string;
+  mobileImageUrl?: string;
+  linkUrl?: string;
+  linkTarget: '_self' | '_blank';
+  sortOrder: number;
+  startsAt?: string;
+  endsAt?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Popup {
+  id: string;
+  name: string;
+  content?: string;
+  imageUrl?: string;
+  linkUrl?: string;
+  position: 'center' | 'left' | 'right';
+  width: number;
+  height?: number;
+  startsAt: string;
+  endsAt: string;
+  isActive: boolean;
+  showTodayClose: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Event {
+  id: string;
+  title: string;
+  slug: string;
+  summary?: string;
+  content: string;
+  thumbnailUrl?: string;
+  startAt: string;
+  endAt: string;
+  isActive: boolean;
+  viewCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// =============================================================================
+// 정기배송 구독
+// =============================================================================
+export interface Subscription {
+  id: string;
+  userId: string;
+  productId: string;
+  variantId?: string;
+  quantity: number;
+  cycle: 'weekly' | 'biweekly' | 'monthly';
+  intervalCount: number;
+  deliveryDay?: number;
+  nextDeliveryDate: string;
+  pricePerDelivery: number;
+  discountRate?: number;
+  status: 'active' | 'paused' | 'cancelled';
+  deliveryCount: number;
+  shippingAddressId?: string;
+  paymentMethodId?: string;
+  pauseUntil?: string;
+  pausedAt?: string;
+  cancelledAt?: string;
+  cancelReason?: string;
+  createdAt: string;
+  updatedAt: string;
+  product?: Product;
+}
+
+export interface SubscriptionDelivery {
+  id: string;
+  subscriptionId: string;
+  deliveryNumber: number;
+  scheduledDate: string;
+  deliveredDate?: string;
+  orderId?: string;
+  status: 'scheduled' | 'processing' | 'delivered' | 'skipped' | 'failed';
+  skipReason?: string;
+  failureReason?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// =============================================================================
+// 알림
+// =============================================================================
+export interface Notification {
+  id: string;
+  userId: string;
+  type: string;
+  title: string;
+  content: string;
+  linkUrl?: string;
+  isRead: boolean;
+  readAt?: string;
+  createdAt: string;
+}
+
+// =============================================================================
+// 검색
+// =============================================================================
+export interface SearchKeyword {
+  id: string;
+  keyword: string;
+  count: number;
+  searchCount: number;
+  lastSearchedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// =============================================================================
+// 설정
+// =============================================================================
+export interface Setting {
+  id: string;
+  key: string;
+  value: string;
+  description?: string;
+  updatedAt: string;
+}
+
+// =============================================================================
+// 메뉴
+// =============================================================================
+export interface Menu {
+  id: string;
+  parentId?: string;
+  position: 'header' | 'footer' | 'sidebar';
+  name: string;
+  url?: string;
+  sortOrder: number;
+  isVisible: boolean;
+  target: '_self' | '_blank';
+  children?: Menu[];
   createdAt: string;
   updatedAt: string;
 }

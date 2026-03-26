@@ -1615,8 +1615,15 @@ CREATE TABLE IF NOT EXISTS installed_themes (
   theme_slug      VARCHAR(100),
   name            VARCHAR(100) NOT NULL,
   version         VARCHAR(20) NOT NULL,
+  description     TEXT,
   source          VARCHAR(20) NOT NULL DEFAULT 'builtin',
   license_key     VARCHAR(255),
+  -- Supabase Storage URLs
+  css_url         VARCHAR(500),
+  thumbnail_url   VARCHAR(500),
+  -- Theme configuration (colors, layout, etc.)
+  config          JSONB DEFAULT '{}',
+  -- Legacy fields
   file_path       VARCHAR(500),
   commit_sha      VARCHAR(40),
   deployment_id   VARCHAR(100),

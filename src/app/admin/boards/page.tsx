@@ -4,13 +4,21 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Edit, ChevronDown, ChevronUp, Tag, Settings } from 'lucide-react';
+import { Plus, Trash2, Edit, ChevronDown, ChevronUp, Tag, Settings, Paintbrush } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
 interface BoardCategory {
   id: string;
   name: string;
   sortOrder: number;
+}
+
+interface Skin {
+  id: string;
+  name: string;
+  slug: string;
+  type: string;
+  thumbnail_url?: string;
 }
 
 interface Board {
@@ -31,6 +39,8 @@ interface Board {
   isActive: boolean;
   postCount: number;
   categories: BoardCategory[];
+  listSkinId?: string;
+  viewSkinId?: string;
 }
 
 const LEVEL_OPTIONS = [
@@ -64,6 +74,8 @@ const defaultForm = {
   useAttachment: true,
   sortOrder: 0,
   isActive: true,
+  listSkinId: '',
+  viewSkinId: '',
 };
 
 export default function BoardsManagementPage() {
@@ -76,10 +88,34 @@ export default function BoardsManagementPage() {
   const [expandedBoard, setExpandedBoard] = useState<string | null>(null);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [addingCategory, setAddingCategory] = useState(false);
+  const [listSkins, setListSkins] = useState<Skin[]>([]);
+  const [viewSkins, setViewSkins] = useState<Skin[]>([]);
 
   useEffect(() => {
     loadBoards();
+    loadSkins();
   }, []);
+
+  async function loadSkins() {
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('skins')
+        .select('id, name, slug, type, thumbnail_url')
+        .eq('is_active', true)
+        .in('type', ['board_list', 'board_view'])
+        .order('name');
+
+      if (error) throw error;
+
+      const listType = (data || []).filter((s) => s.type === 'board_list');
+      const viewType = (data || []).filter((s) => s.type === 'board_view');
+      setListSkins(listType);
+      setViewSkins(viewType);
+    } catch (error) {
+      console.error('Failed to load skins:', error);
+    }
+  }
 
   async function loadBoards() {
     try {
@@ -91,7 +127,8 @@ export default function BoardsManagementPage() {
           list_level, read_level, write_level, comment_level,
           use_category, use_comment, use_secret, use_attachment,
           sort_order, is_active,
-          board_categories(id, name, sort_order)
+          board_categories(id, name, sort_order),
+          board_skin_settings(list_skin_id, view_skin_id)
         `)
         .order('sort_order', { ascending: true });
 
@@ -103,6 +140,8 @@ export default function BoardsManagementPage() {
           .from('posts')
           .select('id', { count: 'exact', head: true })
           .eq('board_id', board.id);
+
+        const skinSettings = board.board_skin_settings?.[0];
 
         boardList.push({
           id: board.id,
@@ -126,6 +165,8 @@ export default function BoardsManagementPage() {
             name: c.name,
             sortOrder: c.sort_order,
           })),
+          listSkinId: skinSettings?.list_skin_id || undefined,
+          viewSkinId: skinSettings?.view_skin_id || undefined,
         });
       }
 
@@ -154,6 +195,8 @@ export default function BoardsManagementPage() {
       useAttachment: board.useAttachment,
       sortOrder: board.sortOrder,
       isActive: board.isActive,
+      listSkinId: board.listSkinId || '',
+      viewSkinId: board.viewSkinId || '',
     });
     setShowForm(true);
     setExpandedBoard(null);
@@ -187,12 +230,39 @@ export default function BoardsManagementPage() {
         is_active: formData.isActive,
       };
 
+      let boardId: string;
+
       if (editingBoard) {
         const { error } = await supabase.from('boards').update(payload).eq('id', editingBoard.id);
         if (error) throw error;
+        boardId = editingBoard.id;
       } else {
-        const { error } = await supabase.from('boards').insert({ ...payload, slug: formData.slug });
+        const { data, error } = await supabase.from('boards').insert({ ...payload, slug: formData.slug }).select('id').single();
         if (error) throw error;
+        boardId = data.id;
+      }
+
+      // 스킨 설정 저장
+      const skinPayload = {
+        board_id: boardId,
+        list_skin_id: formData.listSkinId || null,
+        view_skin_id: formData.viewSkinId || null,
+      };
+
+      // 기존 스킨 설정이 있는지 확인
+      const { data: existingSkin } = await supabase
+        .from('board_skin_settings')
+        .select('id')
+        .eq('board_id', boardId)
+        .single();
+
+      if (existingSkin) {
+        await supabase
+          .from('board_skin_settings')
+          .update({ list_skin_id: skinPayload.list_skin_id, view_skin_id: skinPayload.view_skin_id })
+          .eq('board_id', boardId);
+      } else if (skinPayload.list_skin_id || skinPayload.view_skin_id) {
+        await supabase.from('board_skin_settings').insert(skinPayload);
       }
 
       handleCancel();
@@ -400,6 +470,47 @@ export default function BoardsManagementPage() {
               </div>
             </div>
 
+            {/* 스킨 설정 */}
+            <div className="rounded-lg border bg-gray-50 p-4">
+              <h3 className="mb-3 text-sm font-semibold text-gray-700 flex items-center gap-1">
+                <Paintbrush className="h-4 w-4" /> 스킨 설정
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-xs">목록 스킨</Label>
+                  <select
+                    value={formData.listSkinId}
+                    onChange={(e) => setFormData({ ...formData, listSkinId: e.target.value })}
+                    className="mt-1 w-full rounded-md border px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">기본 스킨</option>
+                    {listSkins.map((skin) => (
+                      <option key={skin.id} value={skin.id}>{skin.name}</option>
+                    ))}
+                  </select>
+                  {listSkins.length === 0 && (
+                    <p className="mt-1 text-xs text-gray-400">등록된 목록 스킨이 없습니다.</p>
+                  )}
+                </div>
+                <div>
+                  <Label className="text-xs">상세 스킨</Label>
+                  <select
+                    value={formData.viewSkinId}
+                    onChange={(e) => setFormData({ ...formData, viewSkinId: e.target.value })}
+                    className="mt-1 w-full rounded-md border px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">기본 스킨</option>
+                    {viewSkins.map((skin) => (
+                      <option key={skin.id} value={skin.id}>{skin.name}</option>
+                    ))}
+                  </select>
+                  {viewSkins.length === 0 && (
+                    <p className="mt-1 text-xs text-gray-400">등록된 상세 스킨이 없습니다.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div className="flex gap-2">
               <Button type="submit" disabled={submitting}>
                 {submitting ? '저장 중...' : '저장'}
@@ -503,6 +614,31 @@ export default function BoardsManagementPage() {
                       >
                         {board.isActive ? '● 활성' : '○ 비활성'} (클릭하여 전환)
                       </button>
+                    </div>
+                  </div>
+
+                  {/* 스킨 정보 */}
+                  <div>
+                    <h4 className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
+                      <Paintbrush className="h-3.5 w-3.5" /> 스킨 설정
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded bg-white border px-3 py-2 text-xs">
+                        <span className="text-gray-500">목록 스킨: </span>
+                        <span className="font-medium">
+                          {board.listSkinId
+                            ? listSkins.find((s) => s.id === board.listSkinId)?.name || '알 수 없음'
+                            : '기본'}
+                        </span>
+                      </div>
+                      <div className="rounded bg-white border px-3 py-2 text-xs">
+                        <span className="text-gray-500">상세 스킨: </span>
+                        <span className="font-medium">
+                          {board.viewSkinId
+                            ? viewSkins.find((s) => s.id === board.viewSkinId)?.name || '알 수 없음'
+                            : '기본'}
+                        </span>
+                      </div>
                     </div>
                   </div>
 

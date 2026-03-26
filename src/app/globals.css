@@ -24,6 +24,13 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 222.2 84% 4.9%;
     --radius: 0.5rem;
+
+    /* 테마 커스터마이징 변수 */
+    --theme-primary: #3B82F6;
+    --theme-secondary: #10B981;
+    --theme-bg: #FFFFFF;
+    --theme-text: #1F2937;
+    --theme-font: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
 
   .dark {
@@ -55,5 +62,51 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--theme-font);
   }
+}
+
+/* 테마 레이아웃 스타일 */
+.layout-boxed {
+  max-width: 1400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.header-fixed header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+}
+
+.header-fixed main {
+  padding-top: 64px; /* 헤더 높이만큼 */
+}
+
+/* 테마 로딩 상태 */
+.theme-loading {
+  opacity: 0.95;
+}
+
+/* 테마 색상 유틸리티 클래스 */
+.text-theme-primary {
+  color: var(--theme-primary);
+}
+
+.bg-theme-primary {
+  background-color: var(--theme-primary);
+}
+
+.text-theme-secondary {
+  color: var(--theme-secondary);
+}
+
+.bg-theme-secondary {
+  background-color: var(--theme-secondary);
+}
+
+.border-theme-primary {
+  border-color: var(--theme-primary);
 }
