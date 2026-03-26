@@ -6,8 +6,21 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, RotateCcw, RefreshCw, Truck, ExternalLink, Package, CheckCircle2, Clock } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+
+interface ShipmentInfo {
+  id: string;
+  trackingNumber: string | null;
+  status: string;
+  shippedAt: string | null;
+  deliveredAt: string | null;
+  shippingCompany: {
+    name: string;
+    code: string;
+    trackingUrl: string | null;
+  } | null;
+}
 
 interface OrderDetail {
   id: string;
@@ -26,6 +39,7 @@ interface OrderDetail {
     quantity: number;
     price: number;
   }>;
+  shipment?: ShipmentInfo;
 }
 
 const statusLabels: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
@@ -75,6 +89,35 @@ export default function OrderDetailPage() {
         return;
       }
 
+      // 배송 정보 조회
+      const { data: shipmentData } = await supabase
+        .from('shipments')
+        .select(`
+          id, tracking_number, status, shipped_at, delivered_at,
+          shipping_companies(name, code, tracking_url)
+        `)
+        .eq('order_id', data.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      let shipment: ShipmentInfo | undefined;
+      if (shipmentData) {
+        const company = shipmentData.shipping_companies as any;
+        shipment = {
+          id: shipmentData.id,
+          trackingNumber: shipmentData.tracking_number,
+          status: shipmentData.status,
+          shippedAt: shipmentData.shipped_at,
+          deliveredAt: shipmentData.delivered_at,
+          shippingCompany: company ? {
+            name: company.name,
+            code: company.code,
+            trackingUrl: company.tracking_url,
+          } : null,
+        };
+      }
+
       setOrder({
         id: data.id,
         orderNumber: data.order_number,
@@ -92,6 +135,7 @@ export default function OrderDetailPage() {
           quantity: i.quantity,
           price: i.unit_price,
         })),
+        shipment,
       });
     } catch (error) {
       console.error('Failed to load order:', error);
@@ -136,6 +180,8 @@ export default function OrderDetailPage() {
 
   const statusInfo = statusLabels[order.status] || { label: order.status, variant: 'default' as const };
   const canCancel = order.status === 'pending' || order.status === 'paid';
+  const canReturn = order.status === 'delivered';
+  const canExchange = order.status === 'delivered';
   const subtotal = order.totalAmount - order.shippingCost;
 
   return (
@@ -153,11 +199,29 @@ export default function OrderDetailPage() {
             <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
           </div>
         </div>
-        {canCancel && (
-          <Button variant="destructive" onClick={handleCancelOrder}>
-            주문 취소
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {canCancel && (
+            <Button variant="destructive" onClick={handleCancelOrder}>
+              주문 취소
+            </Button>
+          )}
+          {canReturn && (
+            <Button variant="outline" asChild>
+              <Link to={`/mypage/orders/${order.orderNumber}/return`}>
+                <RotateCcw className="mr-1.5 h-4 w-4" />
+                반품 신청
+              </Link>
+            </Button>
+          )}
+          {canExchange && (
+            <Button variant="outline" asChild>
+              <Link to={`/mypage/orders/${order.orderNumber}/exchange`}>
+                <RefreshCw className="mr-1.5 h-4 w-4" />
+                교환 신청
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -179,6 +243,88 @@ export default function OrderDetailPage() {
               ))}
             </div>
           </Card>
+
+          {/* 배송 추적 */}
+          {(order.status === 'shipping' || order.status === 'delivered' || order.shipment) && (
+            <Card className="p-6">
+              <h2 className="mb-4 flex items-center gap-2 text-xl font-bold">
+                <Truck className="h-5 w-5" />
+                배송 정보
+              </h2>
+
+              {order.shipment ? (
+                <div className="space-y-4">
+                  {/* 배송 상태 타임라인 */}
+                  <div className="flex items-center justify-between rounded-lg bg-gray-50 p-4">
+                    <div className="flex items-center gap-3">
+                      {order.shipment.status === 'delivered' ? (
+                        <CheckCircle2 className="h-8 w-8 text-green-500" />
+                      ) : order.shipment.status === 'shipping' ? (
+                        <Truck className="h-8 w-8 text-blue-500" />
+                      ) : (
+                        <Package className="h-8 w-8 text-gray-400" />
+                      )}
+                      <div>
+                        <p className="font-semibold">
+                          {order.shipment.status === 'delivered' && '배송 완료'}
+                          {order.shipment.status === 'shipping' && '배송 중'}
+                          {order.shipment.status === 'pending' && '배송 준비 중'}
+                        </p>
+                        {order.shipment.deliveredAt && (
+                          <p className="text-sm text-gray-500">
+                            {format(new Date(order.shipment.deliveredAt), 'yyyy-MM-dd HH:mm')} 배송 완료
+                          </p>
+                        )}
+                        {order.shipment.shippedAt && !order.shipment.deliveredAt && (
+                          <p className="text-sm text-gray-500">
+                            {format(new Date(order.shipment.shippedAt), 'yyyy-MM-dd HH:mm')} 출고
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 배송사 정보 */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">배송사</span>
+                      <span className="font-medium">{order.shipment.shippingCompany?.name || '-'}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">운송장 번호</span>
+                      <span className="font-medium font-mono">{order.shipment.trackingNumber || '-'}</span>
+                    </div>
+                  </div>
+
+                  {/* 배송 추적 버튼 */}
+                  {order.shipment.trackingNumber && order.shipment.shippingCompany?.trackingUrl && (
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        const url = order.shipment!.shippingCompany!.trackingUrl!.replace(
+                          '{tracking_number}',
+                          order.shipment!.trackingNumber!
+                        );
+                        window.open(url, '_blank');
+                      }}
+                    >
+                      <ExternalLink className="mr-1.5 h-4 w-4" />
+                      배송 추적하기
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 rounded-lg bg-gray-50 p-4">
+                  <Clock className="h-6 w-6 text-gray-400" />
+                  <div>
+                    <p className="font-medium text-gray-700">배송 준비 중</p>
+                    <p className="text-sm text-gray-500">운송장 번호가 등록되면 배송 추적이 가능합니다.</p>
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
 
           {/* 배송지 정보 */}
           <Card className="p-6">

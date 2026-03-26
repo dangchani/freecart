@@ -67,6 +67,10 @@ export async function createOrder(
     address1: string;
     address2?: string;
     shippingMessage?: string;
+    // 쿠폰/포인트 정보 추가
+    couponId?: string;
+    couponDiscount?: number;
+    pointsUsed?: number;
   },
   paymentMethod: string
 ): Promise<Order> {
@@ -74,7 +78,9 @@ export async function createOrder(
 
   const subtotal = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
   const shippingFee = subtotal >= 50000 ? 0 : 3000;
-  const totalAmount = subtotal + shippingFee;
+  const couponDiscount = shippingInfo.couponDiscount || 0;
+  const pointsUsed = shippingInfo.pointsUsed || 0;
+  const totalAmount = subtotal + shippingFee - couponDiscount - pointsUsed;
 
   const { data: order, error: orderError } = await supabase
     .from('orders')
@@ -84,8 +90,9 @@ export async function createOrder(
       subtotal,
       shipping_fee: shippingFee,
       discount_amount: 0,
-      coupon_discount: 0,
-      used_points: 0,
+      coupon_id: shippingInfo.couponId || null,
+      coupon_discount: couponDiscount,
+      used_points: pointsUsed,
       used_deposit: 0,
       total_amount: totalAmount,
       orderer_name: shippingInfo.ordererName,

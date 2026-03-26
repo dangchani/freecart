@@ -33,6 +33,8 @@ import MypagePage from './app/mypage/page';
 import MypageProfilePage from './app/mypage/profile/page';
 import MypageOrdersPage from './app/mypage/orders/page';
 import MypageOrderDetailPage from './app/mypage/orders/[orderNumber]/page';
+import MypageReturnRequestPage from './app/mypage/orders/[orderNumber]/return/page';
+import MypageExchangeRequestPage from './app/mypage/orders/[orderNumber]/exchange/page';
 import MypageAddressesPage from './app/mypage/addresses/page';
 import MypagePointsPage from './app/mypage/points/page';
 import MypageCouponsPage from './app/mypage/coupons/page';
@@ -74,6 +76,7 @@ import AdminReviewsPage from './app/admin/reviews/page';
 import AdminCouponsPage from './app/admin/coupons/page';
 import AdminBoardsPage from './app/admin/boards/page';
 import AdminNoticesPage from './app/admin/notices/page';
+import AdminFAQsPage from './app/admin/faqs/page';
 import AdminBannersPage from './app/admin/banners/page';
 import AdminProductQnAPage from './app/admin/product-qna/page';
 import AdminInquiriesPage from './app/admin/inquiries/page';
@@ -89,6 +92,7 @@ import AdminTermsPage from './app/admin/terms/page';
 import AdminUserLevelsPage from './app/admin/user-levels/page';
 import AdminExternalConnectionsPage from './app/admin/external-connections/page';
 import AdminPaymentGatewaysPage from './app/admin/payment-gateways/page';
+import AdminShippingSettingsPage from './app/admin/settings/shipping/page';
 
 function MainLayout() {
   return (
@@ -169,6 +173,8 @@ export default function App() {
               <Route path="/mypage/profile" element={<MypageProfilePage />} />
               <Route path="/mypage/orders" element={<MypageOrdersPage />} />
               <Route path="/mypage/orders/:orderNumber" element={<MypageOrderDetailPage />} />
+              <Route path="/mypage/orders/:orderNumber/return" element={<MypageReturnRequestPage />} />
+              <Route path="/mypage/orders/:orderNumber/exchange" element={<MypageExchangeRequestPage />} />
               <Route path="/mypage/addresses" element={<MypageAddressesPage />} />
               <Route path="/mypage/points" element={<MypagePointsPage />} />
               <Route path="/mypage/coupons" element={<MypageCouponsPage />} />
@@ -201,12 +207,14 @@ export default function App() {
             <Route path="/admin/coupons" element={<AdminCouponsPage />} />
             <Route path="/admin/boards" element={<AdminBoardsPage />} />
             <Route path="/admin/notices" element={<AdminNoticesPage />} />
+            <Route path="/admin/faqs" element={<AdminFAQsPage />} />
             <Route path="/admin/banners" element={<AdminBannersPage />} />
             <Route path="/admin/product-qna" element={<AdminProductQnAPage />} />
             <Route path="/admin/inquiries" element={<AdminInquiriesPage />} />
             <Route path="/admin/subscriptions" element={<AdminSubscriptionsPage />} />
             <Route path="/admin/refunds" element={<AdminRefundsPage />} />
             <Route path="/admin/settings" element={<AdminSettingsPage />} />
+            <Route path="/admin/settings/shipping" element={<AdminShippingSettingsPage />} />
             <Route path="/admin/statistics" element={<AdminStatisticsPage />} />
             <Route path="/admin/themes" element={<AdminThemesPage />} />
             <Route path="/admin/themes/layout-editor" element={<AdminLayoutEditorPage />} />

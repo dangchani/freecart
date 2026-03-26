@@ -1,12 +1,45 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getProductBySlug } from '@/services/products';
+import {
+  getProductBySlug,
+  getProductOptions,
+  getProductVariants,
+  findVariantByOptions,
+  type ProductOption,
+  type ProductVariant,
+} from '@/services/products';
 import { addToCart } from '@/services/cart';
+import {
+  getUserLevel,
+  getProductLevelPrices,
+  calculateLevelPrice,
+  type UserLevel,
+  type ProductLevelPrice,
+} from '@/services/memberLevel';
+import {
+  getQuantityDiscounts,
+  getActiveTimeSale,
+  calculateFinalPrice,
+  formatRemainingTime,
+  type QuantityDiscount,
+  type TimeSale,
+} from '@/services/discounts';
+import {
+  getRelatedProducts,
+  getProductSets,
+  getProductGifts,
+  type RelatedProduct,
+  type ProductSet,
+  type ProductGift,
+} from '@/services/relatedProducts';
+import { requestStockAlert } from '@/services/stockAlert';
+import { addToRecentlyViewed } from '@/services/recentlyViewed';
+import { RecentlyViewed } from '@/components/recently-viewed';
 import { useAuth } from '@/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
-import { Minus, Plus, ShoppingCart, Zap, ArrowLeft, Check, Star, ChevronDown, ChevronUp, Heart } from 'lucide-react';
+import { Minus, Plus, ShoppingCart, Zap, ArrowLeft, Check, Star, ChevronDown, ChevronUp, Heart, AlertCircle, Crown } from 'lucide-react';
 
 interface Review {
   id: string;
@@ -37,6 +70,7 @@ interface Product {
   description?: string;
   summary?: string;
   stockQuantity: number;
+  hasOptions?: boolean;
   images?: { id: string; url: string; alt?: string; isPrimary: boolean; sortOrder: number }[];
 }
 
@@ -64,12 +98,42 @@ export default function ProductDetailPage() {
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [wishlistLoading, setWishlistLoading] = useState(false);
 
+  // 상품 옵션 관련 state
+  const [options, setOptions] = useState<ProductOption[]>([]);
+  const [variants, setVariants] = useState<ProductVariant[]>([]);
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+
+  // 회원 등급 가격 관련 state
+  const [userLevel, setUserLevel] = useState<UserLevel | null>(null);
+  const [levelPrices, setLevelPrices] = useState<ProductLevelPrice[]>([]);
+
+  // 할인 관련 state
+  const [quantityDiscounts, setQuantityDiscounts] = useState<QuantityDiscount[]>([]);
+  const [timeSale, setTimeSale] = useState<TimeSale | null>(null);
+  const [remainingTime, setRemainingTime] = useState<number>(0);
+
+  // 관련 상품 관련 state
+  const [relatedProducts, setRelatedProducts] = useState<RelatedProduct[]>([]);
+  const [productSets, setProductSets] = useState<ProductSet[]>([]);
+  const [productGifts, setProductGifts] = useState<ProductGift[]>([]);
+
+  // 재고 알림 state
+  const [stockAlertEmail, setStockAlertEmail] = useState('');
+  const [stockAlertLoading, setStockAlertLoading] = useState(false);
+  const [showStockAlertForm, setShowStockAlertForm] = useState(false);
+
   useEffect(() => {
     if (!slug) return;
     getProductBySlug(slug)
       .then((data) => {
         if (!data) setNotFound(true);
-        else setProduct(data as unknown as Product);
+        else {
+          setProduct(data as unknown as Product);
+          // 최근 본 상품에 추가
+          addToRecentlyViewed(data.id);
+        }
       })
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
@@ -86,6 +150,103 @@ export default function ProductDetailPage() {
       .maybeSingle()
       .then(({ data }) => setIsWishlisted(!!data));
   }, [user, product]);
+
+  // 회원 등급 정보 로드
+  useEffect(() => {
+    if (!user) {
+      setUserLevel(null);
+      return;
+    }
+    getUserLevel(user.id).then(setUserLevel);
+  }, [user]);
+
+  // 상품 등급별 가격 로드
+  useEffect(() => {
+    if (!product) return;
+    getProductLevelPrices(product.id).then(setLevelPrices);
+  }, [product]);
+
+  // 수량별 할인 및 타임세일 로드
+  useEffect(() => {
+    if (!product) return;
+    getQuantityDiscounts(product.id).then(setQuantityDiscounts);
+    getActiveTimeSale(product.id).then((sale) => {
+      setTimeSale(sale);
+      if (sale) {
+        setRemainingTime(new Date(sale.endsAt).getTime() - Date.now());
+      }
+    });
+  }, [product]);
+
+  // 타임세일 카운트다운
+  useEffect(() => {
+    if (!timeSale || remainingTime <= 0) return;
+    const timer = setInterval(() => {
+      const newRemaining = new Date(timeSale.endsAt).getTime() - Date.now();
+      if (newRemaining <= 0) {
+        setTimeSale(null);
+        setRemainingTime(0);
+        clearInterval(timer);
+      } else {
+        setRemainingTime(newRemaining);
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [timeSale]);
+
+  // 관련 상품, 세트, 사은품 로드
+  useEffect(() => {
+    if (!product) return;
+    getRelatedProducts(product.id).then(setRelatedProducts);
+    getProductSets(product.id).then(setProductSets);
+    getProductGifts(product.id).then(setProductGifts);
+  }, [product]);
+
+  // 상품 옵션 로드
+  useEffect(() => {
+    if (!product || !product.hasOptions) return;
+
+    setOptionsLoading(true);
+    Promise.all([
+      getProductOptions(product.id),
+      getProductVariants(product.id),
+    ])
+      .then(([opts, vars]) => {
+        setOptions(opts);
+        setVariants(vars);
+
+        // 첫 번째 옵션값으로 기본 선택
+        if (opts.length > 0) {
+          const defaultSelections: Record<string, string> = {};
+          opts.forEach((opt) => {
+            if (opt.values.length > 0) {
+              defaultSelections[opt.id] = opt.values[0].id;
+            }
+          });
+          setSelectedOptions(defaultSelections);
+        }
+      })
+      .catch((err) => console.error('Failed to load options:', err))
+      .finally(() => setOptionsLoading(false));
+  }, [product]);
+
+  // 선택된 옵션으로 variant 찾기
+  useEffect(() => {
+    if (variants.length === 0 || Object.keys(selectedOptions).length === 0) {
+      setSelectedVariant(null);
+      return;
+    }
+
+    const variant = findVariantByOptions(variants, selectedOptions);
+    setSelectedVariant(variant);
+  }, [selectedOptions, variants]);
+
+  function handleOptionSelect(optionId: string, valueId: string) {
+    setSelectedOptions((prev) => ({
+      ...prev,
+      [optionId]: valueId,
+    }));
+  }
 
   useEffect(() => {
     if (!slug) return;
@@ -120,14 +281,38 @@ export default function ProductDetailPage() {
   async function handleAddToCart() {
     if (!product) return;
     if (!user) { navigate('/auth/login'); return; }
+
+    // 옵션 상품인 경우 variant 선택 필수
+    if (product.hasOptions && options.length > 0 && !selectedVariant) {
+      showToast('옵션을 선택해주세요.', 'error');
+      return;
+    }
+
     setCartLoading(true);
     try {
-      await addToCart(user.id, product.id, quantity);
+      await addToCart(user.id, product.id, quantity, selectedVariant?.id);
       showToast('장바구니에 담겼습니다!', 'success');
     } catch {
       showToast('장바구니 담기 중 오류가 발생했습니다.', 'error');
     } finally {
       setCartLoading(false);
+    }
+  }
+
+  async function handleStockAlert() {
+    if (!product || !stockAlertEmail) return;
+    setStockAlertLoading(true);
+    try {
+      const result = await requestStockAlert(product.id, stockAlertEmail, selectedVariant?.id);
+      showToast(result.message, result.success ? 'success' : 'error');
+      if (result.success) {
+        setShowStockAlertForm(false);
+        setStockAlertEmail('');
+      }
+    } catch {
+      showToast('재고 알림 신청에 실패했습니다.', 'error');
+    } finally {
+      setStockAlertLoading(false);
     }
   }
 
@@ -156,9 +341,16 @@ export default function ProductDetailPage() {
   async function handleBuyNow() {
     if (!product) return;
     if (!user) { navigate('/auth/login'); return; }
+
+    // 옵션 상품인 경우 variant 선택 필수
+    if (product.hasOptions && options.length > 0 && !selectedVariant) {
+      showToast('옵션을 선택해주세요.', 'error');
+      return;
+    }
+
     setBuyLoading(true);
     try {
-      await addToCart(user.id, product.id, quantity);
+      await addToCart(user.id, product.id, quantity, selectedVariant?.id);
       navigate('/checkout');
     } catch {
       showToast('오류가 발생했습니다.', 'error');
@@ -194,14 +386,13 @@ export default function ProductDetailPage() {
     }
   }
 
-  function changeQuantity(delta: number) {
-    setQuantity((prev) => {
-      const next = prev + delta;
-      if (next < 1) return 1;
-      if (product && next > product.stockQuantity) return product.stockQuantity;
-      return next;
-    });
-  }
+  // variant 변경 시 quantity 조정
+  useEffect(() => {
+    const stock = selectedVariant?.stockQuantity ?? product?.stockQuantity ?? 0;
+    if (stock > 0 && quantity > stock) {
+      setQuantity(stock);
+    }
+  }, [selectedVariant, product, quantity]);
 
   if (loading) {
     return (
@@ -227,11 +418,50 @@ export default function ProductDetailPage() {
   }
 
   const avgRating = reviews.length > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
-  const hasDiscount = product.regularPrice > product.salePrice;
-  const discountPercent = hasDiscount ? Math.round(((product.regularPrice - product.salePrice) / product.regularPrice) * 100) : 0;
+
+  // 옵션 상품일 경우 variant 기준, 아니면 기본 상품 기준
+  const hasProductOptions = product.hasOptions && options.length > 0;
+  const additionalPrice = selectedVariant?.additionalPrice || 0;
+  const baseSalePrice = product.salePrice + additionalPrice;
+  const finalRegularPrice = product.regularPrice + additionalPrice;
+
+  // 1. 회원 등급 가격 적용
+  const levelPriceResult = calculateLevelPrice(baseSalePrice, userLevel, levelPrices);
+  const priceAfterLevel = levelPriceResult.finalPrice;
+  const levelDiscountApplied = levelPriceResult.discountType !== 'none';
+
+  // 2. 타임세일 및 수량별 할인 적용
+  const discountResult = calculateFinalPrice(priceAfterLevel, quantity, timeSale, quantityDiscounts);
+  const finalSalePrice = discountResult.unitPrice;
+  const hasTimeSale = discountResult.appliedTimeSale !== null;
+  const hasQuantityDiscount = discountResult.appliedQuantityDiscount !== null;
+
+  const hasDiscount = finalRegularPrice > finalSalePrice;
+  const discountPercent = hasDiscount ? Math.round(((finalRegularPrice - finalSalePrice) / finalRegularPrice) * 100) : 0;
+
+  // 이미지: variant 이미지가 있으면 우선 사용
+  const variantImage = selectedVariant?.imageUrl;
   const primaryImage = product.images?.find((img) => img.isPrimary) || product.images?.[0];
-  const imageUrl = primaryImage?.url || '/placeholder.png';
-  const isSoldOut = product.stockQuantity === 0;
+  const imageUrl = variantImage || primaryImage?.url || '/placeholder.png';
+
+  // 재고: variant가 있으면 variant 재고, 없으면 기본 재고
+  const currentStock = hasProductOptions && selectedVariant
+    ? selectedVariant.stockQuantity
+    : product.stockQuantity;
+  const isSoldOut = currentStock === 0;
+
+  // 옵션 선택이 완료되었는지 확인
+  const isOptionSelectionComplete = !hasProductOptions || (options.length === Object.keys(selectedOptions).length && selectedVariant !== null);
+  const isVariantUnavailable = hasProductOptions && options.length === Object.keys(selectedOptions).length && selectedVariant === null;
+
+  function changeQuantity(delta: number) {
+    setQuantity((prev) => {
+      const next = prev + delta;
+      if (next < 1) return 1;
+      if (next > currentStock) return currentStock;
+      return next;
+    });
+  }
 
   return (
     <div className="container py-8">
@@ -259,16 +489,141 @@ export default function ProductDetailPage() {
         <div className="flex flex-col">
           <h1 className="mb-4 text-3xl font-bold">{product.name}</h1>
           <div className="mb-6">
+            {/* 타임세일 배너 */}
+            {hasTimeSale && timeSale && (
+              <div className="mb-3 flex items-center justify-between rounded-lg bg-gradient-to-r from-red-500 to-orange-500 px-4 py-3 text-white">
+                <div className="flex items-center gap-2">
+                  <Zap className="h-5 w-5" />
+                  <span className="font-bold">{timeSale.name || '타임세일'}</span>
+                  <span className="rounded bg-white/20 px-2 py-0.5 text-sm">
+                    {timeSale.discountType === 'percent' ? `${timeSale.discountValue}% 할인` : `${formatCurrency(timeSale.discountValue)} 할인`}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs opacity-80">남은 시간</p>
+                  <p className="font-mono font-bold">{formatRemainingTime(remainingTime)}</p>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-3">
-              <span className="text-3xl font-bold">{formatCurrency(product.salePrice)}</span>
+              <span className="text-3xl font-bold">{formatCurrency(finalSalePrice)}</span>
               {hasDiscount && (
                 <>
-                  <span className="text-xl text-gray-500 line-through">{formatCurrency(product.regularPrice)}</span>
+                  <span className="text-xl text-gray-500 line-through">{formatCurrency(finalRegularPrice)}</span>
                   <span className="rounded-md bg-red-500 px-2 py-1 text-sm font-bold text-white">{discountPercent}% OFF</span>
                 </>
               )}
             </div>
+
+            {/* 수량별 할인 안내 */}
+            {quantityDiscounts.length > 0 && (
+              <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                <p className="mb-2 text-sm font-semibold text-blue-800">수량별 추가 할인</p>
+                <div className="flex flex-wrap gap-2">
+                  {quantityDiscounts.map((d) => (
+                    <span
+                      key={d.id}
+                      className={`rounded-full px-3 py-1 text-xs font-medium ${
+                        hasQuantityDiscount && discountResult.appliedQuantityDiscount?.id === d.id
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white text-blue-700 border border-blue-300'
+                      }`}
+                    >
+                      {d.minQuantity}개 이상: {d.discountType === 'percent' ? `${d.discountValue}%` : formatCurrency(d.discountValue)} 할인
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 회원 등급 할인 표시 */}
+            {levelDiscountApplied && userLevel && (
+              <div className="mt-2 flex items-center gap-2 rounded-lg bg-purple-50 px-3 py-2">
+                <Crown className="h-4 w-4 text-purple-600" />
+                <span className="text-sm text-purple-700">
+                  <span className="font-semibold">{userLevel.name}</span> 등급 혜택 적용
+                  {levelPriceResult.discountType === 'level_discount' && (
+                    <span> ({levelPriceResult.discountRate}% 할인)</span>
+                  )}
+                </span>
+              </div>
+            )}
+            {!user && (
+              <p className="mt-2 text-sm text-gray-500">
+                <Link to="/auth/login" className="text-blue-600 hover:underline">로그인</Link>하시면 회원 등급 혜택을 받으실 수 있습니다.
+              </p>
+            )}
+            {additionalPrice > 0 && (
+              <p className="mt-1 text-sm text-gray-500">
+                (기본가 {formatCurrency(product.salePrice)} + 옵션 {formatCurrency(additionalPrice)})
+              </p>
+            )}
           </div>
+
+          {/* 상품 옵션 선택 UI */}
+          {hasProductOptions && (
+            <div className="mb-6 space-y-4">
+              {optionsLoading ? (
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                  옵션 로딩 중...
+                </div>
+              ) : (
+                options.map((option) => (
+                  <div key={option.id}>
+                    <label className="mb-2 block text-sm font-medium text-gray-700">
+                      {option.name}
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {option.values.map((value) => {
+                        const isSelected = selectedOptions[option.id] === value.id;
+                        return (
+                          <button
+                            key={value.id}
+                            onClick={() => handleOptionSelect(option.id, value.id)}
+                            className={`rounded-lg border px-4 py-2 text-sm transition-colors ${
+                              isSelected
+                                ? 'border-blue-600 bg-blue-50 text-blue-700 font-medium'
+                                : 'border-gray-300 hover:border-gray-400'
+                            }`}
+                          >
+                            {value.value}
+                            {value.additionalPrice > 0 && (
+                              <span className="ml-1 text-xs text-gray-500">
+                                (+{formatCurrency(value.additionalPrice)})
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+
+              {/* 선택된 옵션 조합이 없는 경우 경고 */}
+              {isVariantUnavailable && (
+                <div className="flex items-center gap-2 rounded-lg bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+                  <AlertCircle className="h-4 w-4" />
+                  선택하신 옵션 조합은 현재 판매하지 않습니다.
+                </div>
+              )}
+
+              {/* 선택된 variant 정보 */}
+              {selectedVariant && (
+                <div className="rounded-lg bg-gray-50 px-4 py-3">
+                  <p className="text-sm text-gray-700">
+                    <span className="font-medium">선택:</span>{' '}
+                    {selectedVariant.optionValues.map((ov) => ov.valueName).join(' / ')}
+                  </p>
+                  {selectedVariant.sku && (
+                    <p className="text-xs text-gray-500">SKU: {selectedVariant.sku}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="mb-6 border-t border-b py-4">
             <div className="mb-2 flex justify-between">
@@ -277,7 +632,7 @@ export default function ProductDetailPage() {
             </div>
             <div className="flex justify-between">
               <span className="text-gray-600">재고</span>
-              <span className={isSoldOut ? 'text-red-500 font-medium' : ''}>{isSoldOut ? '품절' : `${product.stockQuantity}개`}</span>
+              <span className={isSoldOut ? 'text-red-500 font-medium' : ''}>{isSoldOut ? '품절' : `${currentStock}개`}</span>
             </div>
           </div>
 
@@ -288,7 +643,7 @@ export default function ProductDetailPage() {
             </div>
           )}
 
-          {!isSoldOut && (
+          {!isSoldOut && isOptionSelectionComplete && (
             <div className="mb-6">
               <p className="mb-2 text-sm font-medium text-gray-700">수량</p>
               <div className="flex items-center gap-3">
@@ -297,22 +652,109 @@ export default function ProductDetailPage() {
                     <Minus className="h-4 w-4" />
                   </button>
                   <span className="w-12 text-center text-sm font-medium">{quantity}</span>
-                  <button className="flex h-10 w-10 items-center justify-center hover:bg-gray-50 disabled:opacity-50" onClick={() => changeQuantity(1)} disabled={quantity >= product.stockQuantity}>
+                  <button className="flex h-10 w-10 items-center justify-center hover:bg-gray-50 disabled:opacity-50" onClick={() => changeQuantity(1)} disabled={quantity >= currentStock}>
                     <Plus className="h-4 w-4" />
                   </button>
                 </div>
-                <span className="text-sm text-gray-500">최대 {product.stockQuantity}개</span>
+                <span className="text-sm text-gray-500">최대 {currentStock}개</span>
               </div>
-              <p className="mt-2 text-sm font-medium text-gray-700">합계: <span className="text-lg font-bold text-blue-600">{formatCurrency(product.salePrice * quantity)}</span></p>
+              <p className="mt-2 text-sm font-medium text-gray-700">합계: <span className="text-lg font-bold text-blue-600">{formatCurrency(finalSalePrice * quantity)}</span></p>
+            </div>
+          )}
+
+          {/* 품절 시 재고 알림 */}
+          {isSoldOut && isOptionSelectionComplete && (
+            <div className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4">
+              <p className="mb-2 font-semibold text-red-800">현재 품절된 상품입니다</p>
+              {!showStockAlertForm ? (
+                <button
+                  onClick={() => setShowStockAlertForm(true)}
+                  className="text-sm text-blue-600 hover:underline"
+                >
+                  재입고 알림 신청하기 →
+                </button>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  <input
+                    type="email"
+                    value={stockAlertEmail}
+                    onChange={(e) => setStockAlertEmail(e.target.value)}
+                    placeholder="이메일 주소 입력"
+                    className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleStockAlert}
+                      disabled={stockAlertLoading || !stockAlertEmail}
+                      className="flex-1 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {stockAlertLoading ? '신청 중...' : '알림 신청'}
+                    </button>
+                    <button
+                      onClick={() => setShowStockAlertForm(false)}
+                      className="rounded-md border px-3 py-2 text-sm hover:bg-gray-50"
+                    >
+                      취소
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 사은품 안내 */}
+          {productGifts.length > 0 && (
+            <div className="mb-6 rounded-xl border-2 border-dashed border-green-300 bg-green-50 p-4">
+              <p className="mb-2 font-semibold text-green-800">🎁 사은품 증정</p>
+              {productGifts.map((gift) => (
+                <div key={gift.id} className="flex items-center gap-3">
+                  {gift.giftProduct.imageUrl && (
+                    <img src={gift.giftProduct.imageUrl} alt={gift.giftProduct.name} className="h-12 w-12 rounded object-cover" />
+                  )}
+                  <div>
+                    <p className="text-sm font-medium text-green-900">{gift.giftProduct.name}</p>
+                    {gift.minOrderAmount > 0 && (
+                      <p className="text-xs text-green-700">{formatCurrency(gift.minOrderAmount)} 이상 구매 시</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 세트 상품 안내 */}
+          {productSets.length > 0 && (
+            <div className="mb-6 rounded-xl border border-orange-200 bg-orange-50 p-4">
+              <p className="mb-3 font-semibold text-orange-800">📦 세트 구매 할인</p>
+              {productSets.map((set) => (
+                <div key={set.id} className="rounded-lg bg-white p-3">
+                  <p className="font-medium text-sm">{set.name}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {set.products.slice(0, 3).map((p) => (
+                      <Link key={p.id} to={`/products/${p.slug}`} className="text-xs text-blue-600 hover:underline">
+                        {p.name}
+                      </Link>
+                    ))}
+                    {set.products.length > 3 && <span className="text-xs text-gray-500">외 {set.products.length - 3}개</span>}
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-sm text-gray-500 line-through">{formatCurrency(set.totalPrice)}</span>
+                    <span className="text-sm font-bold text-orange-600">{formatCurrency(set.setPrice)}</span>
+                    <span className="rounded bg-orange-500 px-1.5 py-0.5 text-xs font-bold text-white">
+                      {set.discountType === 'percent' ? `${set.discountValue}%` : formatCurrency(set.discountValue)} 할인
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
           <div className="mt-auto flex gap-3">
-            <Button size="lg" className="flex-1" onClick={handleAddToCart} disabled={isSoldOut || cartLoading || buyLoading}>
+            <Button size="lg" className="flex-1" onClick={handleAddToCart} disabled={isSoldOut || !isOptionSelectionComplete || isVariantUnavailable || cartLoading || buyLoading}>
               {cartLoading ? <span className="flex items-center gap-2"><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />담는 중...</span>
-                : <span className="flex items-center gap-2"><ShoppingCart className="h-4 w-4" />{isSoldOut ? '품절' : '장바구니 담기'}</span>}
+                : <span className="flex items-center gap-2"><ShoppingCart className="h-4 w-4" />{isSoldOut ? '품절' : hasProductOptions && !isOptionSelectionComplete ? '옵션 선택' : '장바구니 담기'}</span>}
             </Button>
-            <Button size="lg" variant="outline" className="flex-1" onClick={handleBuyNow} disabled={isSoldOut || cartLoading || buyLoading}>
+            <Button size="lg" variant="outline" className="flex-1" onClick={handleBuyNow} disabled={isSoldOut || !isOptionSelectionComplete || isVariantUnavailable || cartLoading || buyLoading}>
               {buyLoading ? <span className="flex items-center gap-2"><span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />처리 중...</span>
                 : <span className="flex items-center gap-2"><Zap className="h-4 w-4" />바로 구매</span>}
             </Button>
@@ -407,6 +849,39 @@ export default function ProductDetailPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* 관련 상품 */}
+      {relatedProducts.length > 0 && (
+        <div className="mt-12">
+          <h2 className="mb-6 text-xl font-bold">관련 상품</h2>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            {relatedProducts.map((p) => (
+              <Link key={p.id} to={`/products/${p.slug}`} className="group">
+                <div className="aspect-square overflow-hidden rounded-lg bg-gray-100">
+                  {p.imageUrl ? (
+                    <img src={p.imageUrl} alt={p.name} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-gray-400">이미지 없음</div>
+                  )}
+                </div>
+                <h3 className="mt-2 line-clamp-2 text-sm font-medium group-hover:text-blue-600">{p.name}</h3>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="font-bold">{formatCurrency(p.salePrice)}</span>
+                  {p.regularPrice > p.salePrice && (
+                    <span className="text-sm text-gray-400 line-through">{formatCurrency(p.regularPrice)}</span>
+                  )}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 최근 본 상품 */}
+      <div className="mt-12">
+        <h2 className="mb-6 text-xl font-bold">최근 본 상품</h2>
+        <RecentlyViewed currentProductId={product.id} maxItems={10} layout="horizontal" />
       </div>
     </div>
   );

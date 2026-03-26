@@ -10,9 +10,13 @@ import { Label } from '@/components/ui/label';
 import { formatCurrency } from '@/lib/utils';
 import { getCart } from '@/services/cart';
 import { createOrder } from '@/services/orders';
+import { getUserCoupons, calculateCouponDiscount, registerCouponByCode, useCoupon, type UserCoupon } from '@/services/coupons';
+import { getUserPoints, validatePointsUsage, usePoints } from '@/services/points';
+import { getUserAddresses, type UserAddress } from '@/services/addresses';
 import { useAuth } from '@/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 import type { CartItem } from '@/types';
+import { Ticket, Coins, Check, X, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
 
 interface ActivePG {
   provider: string;
@@ -143,9 +147,26 @@ export default function CheckoutPage() {
   const [activePG, setActivePG] = useState<ActivePG | null>(null);
   const [pgError, setPgError] = useState(false);
 
+  // 쿠폰 관련 state
+  const [userCoupons, setUserCoupons] = useState<UserCoupon[]>([]);
+  const [selectedCoupon, setSelectedCoupon] = useState<UserCoupon | null>(null);
+  const [couponCode, setCouponCode] = useState('');
+  const [couponMessage, setCouponMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showCouponList, setShowCouponList] = useState(false);
+
+  // 포인트 관련 state
+  const [userPoints, setUserPoints] = useState(0);
+  const [usePointsAmount, setUsePointsAmount] = useState(0);
+  const [pointsError, setPointsError] = useState<string | null>(null);
+
+  // 배송지 관련 state
+  const [savedAddresses, setSavedAddresses] = useState<UserAddress[]>([]);
+  const [showAddressList, setShowAddressList] = useState(false);
+
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<CheckoutForm>({
     resolver: zodResolver(checkoutSchema),
@@ -157,10 +178,16 @@ export default function CheckoutPage() {
         navigate('/auth/login');
         return;
       }
-      Promise.all([loadCart(), loadActivePG().then((pg) => {
-        if (!pg) setPgError(true);
-        else setActivePG(pg);
-      })]);
+      Promise.all([
+        loadCart(),
+        loadActivePG().then((pg) => {
+          if (!pg) setPgError(true);
+          else setActivePG(pg);
+        }),
+        loadCoupons(),
+        loadPoints(),
+        loadAddresses(),
+      ]);
     }
   }, [user, authLoading, navigate]);
 
@@ -180,12 +207,130 @@ export default function CheckoutPage() {
     }
   }
 
+  async function loadCoupons() {
+    try {
+      if (!user) return;
+      const coupons = await getUserCoupons(user.id);
+      setUserCoupons(coupons);
+    } catch (error) {
+      console.error('Failed to load coupons:', error);
+    }
+  }
+
+  async function loadPoints() {
+    try {
+      if (!user) return;
+      const points = await getUserPoints(user.id);
+      setUserPoints(points);
+    } catch (error) {
+      console.error('Failed to load points:', error);
+    }
+  }
+
+  async function loadAddresses() {
+    try {
+      if (!user) return;
+      const addresses = await getUserAddresses(user.id);
+      setSavedAddresses(addresses);
+
+      // 기본 배송지가 있으면 자동으로 채우기
+      const defaultAddress = addresses.find((a) => a.isDefault);
+      if (defaultAddress) {
+        setValue('recipientName', defaultAddress.recipientName);
+        setValue('recipientPhone', defaultAddress.recipientPhone);
+        setValue('postalCode', defaultAddress.postalCode);
+        setValue('address', defaultAddress.address1 + (defaultAddress.address2 ? ` ${defaultAddress.address2}` : ''));
+      }
+    } catch (error) {
+      console.error('Failed to load addresses:', error);
+    }
+  }
+
+  function selectAddress(address: UserAddress) {
+    setValue('recipientName', address.recipientName);
+    setValue('recipientPhone', address.recipientPhone);
+    setValue('postalCode', address.postalCode);
+    setValue('address', address.address1 + (address.address2 ? ` ${address.address2}` : ''));
+    setShowAddressList(false);
+  }
+
   const subtotal = items.reduce(
     (sum, item) => sum + (item.product?.salePrice || 0) * item.quantity,
     0
   );
   const shippingCost = subtotal >= 50000 ? 0 : 3000;
-  const total = subtotal + shippingCost;
+
+  // 쿠폰 할인 계산
+  const couponDiscount = selectedCoupon
+    ? calculateCouponDiscount(selectedCoupon.coupon, subtotal).discount
+    : 0;
+
+  // 최종 결제 금액
+  const total = subtotal + shippingCost - couponDiscount - usePointsAmount;
+
+  // 쿠폰 선택 핸들러
+  function handleSelectCoupon(coupon: UserCoupon | null) {
+    if (!coupon) {
+      setSelectedCoupon(null);
+      setShowCouponList(false);
+      return;
+    }
+
+    const result = calculateCouponDiscount(coupon.coupon, subtotal);
+    if (!result.applicable) {
+      setCouponMessage({ type: 'error', text: result.reason || '쿠폰을 적용할 수 없습니다.' });
+      return;
+    }
+
+    setSelectedCoupon(coupon);
+    setShowCouponList(false);
+    setCouponMessage(null);
+  }
+
+  // 쿠폰 코드 등록 핸들러
+  async function handleRegisterCoupon() {
+    if (!user || !couponCode.trim()) return;
+
+    const result = await registerCouponByCode(user.id, couponCode.trim());
+    setCouponMessage({ type: result.success ? 'success' : 'error', text: result.message });
+
+    if (result.success) {
+      setCouponCode('');
+      await loadCoupons();
+    }
+  }
+
+  // 포인트 사용 핸들러
+  function handlePointsChange(value: string) {
+    const amount = parseInt(value) || 0;
+
+    // 100원 단위로 조정
+    const adjustedAmount = Math.floor(amount / 100) * 100;
+
+    const validation = validatePointsUsage(userPoints, adjustedAmount, subtotal + shippingCost - couponDiscount);
+    if (!validation.valid) {
+      setPointsError(validation.message || null);
+      // 최대 사용 가능한 금액으로 자동 조정
+      const maxUsable = Math.min(
+        userPoints,
+        Math.floor((subtotal + shippingCost - couponDiscount) * 0.5 / 100) * 100
+      );
+      setUsePointsAmount(Math.min(adjustedAmount, maxUsable));
+    } else {
+      setPointsError(null);
+      setUsePointsAmount(adjustedAmount);
+    }
+  }
+
+  // 전액 사용 핸들러
+  function handleUseAllPoints() {
+    const maxUsable = Math.min(
+      userPoints,
+      Math.floor((subtotal + shippingCost - couponDiscount) * 0.5 / 100) * 100
+    );
+    setUsePointsAmount(maxUsable);
+    setPointsError(null);
+  }
 
   async function onSubmit(data: CheckoutForm) {
     if (!user || !activePG) return;
@@ -209,9 +354,23 @@ export default function CheckoutPage() {
           postalCode: data.postalCode,
           address1: data.address,
           shippingMessage: data.deliveryRequest,
+          // 쿠폰/포인트 정보 추가
+          couponId: selectedCoupon?.id,
+          couponDiscount,
+          pointsUsed: usePointsAmount,
         },
         activePG.name
       );
+
+      // 쿠폰 사용 처리
+      if (selectedCoupon) {
+        await useCoupon(selectedCoupon.id);
+      }
+
+      // 포인트 사용 처리
+      if (usePointsAmount > 0) {
+        await usePoints(user.id, usePointsAmount, order.id, `주문 ${order.orderNumber} 포인트 사용`);
+      }
 
       await requestPayment(activePG, {
         amount: total,
@@ -255,7 +414,50 @@ export default function CheckoutPage() {
           <div className="lg:col-span-2 space-y-6">
             {/* 배송지 정보 */}
             <Card className="p-6">
-              <h2 className="mb-4 text-xl font-bold">배송지 정보</h2>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="flex items-center gap-2 text-xl font-bold">
+                  <MapPin className="h-5 w-5" />
+                  배송지 정보
+                </h2>
+                {savedAddresses.length > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowAddressList(!showAddressList)}
+                  >
+                    저장된 배송지
+                    {showAddressList ? <ChevronUp className="ml-1 h-4 w-4" /> : <ChevronDown className="ml-1 h-4 w-4" />}
+                  </Button>
+                )}
+              </div>
+
+              {/* 저장된 배송지 목록 */}
+              {showAddressList && savedAddresses.length > 0 && (
+                <div className="mb-4 space-y-2">
+                  {savedAddresses.map((addr) => (
+                    <button
+                      key={addr.id}
+                      type="button"
+                      onClick={() => selectAddress(addr)}
+                      className="w-full rounded-lg border p-3 text-left transition-colors hover:border-blue-500 hover:bg-blue-50"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{addr.name}</span>
+                        {addr.isDefault && (
+                          <span className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700">기본</span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-600">
+                        {addr.recipientName} · {addr.recipientPhone}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        [{addr.postalCode}] {addr.address1} {addr.address2}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
 
               <div className="space-y-4">
                 <div>
@@ -335,6 +537,166 @@ export default function CheckoutPage() {
                 ))}
               </div>
             </Card>
+
+            {/* 쿠폰 */}
+            <Card className="p-6">
+              <h2 className="mb-4 flex items-center gap-2 text-xl font-bold">
+                <Ticket className="h-5 w-5" />
+                쿠폰
+              </h2>
+
+              {/* 쿠폰 코드 입력 */}
+              <div className="mb-4">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="쿠폰 코드를 입력하세요"
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button type="button" variant="outline" onClick={handleRegisterCoupon}>
+                    등록
+                  </Button>
+                </div>
+                {couponMessage && (
+                  <p className={`mt-2 text-sm ${couponMessage.type === 'success' ? 'text-green-600' : 'text-red-500'}`}>
+                    {couponMessage.text}
+                  </p>
+                )}
+              </div>
+
+              {/* 선택된 쿠폰 표시 */}
+              {selectedCoupon ? (
+                <div className="flex items-center justify-between rounded-lg bg-blue-50 p-3">
+                  <div>
+                    <p className="font-medium text-blue-700">{selectedCoupon.coupon.name}</p>
+                    <p className="text-sm text-blue-600">
+                      {selectedCoupon.coupon.discountType === 'percentage'
+                        ? `${selectedCoupon.coupon.discountValue}% 할인`
+                        : `${formatCurrency(selectedCoupon.coupon.discountValue)} 할인`}
+                      {selectedCoupon.coupon.maxDiscountAmount &&
+                        ` (최대 ${formatCurrency(selectedCoupon.coupon.maxDiscountAmount)})`}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleSelectCoupon(null)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCouponList(!showCouponList)}
+                    className="flex w-full items-center justify-between rounded-lg border p-3 hover:bg-gray-50"
+                  >
+                    <span className="text-gray-600">
+                      {userCoupons.length > 0
+                        ? `사용 가능한 쿠폰 ${userCoupons.length}장`
+                        : '사용 가능한 쿠폰이 없습니다'}
+                    </span>
+                    {userCoupons.length > 0 && (
+                      showCouponList ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                    )}
+                  </button>
+
+                  {/* 쿠폰 목록 */}
+                  {showCouponList && userCoupons.length > 0 && (
+                    <div className="mt-2 space-y-2">
+                      {userCoupons.map((uc) => {
+                        const result = calculateCouponDiscount(uc.coupon, subtotal);
+                        return (
+                          <button
+                            key={uc.id}
+                            type="button"
+                            onClick={() => handleSelectCoupon(uc)}
+                            disabled={!result.applicable}
+                            className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                              result.applicable
+                                ? 'hover:border-blue-500 hover:bg-blue-50'
+                                : 'cursor-not-allowed bg-gray-50 opacity-60'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="font-medium">{uc.coupon.name}</p>
+                                <p className="text-sm text-gray-500">
+                                  {uc.coupon.discountType === 'percentage'
+                                    ? `${uc.coupon.discountValue}% 할인`
+                                    : `${formatCurrency(uc.coupon.discountValue)} 할인`}
+                                  {uc.coupon.minOrderAmount > 0 &&
+                                    ` (${formatCurrency(uc.coupon.minOrderAmount)} 이상)`}
+                                </p>
+                                <p className="text-xs text-gray-400">
+                                  {new Date(uc.expiresAt).toLocaleDateString('ko-KR')}까지
+                                </p>
+                              </div>
+                              {result.applicable && (
+                                <span className="text-sm font-bold text-blue-600">
+                                  -{formatCurrency(result.discount)}
+                                </span>
+                              )}
+                            </div>
+                            {!result.applicable && (
+                              <p className="mt-1 text-xs text-red-500">{result.reason}</p>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </Card>
+
+            {/* 포인트 */}
+            <Card className="p-6">
+              <h2 className="mb-4 flex items-center gap-2 text-xl font-bold">
+                <Coins className="h-5 w-5" />
+                포인트
+              </h2>
+
+              <div className="mb-2 flex items-center justify-between text-sm">
+                <span className="text-gray-600">보유 포인트</span>
+                <span className="font-medium">{userPoints.toLocaleString()}P</span>
+              </div>
+
+              {userPoints >= 1000 ? (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Input
+                        type="number"
+                        value={usePointsAmount || ''}
+                        onChange={(e) => handlePointsChange(e.target.value)}
+                        placeholder="0"
+                        min={0}
+                        max={userPoints}
+                        step={100}
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">P</span>
+                    </div>
+                    <Button type="button" variant="outline" onClick={handleUseAllPoints}>
+                      전액 사용
+                    </Button>
+                  </div>
+                  {pointsError && (
+                    <p className="text-sm text-red-500">{pointsError}</p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    * 100원 단위로 사용 가능, 결제금액의 50%까지 사용 가능
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">
+                  1,000포인트 이상 보유 시 사용 가능합니다.
+                </p>
+              )}
+            </Card>
           </div>
 
           {/* 결제 금액 */}
@@ -351,12 +713,30 @@ export default function CheckoutPage() {
                   <span>배송비</span>
                   <span>{shippingCost === 0 ? '무료' : formatCurrency(shippingCost)}</span>
                 </div>
+                {couponDiscount > 0 && (
+                  <div className="flex justify-between text-blue-600">
+                    <span>쿠폰 할인</span>
+                    <span>-{formatCurrency(couponDiscount)}</span>
+                  </div>
+                )}
+                {usePointsAmount > 0 && (
+                  <div className="flex justify-between text-green-600">
+                    <span>포인트 사용</span>
+                    <span>-{formatCurrency(usePointsAmount)}</span>
+                  </div>
+                )}
               </div>
 
               <div className="mt-4 flex justify-between text-xl font-bold">
                 <span>총 결제 금액</span>
                 <span className="text-blue-600">{formatCurrency(total)}</span>
               </div>
+
+              {(couponDiscount > 0 || usePointsAmount > 0) && (
+                <p className="mt-2 text-right text-sm text-green-600">
+                  총 {formatCurrency(couponDiscount + usePointsAmount)} 할인
+                </p>
+              )}
 
               <Button
                 type="submit"

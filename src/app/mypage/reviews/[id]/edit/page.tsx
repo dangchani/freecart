@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -9,8 +9,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/hooks/useAuth';
-import { ArrowLeft, Star } from 'lucide-react';
+import { ArrowLeft, Star, ImagePlus, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+
+interface ExistingImage {
+  id: string;
+  url: string;
+}
 
 const reviewSchema = z.object({
   rating: z.number().int().min(1).max(5),
@@ -27,6 +32,11 @@ export default function EditReviewPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [rating, setRating] = useState(5);
+  const [existingImages, setExistingImages] = useState<ExistingImage[]>([]);
+  const [deletedImageIds, setDeletedImageIds] = useState<string[]>([]);
+  const [newImages, setNewImages] = useState<File[]>([]);
+  const [newImagePreviews, setNewImagePreviews] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const {
     register,
@@ -56,7 +66,7 @@ export default function EditReviewPage() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('reviews')
-        .select('id, rating, content, user_id')
+        .select('id, rating, content, user_id, review_images(id, url)')
         .eq('id', id)
         .single();
 
@@ -71,6 +81,12 @@ export default function EditReviewPage() {
       }
 
       setRating(data.rating);
+      setExistingImages(
+        ((data.review_images as any[]) || []).map((img) => ({
+          id: img.id,
+          url: img.url,
+        }))
+      );
       reset({
         rating: data.rating,
         title: '',
@@ -101,6 +117,43 @@ export default function EditReviewPage() {
 
       if (error) throw error;
 
+      // 삭제된 이미지 처리
+      if (deletedImageIds.length > 0) {
+        await supabase
+          .from('review_images')
+          .delete()
+          .in('id', deletedImageIds);
+      }
+
+      // 새 이미지 업로드
+      if (newImages.length > 0) {
+        const currentImageCount = existingImages.length - deletedImageIds.length;
+        for (let i = 0; i < newImages.length; i++) {
+          const file = newImages[i];
+          const ext = file.name.split('.').pop();
+          const fileName = `${id}/${Date.now()}_${i}.${ext}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from('review-images')
+            .upload(fileName, file);
+
+          if (uploadError) {
+            console.error('Failed to upload image:', uploadError);
+            continue;
+          }
+
+          const { data: urlData } = supabase.storage
+            .from('review-images')
+            .getPublicUrl(fileName);
+
+          await supabase.from('review_images').insert({
+            review_id: id,
+            url: urlData.publicUrl,
+            sort_order: currentImageCount + i,
+          });
+        }
+      }
+
       alert('리뷰가 수정되었습니다.');
       navigate('/mypage/reviews');
     } catch (error) {
@@ -114,6 +167,51 @@ export default function EditReviewPage() {
   function handleRatingClick(value: number) {
     setRating(value);
     setValue('rating', value);
+  }
+
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    const totalImages = existingImages.length - deletedImageIds.length + newImages.length + files.length;
+
+    if (totalImages > 5) {
+      alert('이미지는 최대 5장까지 첨부할 수 있습니다.');
+      return;
+    }
+
+    const validFiles = files.filter((file) => {
+      if (!file.type.startsWith('image/')) {
+        alert('이미지 파일만 업로드 가능합니다.');
+        return false;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        alert('파일 크기는 5MB 이하여야 합니다.');
+        return false;
+      }
+      return true;
+    });
+
+    setNewImages((prev) => [...prev, ...validFiles]);
+
+    validFiles.forEach((file) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setNewImagePreviews((prev) => [...prev, reader.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }
+
+  function removeExistingImage(imageId: string) {
+    setDeletedImageIds((prev) => [...prev, imageId]);
+  }
+
+  function removeNewImage(index: number) {
+    setNewImages((prev) => prev.filter((_, i) => i !== index));
+    setNewImagePreviews((prev) => prev.filter((_, i) => i !== index));
   }
 
   if (authLoading || loading) {
@@ -169,6 +267,70 @@ export default function EditReviewPage() {
                 rows={8}
               />
               {errors.content && <p className="mt-1 text-sm text-red-500">{errors.content.message}</p>}
+            </div>
+
+            {/* 이미지 업로드 */}
+            <div>
+              <Label>이미지 첨부 (최대 5장)</Label>
+              <div className="mt-2 flex flex-wrap gap-3">
+                {/* 기존 이미지 */}
+                {existingImages
+                  .filter((img) => !deletedImageIds.includes(img.id))
+                  .map((image) => (
+                    <div key={image.id} className="relative h-24 w-24">
+                      <img
+                        src={image.url}
+                        alt="리뷰 이미지"
+                        className="h-full w-full rounded-lg border object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeExistingImage(image.id)}
+                        className="absolute -right-2 -top-2 rounded-full bg-red-500 p-1 text-white shadow-md hover:bg-red-600"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+
+                {/* 새 이미지 */}
+                {newImagePreviews.map((preview, index) => (
+                  <div key={`new-${index}`} className="relative h-24 w-24">
+                    <img
+                      src={preview}
+                      alt={`새 이미지 ${index + 1}`}
+                      className="h-full w-full rounded-lg border object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeNewImage(index)}
+                      className="absolute -right-2 -top-2 rounded-full bg-red-500 p-1 text-white shadow-md hover:bg-red-600"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+
+                {/* 이미지 추가 버튼 */}
+                {existingImages.length - deletedImageIds.length + newImages.length < 5 && (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex h-24 w-24 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 text-gray-400 transition-colors hover:border-gray-400 hover:text-gray-500"
+                  >
+                    <ImagePlus className="h-8 w-8" />
+                  </button>
+                )}
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleImageChange}
+                className="hidden"
+              />
+              <p className="mt-2 text-sm text-gray-500">JPG, PNG, GIF 파일만 가능 (최대 5MB)</p>
             </div>
 
             <div className="flex gap-2">
