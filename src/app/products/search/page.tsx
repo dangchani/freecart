@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
 import { Search, X, TrendingUp } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Product {
   id: string;
@@ -55,9 +56,15 @@ function SearchPageContent() {
 
   async function fetchPopularKeywords() {
     try {
-      const res = await fetch('/api/products/search/popular');
-      const json = await res.json();
-      if (json.success) setPopularKeywords(json.data || []);
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('search_keywords')
+        .select('keyword')
+        .order('count', { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+      setPopularKeywords((data || []).map((k: any) => k.keyword));
     } catch (err) {
       console.error('인기 키워드 로딩 실패:', err);
     }
@@ -66,10 +73,37 @@ function SearchPageContent() {
   async function fetchProducts(q: string, sort: SortOption) {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ search: q, sortBy: sort });
-      const res = await fetch(`/api/products?${params}`);
-      const json = await res.json();
-      if (json.success) setProducts(json.data || []);
+      const supabase = createClient();
+      let query_ = supabase
+        .from('products')
+        .select('id, name, slug, sale_price, regular_price, stock_quantity, product_images(url, is_primary)')
+        .eq('status', 'active')
+        .ilike('name', `%${q}%`);
+
+      if (sort === 'newest') query_ = query_.order('created_at', { ascending: false });
+      else if (sort === 'price_asc') query_ = query_.order('sale_price', { ascending: true });
+      else if (sort === 'price_desc') query_ = query_.order('sale_price', { ascending: false });
+      else if (sort === 'popular') query_ = query_.order('sales_count', { ascending: false });
+
+      const { data, error } = await query_;
+      if (error) throw error;
+
+      setProducts(
+        (data || []).map((p: any) => {
+          const primaryImg = (p.product_images || []).find((i: any) => i.is_primary);
+          const firstImg = (p.product_images || [])[0];
+          return {
+            id: p.id,
+            name: p.name,
+            slug: p.slug,
+            price: p.sale_price,
+            comparePrice: p.regular_price,
+            thumbnail: primaryImg?.url || firstImg?.url,
+            images: (p.product_images || []).map((i: any) => i.url),
+            stock: p.stock_quantity,
+          };
+        })
+      );
     } catch (err) {
       console.error('상품 검색 실패:', err);
     } finally {
@@ -87,12 +121,18 @@ function SearchPageContent() {
     }
     autocompleteTimeout.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/products/search/autocomplete?q=${encodeURIComponent(value)}`);
-        const json = await res.json();
-        if (json.success) {
-          setAutocomplete(json.data || []);
-          setShowAutocomplete(true);
-        }
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from('search_keywords')
+          .select('keyword')
+          .ilike('keyword', `${value}%`)
+          .order('count', { ascending: false })
+          .limit(8);
+
+        if (error) throw error;
+        const keywords = (data || []).map((k: any) => k.keyword);
+        setAutocomplete(keywords);
+        setShowAutocomplete(keywords.length > 0);
       } catch {
         // ignore
       }

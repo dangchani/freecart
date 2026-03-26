@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
 import { ArrowLeft, Plus, Edit, Trash2 } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Product {
   id: string;
@@ -36,12 +37,25 @@ export default function AdminProductsPage() {
 
   async function loadProducts() {
     try {
-      const response = await fetch('/api/products');
-      const data = await response.json();
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, name, slug, sale_price, stock_quantity, status, product_images(url)')
+        .order('created_at', { ascending: false });
 
-      if (data.success) {
-        setProducts(data.data || []);
-      }
+      if (error) throw error;
+
+      setProducts(
+        (data || []).map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          slug: p.slug,
+          price: p.sale_price,
+          stock: p.stock_quantity,
+          thumbnail: p.product_images?.[0]?.url || '',
+          isActive: p.status === 'active',
+        }))
+      );
     } catch (error) {
       console.error('Failed to load products:', error);
     } finally {
@@ -55,15 +69,13 @@ export default function AdminProductsPage() {
     }
 
     try {
-      const response = await fetch(`/api/products/${productId}`, {
-        method: 'DELETE',
-      });
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', productId);
 
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || '상품 삭제에 실패했습니다.');
-      }
+      if (error) throw error;
 
       alert('상품이 삭제되었습니다.');
       await loadProducts();

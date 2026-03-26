@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Calendar, CheckCircle, Flame } from 'lucide-react';
 import { format, getDaysInMonth, startOfMonth, getDay } from 'date-fns';
 import { ko } from 'date-fns/locale';
+import { createClient } from '@/lib/supabase/client';
 
 interface AttendanceData {
   attendedDates: string[];
@@ -42,10 +43,51 @@ export default function AttendancePage() {
   async function fetchAttendance() {
     setLoading(true);
     try {
-      const month = format(currentMonth, 'yyyy-MM');
-      const res = await fetch(`/api/users/me/attendance?month=${month}`);
-      const json = await res.json();
-      if (json.success) setData(json.data);
+      const supabase = createClient();
+      const year = currentMonth.getFullYear();
+      const month = currentMonth.getMonth() + 1;
+      const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+      const startDate = `${monthStr}-01`;
+      const endDate = `${monthStr}-${String(getDaysInMonth(currentMonth)).padStart(2, '0')}`;
+      const today = format(new Date(), 'yyyy-MM-dd');
+
+      const { data: attendanceData, error } = await supabase
+        .from('user_attendance')
+        .select('attended_date, points_earned')
+        .eq('user_id', user!.id)
+        .gte('attended_date', startDate)
+        .lte('attended_date', endDate)
+        .order('attended_date', { ascending: true });
+
+      if (error) throw error;
+
+      const attendedDates = (attendanceData || []).map((a: any) => a.attended_date);
+      const todayAttended = attendedDates.includes(today);
+
+      // Calculate consecutive days (simplified: count backward from today)
+      let consecutiveDays = 0;
+      const allDatesSet = new Set(attendedDates);
+      const checkDate = new Date();
+      for (let i = 0; i < 365; i++) {
+        const dateStr = format(checkDate, 'yyyy-MM-dd');
+        if (allDatesSet.has(dateStr) || (i === 0 && !todayAttended)) {
+          if (i === 0 && !todayAttended) {
+            checkDate.setDate(checkDate.getDate() - 1);
+            continue;
+          }
+          consecutiveDays++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+
+      setData({
+        attendedDates,
+        consecutiveDays,
+        todayAttended,
+        currentMonth: monthStr,
+      });
     } catch (err) {
       console.error('출석 데이터 로딩 실패:', err);
     } finally {
@@ -56,13 +98,27 @@ export default function AttendancePage() {
   async function handleAttendance() {
     setChecking(true);
     try {
-      const res = await fetch('/api/users/me/attendance', { method: 'POST' });
-      const json = await res.json();
-      if (json.success) {
-        setSuccessMessage(`출석 완료! ${json.data?.pointsEarned || 0}P 적립되었습니다.`);
-        await fetchAttendance();
+      const supabase = createClient();
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const pointsEarned = 10; // Default points
+
+      const { error } = await supabase
+        .from('user_attendance')
+        .insert({
+          user_id: user!.id,
+          attended_date: today,
+          points_earned: pointsEarned,
+        });
+
+      if (error) {
+        if (error.code === '23505') {
+          alert('이미 오늘 출석하셨습니다.');
+        } else {
+          throw error;
+        }
       } else {
-        alert(json.error || '출석 체크에 실패했습니다.');
+        setSuccessMessage(`출석 완료! ${pointsEarned}P 적립되었습니다.`);
+        await fetchAttendance();
       }
     } catch (err) {
       console.error('출석 체크 실패:', err);

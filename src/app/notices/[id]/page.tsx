@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Eye, Pin } from 'lucide-react';
 import { format } from 'date-fns';
+import { createClient } from '@/lib/supabase/client';
 
 interface Notice {
   id: string;
@@ -28,13 +29,33 @@ export default function NoticeDetailPage() {
 
   async function fetchNotice() {
     try {
-      const res = await fetch(`/api/notices/${id}`);
-      const json = await res.json();
-      if (json.success) {
-        setNotice(json.data);
-      } else {
-        setError(json.error || '공지사항을 찾을 수 없습니다.');
+      const supabase = createClient();
+      const { data, error: err } = await supabase
+        .from('notices')
+        .select('id, title, content, is_pinned, view_count, created_at, updated_at')
+        .eq('id', id)
+        .single();
+
+      if (err || !data) {
+        setError('공지사항을 찾을 수 없습니다.');
+        return;
       }
+
+      setNotice({
+        id: data.id,
+        title: data.title,
+        content: data.content,
+        isPinned: data.is_pinned,
+        viewCount: data.view_count,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      });
+
+      // Increment view count
+      await supabase
+        .from('notices')
+        .update({ view_count: data.view_count + 1 })
+        .eq('id', id);
     } catch (err) {
       console.error('공지사항 로딩 실패:', err);
       setError('공지사항을 불러오는 중 오류가 발생했습니다.');

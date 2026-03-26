@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { CheckCircle2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/client';
 
 function SuccessContent() {
   const navigate = useNavigate();
@@ -23,26 +24,32 @@ function SuccessContent() {
       setConfirming(false);
       return;
     }
-
     confirmPayment();
   }, [orderId, paymentKey, amount]);
 
   async function confirmPayment() {
     try {
-      const response = await fetch('/api/payments/confirm', {
+      const supabase = createClient();
+
+      // Edge Function 호출 - 서버에서 PG 검증 + 금액 위변조 방지
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const res = await fetch(`${supabaseUrl}/functions/v1/verify-payment`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId,
-          paymentKey,
-          amount: parseInt(amount || '0'),
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ paymentKey, orderId, amount: parseInt(amount!) }),
       });
 
-      const data = await response.json();
+      const result = await res.json();
 
-      if (!data.success) {
-        throw new Error(data.error || '결제 확인에 실패했습니다.');
+      if (!result.success) {
+        throw new Error(result.error || '결제 검증에 실패했습니다.');
       }
 
       setConfirming(false);

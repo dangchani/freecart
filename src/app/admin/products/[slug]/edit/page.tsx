@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select';
 import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 const productSchema = z.object({
   name: z.string().min(1, '상품명을 입력해주세요'),
@@ -39,6 +40,7 @@ export default function EditProductPage() {
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [productId, setProductId] = useState<string | null>(null);
 
   const {
     register,
@@ -63,11 +65,15 @@ export default function EditProductPage() {
 
   async function loadCategories() {
     try {
-      const response = await fetch('/api/categories');
-      const data = await response.json();
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('product_categories')
+        .select('id, name, slug, parent_id, depth, sort_order')
+        .eq('is_visible', true)
+        .order('sort_order', { ascending: true });
 
-      if (data.success) {
-        setCategories(data.data || []);
+      if (!error) {
+        setCategories(data || []);
       }
     } catch (error) {
       console.error('Failed to load categories:', error);
@@ -76,23 +82,27 @@ export default function EditProductPage() {
 
   async function loadProduct() {
     try {
-      const response = await fetch(`/api/products/${slug}`);
-      const data = await response.json();
+      const supabase = createClient();
+      const { data: product, error } = await supabase
+        .from('products')
+        .select('id, name, description, sale_price, regular_price, stock_quantity, category_id, status, product_images(url)')
+        .eq('slug', slug!)
+        .single();
 
-      if (!data.success) {
+      if (error || !product) {
         throw new Error('상품을 찾을 수 없습니다.');
       }
 
-      const product = data.data;
+      setProductId(product.id);
       reset({
         name: product.name,
-        description: product.description,
-        price: product.price,
-        comparePrice: product.comparePrice,
-        stock: product.stock,
-        categoryId: product.categoryId,
-        thumbnail: product.thumbnail,
-        isActive: product.isActive,
+        description: product.description || '',
+        price: product.sale_price,
+        comparePrice: product.regular_price,
+        stock: product.stock_quantity,
+        categoryId: product.category_id,
+        thumbnail: (product.product_images as any)?.[0]?.url || '',
+        isActive: product.status === 'active',
       });
     } catch (error) {
       console.error('Failed to load product:', error);
@@ -106,18 +116,22 @@ export default function EditProductPage() {
   async function onSubmit(data: ProductForm) {
     try {
       setSubmitting(true);
+      const supabase = createClient();
 
-      const response = await fetch(`/api/products/${slug}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
+      const { error } = await supabase
+        .from('products')
+        .update({
+          name: data.name,
+          description: data.description,
+          sale_price: data.price,
+          regular_price: data.comparePrice || data.price,
+          stock_quantity: data.stock,
+          category_id: data.categoryId,
+          status: data.isActive ? 'active' : 'draft',
+        })
+        .eq('slug', slug!);
 
-      const result = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.error || '상품 수정에 실패했습니다.');
-      }
+      if (error) throw error;
 
       alert('상품이 수정되었습니다.');
       navigate('/admin/products');

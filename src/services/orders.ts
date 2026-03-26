@@ -12,77 +12,115 @@ function generateOrderNumber(): string {
   return `ORD-${year}${month}${day}-${random}`;
 }
 
+function mapOrder(order: any): Order {
+  return {
+    id: order.id,
+    orderNumber: order.order_number,
+    userId: order.user_id,
+    status: order.status,
+    items:
+      order.items?.map((item: any) => ({
+        id: item.id,
+        orderId: item.order_id,
+        productId: item.product_id,
+        variantId: item.variant_id,
+        productName: item.product_name,
+        optionText: item.option_text,
+        productImage: item.product_image,
+        unitPrice: item.unit_price,
+        quantity: item.quantity,
+        discountAmount: item.discount_amount,
+        totalPrice: item.total_price,
+        status: item.status,
+      })) || [],
+    subtotal: order.subtotal,
+    discountAmount: order.discount_amount || 0,
+    couponDiscount: order.coupon_discount || 0,
+    shippingFee: order.shipping_fee || 0,
+    usedPoints: order.used_points || 0,
+    usedDeposit: order.used_deposit || 0,
+    totalAmount: order.total_amount,
+    ordererName: order.orderer_name,
+    ordererPhone: order.orderer_phone,
+    recipientName: order.recipient_name,
+    recipientPhone: order.recipient_phone,
+    postalCode: order.postal_code,
+    address1: order.address1,
+    address2: order.address2,
+    shippingMessage: order.shipping_message,
+    paymentMethod: order.payment_method,
+    paidAt: order.paid_at,
+    createdAt: order.created_at,
+    updatedAt: order.updated_at,
+  };
+}
+
 export async function createOrder(
   userId: string,
-  items: { productId: string; quantity: number; price: number; options?: Record<string, string> }[],
+  items: { productId: string; productName: string; quantity: number; unitPrice: number; productImage?: string }[],
   shippingInfo: {
-    address: string;
-    phone: string;
-    name: string;
+    ordererName: string;
+    ordererPhone: string;
+    recipientName: string;
+    recipientPhone: string;
+    postalCode: string;
+    address1: string;
+    address2?: string;
+    shippingMessage?: string;
   },
   paymentMethod: string
 ): Promise<Order> {
   const supabase = createClient();
 
-  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const shippingCost = subtotal >= 50000 ? 0 : 3000; // 5만원 이상 무료배송
-  const total = subtotal + shippingCost;
+  const subtotal = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+  const shippingFee = subtotal >= 50000 ? 0 : 3000;
+  const totalAmount = subtotal + shippingFee;
 
-  // 주문 생성
   const { data: order, error: orderError } = await supabase
     .from('orders')
     .insert({
       order_number: generateOrderNumber(),
       user_id: userId,
       subtotal,
-      shipping_cost: shippingCost,
-      discount: 0,
-      total,
-      shipping_address: shippingInfo.address,
-      shipping_phone: shippingInfo.phone,
-      shipping_name: shippingInfo.name,
+      shipping_fee: shippingFee,
+      discount_amount: 0,
+      coupon_discount: 0,
+      used_points: 0,
+      used_deposit: 0,
+      total_amount: totalAmount,
+      orderer_name: shippingInfo.ordererName,
+      orderer_phone: shippingInfo.ordererPhone,
+      recipient_name: shippingInfo.recipientName,
+      recipient_phone: shippingInfo.recipientPhone,
+      postal_code: shippingInfo.postalCode,
+      address1: shippingInfo.address1,
+      address2: shippingInfo.address2 || null,
+      shipping_message: shippingInfo.shippingMessage || null,
       payment_method: paymentMethod,
       status: 'pending',
-      payment_status: 'pending',
     })
     .select()
     .single();
 
   if (orderError) throw orderError;
 
-  // 주문 항목 생성
   const orderItems = items.map((item) => ({
     order_id: order.id,
     product_id: item.productId,
-    product_name: '', // TODO: 상품명 가져오기
-    price: item.price,
+    product_name: item.productName,
+    product_image: item.productImage || null,
+    unit_price: item.unitPrice,
     quantity: item.quantity,
-    options: item.options,
+    discount_amount: 0,
+    total_price: item.unitPrice * item.quantity,
+    status: 'pending',
   }));
 
   const { error: itemsError } = await supabase.from('order_items').insert(orderItems);
 
   if (itemsError) throw itemsError;
 
-  return {
-    id: order.id,
-    orderNumber: order.order_number,
-    userId: order.user_id,
-    status: order.status,
-    items: [],
-    subtotal: parseFloat(order.subtotal),
-    shippingCost: parseFloat(order.shipping_cost),
-    discount: parseFloat(order.discount),
-    total: parseFloat(order.total),
-    shippingAddress: order.shipping_address,
-    shippingPhone: order.shipping_phone,
-    shippingName: order.shipping_name,
-    paymentMethod: order.payment_method,
-    paymentStatus: order.payment_status,
-    memo: order.memo,
-    createdAt: order.created_at,
-    updatedAt: order.updated_at,
-  };
+  return mapOrder({ ...order, items: [] });
 }
 
 export async function getOrders(userId: string): Promise<Order[]> {
@@ -90,47 +128,16 @@ export async function getOrders(userId: string): Promise<Order[]> {
 
   const { data, error } = await supabase
     .from('orders')
-    .select(
-      `
+    .select(`
       *,
       items:order_items(*)
-    `
-    )
+    `)
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
   if (error) throw error;
 
-  return (
-    data?.map((order) => ({
-      id: order.id,
-      orderNumber: order.order_number,
-      userId: order.user_id,
-      status: order.status,
-      items:
-        order.items?.map((item: any) => ({
-          id: item.id,
-          orderId: item.order_id,
-          productId: item.product_id,
-          productName: item.product_name,
-          price: parseFloat(item.price),
-          quantity: item.quantity,
-          options: item.options,
-        })) || [],
-      subtotal: parseFloat(order.subtotal),
-      shippingCost: parseFloat(order.shipping_cost),
-      discount: parseFloat(order.discount),
-      total: parseFloat(order.total),
-      shippingAddress: order.shipping_address,
-      shippingPhone: order.shipping_phone,
-      shippingName: order.shipping_name,
-      paymentMethod: order.payment_method,
-      paymentStatus: order.payment_status,
-      memo: order.memo,
-      createdAt: order.created_at,
-      updatedAt: order.updated_at,
-    })) || []
-  );
+  return data?.map(mapOrder) || [];
 }
 
 export async function getOrderByNumber(orderNumber: string): Promise<Order | null> {
@@ -138,46 +145,17 @@ export async function getOrderByNumber(orderNumber: string): Promise<Order | nul
 
   const { data, error } = await supabase
     .from('orders')
-    .select(
-      `
+    .select(`
       *,
       items:order_items(*)
-    `
-    )
+    `)
     .eq('order_number', orderNumber)
     .single();
 
   if (error) throw error;
   if (!data) return null;
 
-  return {
-    id: data.id,
-    orderNumber: data.order_number,
-    userId: data.user_id,
-    status: data.status,
-    items:
-      data.items?.map((item: any) => ({
-        id: item.id,
-        orderId: item.order_id,
-        productId: item.product_id,
-        productName: item.product_name,
-        price: parseFloat(item.price),
-        quantity: item.quantity,
-        options: item.options,
-      })) || [],
-    subtotal: parseFloat(data.subtotal),
-    shippingCost: parseFloat(data.shipping_cost),
-    discount: parseFloat(data.discount),
-    total: parseFloat(data.total),
-    shippingAddress: data.shipping_address,
-    shippingPhone: data.shipping_phone,
-    shippingName: data.shipping_name,
-    paymentMethod: data.payment_method,
-    paymentStatus: data.payment_status,
-    memo: data.memo,
-    createdAt: data.created_at,
-    updatedAt: data.updated_at,
-  };
+  return mapOrder(data);
 }
 
 export async function cancelOrder(orderId: string) {
@@ -187,7 +165,7 @@ export async function cancelOrder(orderId: string) {
     .from('orders')
     .update({
       status: 'cancelled',
-      updated_at: new Date().toISOString(),
+      cancelled_at: new Date().toISOString(),
     })
     .eq('id', orderId);
 

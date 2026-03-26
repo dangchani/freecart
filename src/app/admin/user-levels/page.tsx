@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Users, Edit2, Save, X } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface UserLevel {
   id: string;
@@ -26,12 +27,43 @@ export default function AdminUserLevelsPage() {
   }
 
   useEffect(() => {
-    fetch('/api/admin/user-levels')
-      .then((r) => r.json())
-      .then((data) => setLevels(data.levels || data || []))
-      .catch(() => setLevels([]))
-      .finally(() => setLoading(false));
+    loadLevels();
   }, []);
+
+  async function loadLevels() {
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('user_levels')
+        .select('id, level, name, discount_rate, point_rate')
+        .order('level', { ascending: true });
+
+      if (error) throw error;
+
+      const levelsWithCounts: UserLevel[] = [];
+      for (const l of data || []) {
+        const { count } = await supabase
+          .from('users')
+          .select('id', { count: 'exact', head: true })
+          .eq('level_id', l.id);
+
+        levelsWithCounts.push({
+          id: l.id,
+          levelNumber: l.level,
+          name: l.name,
+          discountRate: Number(l.discount_rate),
+          pointRate: Number(l.point_rate),
+          memberCount: count || 0,
+        });
+      }
+
+      setLevels(levelsWithCounts);
+    } catch {
+      setLevels([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   function startEdit(level: UserLevel) {
     setEditingId(level.id);
@@ -46,21 +78,27 @@ export default function AdminUserLevelsPage() {
   async function saveLevel(id: string) {
     setSaving(true);
     try {
-      const res = await fetch(`/api/admin/user-levels/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editData),
-      });
-      const data = await res.json();
-      if (data.success || res.ok) {
-        setLevels((prev) =>
-          prev.map((l) => (l.id === id ? { ...l, ...editData } : l))
-        );
-        cancelEdit();
-        showToast('등급이 저장되었습니다.');
-      } else showToast('저장에 실패했습니다.');
-    } catch { showToast('오류가 발생했습니다.'); }
-    finally { setSaving(false); }
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('user_levels')
+        .update({
+          name: editData.name,
+          discount_rate: editData.discountRate,
+          point_rate: editData.pointRate,
+        })
+        .eq('id', id);
+
+      if (error) throw error;
+      setLevels((prev) =>
+        prev.map((l) => (l.id === id ? { ...l, ...editData } : l))
+      );
+      cancelEdit();
+      showToast('등급이 저장되었습니다.');
+    } catch {
+      showToast('저장에 실패했습니다.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   const levelColors = [
@@ -75,9 +113,7 @@ export default function AdminUserLevelsPage() {
   return (
     <div className="p-6 max-w-5xl mx-auto">
       {toast && (
-        <div className="fixed top-4 right-4 z-50 bg-gray-900 text-white px-4 py-3 rounded-lg shadow-lg text-sm">
-          {toast}
-        </div>
+        <div className="fixed top-4 right-4 z-50 bg-gray-900 text-white px-4 py-3 rounded-lg shadow-lg text-sm">{toast}</div>
       )}
 
       <div className="mb-6">
@@ -114,22 +150,13 @@ export default function AdminUserLevelsPage() {
               {levels.map((level, idx) => (
                 <tr key={level.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${
-                        levelColors[idx % levelColors.length]
-                      }`}
-                    >
+                    <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${levelColors[idx % levelColors.length]}`}>
                       {level.levelNumber}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     {editingId === level.id ? (
-                      <input
-                        type="text"
-                        value={editData.name ?? ''}
-                        onChange={(e) => setEditData((d) => ({ ...d, name: e.target.value }))}
-                        className="border rounded-lg px-2 py-1 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                      />
+                      <input type="text" value={editData.name ?? ''} onChange={(e) => setEditData((d) => ({ ...d, name: e.target.value }))} className="border rounded-lg px-2 py-1 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-orange-500" />
                     ) : (
                       <span className="font-medium text-gray-900">{level.name}</span>
                     )}
@@ -137,17 +164,7 @@ export default function AdminUserLevelsPage() {
                   <td className="px-4 py-3">
                     {editingId === level.id ? (
                       <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          step={0.1}
-                          value={editData.discountRate ?? 0}
-                          onChange={(e) =>
-                            setEditData((d) => ({ ...d, discountRate: parseFloat(e.target.value) }))
-                          }
-                          className="border rounded-lg px-2 py-1 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                        />
+                        <input type="number" min={0} max={100} step={0.1} value={editData.discountRate ?? 0} onChange={(e) => setEditData((d) => ({ ...d, discountRate: parseFloat(e.target.value) }))} className="border rounded-lg px-2 py-1 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-orange-500" />
                         <span className="text-gray-500">%</span>
                       </div>
                     ) : (
@@ -157,52 +174,27 @@ export default function AdminUserLevelsPage() {
                   <td className="px-4 py-3">
                     {editingId === level.id ? (
                       <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          step={0.1}
-                          value={editData.pointRate ?? 0}
-                          onChange={(e) =>
-                            setEditData((d) => ({ ...d, pointRate: parseFloat(e.target.value) }))
-                          }
-                          className="border rounded-lg px-2 py-1 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                        />
+                        <input type="number" min={0} max={100} step={0.1} value={editData.pointRate ?? 0} onChange={(e) => setEditData((d) => ({ ...d, pointRate: parseFloat(e.target.value) }))} className="border rounded-lg px-2 py-1 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-orange-500" />
                         <span className="text-gray-500">%</span>
                       </div>
                     ) : (
                       <span>{level.pointRate}%</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-gray-600">
-                    {level.memberCount.toLocaleString()}명
-                  </td>
+                  <td className="px-4 py-3 text-gray-600">{level.memberCount.toLocaleString()}명</td>
                   <td className="px-4 py-3">
                     {editingId === level.id ? (
                       <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => saveLevel(level.id)}
-                          disabled={saving}
-                          className="flex items-center gap-1 text-xs bg-orange-600 hover:bg-orange-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
-                        >
-                          <Save className="h-3 w-3" />
-                          저장
+                        <button onClick={() => saveLevel(level.id)} disabled={saving} className="flex items-center gap-1 text-xs bg-orange-600 hover:bg-orange-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50">
+                          <Save className="h-3 w-3" />저장
                         </button>
-                        <button
-                          onClick={cancelEdit}
-                          className="flex items-center gap-1 text-xs border border-gray-300 hover:bg-gray-50 px-3 py-1.5 rounded-lg"
-                        >
-                          <X className="h-3 w-3" />
-                          취소
+                        <button onClick={cancelEdit} className="flex items-center gap-1 text-xs border border-gray-300 hover:bg-gray-50 px-3 py-1.5 rounded-lg">
+                          <X className="h-3 w-3" />취소
                         </button>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => startEdit(level)}
-                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
-                      >
-                        <Edit2 className="h-3 w-3" />
-                        수정
+                      <button onClick={() => startEdit(level)} className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium">
+                        <Edit2 className="h-3 w-3" />수정
                       </button>
                     )}
                   </td>

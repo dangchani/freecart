@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Mail, CheckCircle } from 'lucide-react';
+import { resetPassword } from '@/lib/auth';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -19,17 +20,8 @@ export default function ForgotPasswordPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/auth/password/forgot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setSuccess(true);
-      } else {
-        setError(json.error || '요청에 실패했습니다. 다시 시도해주세요.');
-      }
+      await resetPassword(email);
+      setSuccess(true);
     } catch (err) {
       console.error('비밀번호 찾기 실패:', err);
       setError('요청 중 오류가 발생했습니다.');

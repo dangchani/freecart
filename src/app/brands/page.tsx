@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight, Tag } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Brand {
   id: string;
@@ -16,11 +17,33 @@ export default function BrandsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/brands')
-      .then((r) => r.json())
-      .then((data) => setBrands(data.brands || data || []))
-      .catch(() => setBrands([]))
-      .finally(() => setLoading(false));
+    async function loadBrands() {
+      try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+          .from('product_brands')
+          .select('id, name, slug, logo_url, description')
+          .eq('is_visible', true)
+          .order('name', { ascending: true });
+
+        if (error) throw error;
+
+        setBrands(
+          (data || []).map((b: any) => ({
+            id: b.id,
+            name: b.name,
+            slug: b.slug,
+            logoUrl: b.logo_url,
+            description: b.description,
+          }))
+        );
+      } catch {
+        setBrands([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadBrands();
   }, []);
 
   return (

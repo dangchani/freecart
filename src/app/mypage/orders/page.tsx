@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ArrowLeft, Package } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Order {
   id: string;
@@ -51,12 +52,34 @@ export default function OrdersPage() {
 
   async function loadOrders() {
     try {
-      const response = await fetch('/api/orders');
-      const data = await response.json();
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          id, order_number, status, total_amount, shipping_fee, created_at,
+          order_items(id, product_name, quantity, unit_price)
+        `)
+        .eq('user_id', user!.id)
+        .order('created_at', { ascending: false });
 
-      if (data.success) {
-        setOrders(data.data || []);
-      }
+      if (error) throw error;
+
+      setOrders(
+        (data || []).map((o: any) => ({
+          id: o.id,
+          orderNumber: o.order_number,
+          status: o.status,
+          totalAmount: o.total_amount,
+          shippingCost: o.shipping_fee,
+          createdAt: o.created_at,
+          items: (o.order_items || []).map((i: any) => ({
+            id: i.id,
+            productName: i.product_name,
+            quantity: i.quantity,
+            price: i.unit_price,
+          })),
+        }))
+      );
     } catch (error) {
       console.error('Failed to load orders:', error);
     } finally {
@@ -70,15 +93,15 @@ export default function OrdersPage() {
     }
 
     try {
-      const response = await fetch(`/api/orders/${orderNumber}/cancel`, {
-        method: 'POST',
-      });
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+        .eq('order_number', orderNumber)
+        .eq('user_id', user!.id)
+        .in('status', ['pending', 'paid']);
 
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || '주문 취소에 실패했습니다.');
-      }
+      if (error) throw error;
 
       alert('주문이 취소되었습니다.');
       await loadOrders();

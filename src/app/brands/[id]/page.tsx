@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Tag } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Brand {
   id: string;
@@ -30,22 +31,63 @@ export default function BrandProductsPage() {
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      fetch(`/api/brands/${id}`)
-        .then((r) => r.json())
-        .then((data) => {
-          if (!data || data.error) setNotFound(true);
-          else setBrand(data.brand || data);
-        })
-        .catch(() => setNotFound(true))
-        .finally(() => setLoading(false)),
+    async function load() {
+      const supabase = createClient();
 
-      fetch(`/api/products?brandId=${id}`)
-        .then((r) => r.json())
-        .then((data) => setProducts(data.products || data || []))
-        .catch(() => setProducts([]))
-        .finally(() => setProductsLoading(false)),
-    ]);
+      // Load brand
+      try {
+        const { data, error } = await supabase
+          .from('product_brands')
+          .select('id, name, slug, logo_url, description')
+          .eq('id', id)
+          .single();
+        if (error || !data) {
+          setNotFound(true);
+        } else {
+          setBrand({
+            id: data.id,
+            name: data.name,
+            slug: data.slug,
+            logoUrl: data.logo_url,
+            description: data.description,
+          });
+        }
+      } catch {
+        setNotFound(true);
+      } finally {
+        setLoading(false);
+      }
+
+      // Load products for this brand
+      try {
+        const { data } = await supabase
+          .from('products')
+          .select('id, name, slug, sale_price, regular_price, product_images(url, is_primary)')
+          .eq('brand_id', id)
+          .eq('status', 'active')
+          .order('created_at', { ascending: false });
+        setProducts(
+          (data || []).map((p: any) => {
+            const primaryImg = (p.product_images || []).find((i: any) => i.is_primary);
+            const firstImg = (p.product_images || [])[0];
+            return {
+              id: p.id,
+              name: p.name,
+              slug: p.slug,
+              price: p.sale_price,
+              comparePrice: p.regular_price,
+              thumbnail: primaryImg?.url || firstImg?.url,
+              images: (p.product_images || []).map((i: any) => i.url),
+            };
+          })
+        );
+      } catch {
+        setProducts([]);
+      } finally {
+        setProductsLoading(false);
+      }
+    }
+    load();
   }, [id]);
 
   if (!loading && notFound) {

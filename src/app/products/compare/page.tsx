@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
 import { ArrowLeft, Star } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface ProductCompare {
   id: string;
@@ -42,13 +43,42 @@ function CompareContent() {
   async function loadComparison() {
     try {
       setLoading(true);
-      const response = await fetch(`/api/products/compare?ids=${idsParam}`);
-      const data = await response.json();
-      if (data.success) {
-        setProducts(data.data || []);
-      } else {
-        setError(data.error || '상품 정보를 불러오지 못했습니다.');
-      }
+      const supabase = createClient();
+
+      const { data, error: err } = await supabase
+        .from('products')
+        .select(`
+          id, name, slug, sale_price, regular_price, stock_quantity, status, description,
+          review_avg, review_count,
+          product_images(url, is_primary),
+          product_categories(name),
+          product_brands(name)
+        `)
+        .in('id', productIds);
+
+      if (err) throw err;
+
+      setProducts(
+        (data || []).map((p: any) => {
+          const primaryImg = (p.product_images || []).find((i: any) => i.is_primary);
+          const firstImg = (p.product_images || [])[0];
+          return {
+            id: p.id,
+            name: p.name,
+            slug: p.slug,
+            price: p.sale_price,
+            originalPrice: p.regular_price,
+            thumbnail: primaryImg?.url || firstImg?.url || '/placeholder.png',
+            rating: p.review_avg ? parseFloat(p.review_avg) : undefined,
+            reviewCount: p.review_count,
+            stock: p.stock_quantity,
+            isActive: p.status === 'active',
+            category: p.product_categories?.name,
+            brand: p.product_brands?.name,
+            description: p.description,
+          };
+        })
+      );
     } catch {
       setError('상품 비교 데이터를 불러오는 중 오류가 발생했습니다.');
     } finally {

@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tag, Ticket } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/client';
 
 type FilterType = 'available' | 'used' | 'expired';
 
@@ -52,9 +53,48 @@ export default function CouponsPage() {
   async function fetchCoupons() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/users/me/coupons?status=${filter}`);
-      const json = await res.json();
-      if (json.success) setCoupons(json.data || []);
+      const supabase = createClient();
+      let query = supabase
+        .from('user_coupons')
+        .select(`
+          id, is_used, used_at, expires_at, status,
+          coupons(code, name, discount_type, discount_value, min_order_amount, max_discount_amount)
+        `)
+        .eq('user_id', user!.id);
+
+      if (filter === 'available') {
+        query = query.eq('is_used', false).gte('expires_at', new Date().toISOString());
+      } else if (filter === 'used') {
+        query = query.eq('is_used', true);
+      } else if (filter === 'expired') {
+        query = query.eq('is_used', false).lt('expires_at', new Date().toISOString());
+      }
+
+      const { data, error } = await query.order('expires_at', { ascending: true });
+
+      if (error) throw error;
+
+      setCoupons(
+        (data || []).map((uc: any) => {
+          const coupon = uc.coupons;
+          let status: 'available' | 'used' | 'expired' = 'available';
+          if (uc.is_used) status = 'used';
+          else if (new Date(uc.expires_at) < new Date()) status = 'expired';
+
+          return {
+            id: uc.id,
+            code: coupon?.code || '',
+            name: coupon?.name || '',
+            discountType: coupon?.discount_type || 'fixed',
+            discountValue: coupon?.discount_value || 0,
+            minOrderAmount: coupon?.min_order_amount,
+            maxDiscountAmount: coupon?.max_discount_amount,
+            expiresAt: uc.expires_at,
+            usedAt: uc.used_at,
+            status,
+          };
+        })
+      );
     } catch (err) {
       console.error('쿠폰 로딩 실패:', err);
     } finally {
@@ -70,19 +110,52 @@ export default function CouponsPage() {
     setRegistering(true);
     setMessage(null);
     try {
-      const res = await fetch('/api/users/me/coupons', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: couponCode.trim() }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setMessage({ type: 'success', text: '쿠폰이 등록되었습니다.' });
-        setCouponCode('');
-        fetchCoupons();
-      } else {
-        setMessage({ type: 'error', text: json.error || '쿠폰 등록에 실패했습니다.' });
+      const supabase = createClient();
+
+      // Find coupon by code
+      const { data: coupon, error: couponErr } = await supabase
+        .from('coupons')
+        .select('id, expires_at, is_active')
+        .eq('code', couponCode.trim())
+        .single();
+
+      if (couponErr || !coupon) {
+        setMessage({ type: 'error', text: '유효하지 않은 쿠폰 코드입니다.' });
+        return;
       }
+
+      if (!coupon.is_active || new Date(coupon.expires_at) < new Date()) {
+        setMessage({ type: 'error', text: '만료되었거나 사용할 수 없는 쿠폰입니다.' });
+        return;
+      }
+
+      // Check if already registered
+      const { data: existing } = await supabase
+        .from('user_coupons')
+        .select('id')
+        .eq('user_id', user!.id)
+        .eq('coupon_id', coupon.id)
+        .single();
+
+      if (existing) {
+        setMessage({ type: 'error', text: '이미 등록된 쿠폰입니다.' });
+        return;
+      }
+
+      const { error } = await supabase
+        .from('user_coupons')
+        .insert({
+          user_id: user!.id,
+          coupon_id: coupon.id,
+          expires_at: coupon.expires_at,
+          status: 'unused',
+        });
+
+      if (error) throw error;
+
+      setMessage({ type: 'success', text: '쿠폰이 등록되었습니다.' });
+      setCouponCode('');
+      fetchCoupons();
     } catch (err) {
       console.error('쿠폰 등록 실패:', err);
       setMessage({ type: 'error', text: '쿠폰 등록 중 오류가 발생했습니다.' });

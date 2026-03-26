@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Pencil, Trash2, ChevronRight, X } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Category {
   id: string;
@@ -47,14 +48,46 @@ export default function AdminCategoriesPage() {
 
   async function fetchCategories() {
     try {
-      const res = await fetch('/api/admin/categories');
-      const json = await res.json();
-      if (json.success) setCategories(json.data || []);
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('product_categories')
+        .select('id, name, slug, parent_id, sort_order, depth')
+        .order('sort_order', { ascending: true });
+
+      if (error) throw error;
+
+      const flat = (data || []).map((c) => ({
+        id: c.id,
+        name: c.name,
+        slug: c.slug,
+        parentId: c.parent_id || undefined,
+        sortOrder: c.sort_order,
+      }));
+
+      // Build tree
+      const tree = buildTree(flat);
+      setCategories(tree);
     } catch (err) {
       console.error('카테고리 로딩 실패:', err);
     } finally {
       setLoading(false);
     }
+  }
+
+  function buildTree(items: Category[]): Category[] {
+    const map: Record<string, Category> = {};
+    items.forEach((item) => {
+      map[item.id] = { ...item, children: [] };
+    });
+    const roots: Category[] = [];
+    items.forEach((item) => {
+      if (item.parentId && map[item.parentId]) {
+        map[item.parentId].children!.push(map[item.id]);
+      } else {
+        roots.push(map[item.id]);
+      }
+    });
+    return roots;
   }
 
   function generateSlug(name: string) {
@@ -95,23 +128,32 @@ export default function AdminCategoriesPage() {
     if (!form.name.trim() || !form.slug.trim()) return;
     setSaving(true);
     try {
-      const url = editingId ? `/api/admin/categories/${editingId}` : '/api/admin/categories';
-      const method = editingId ? 'PATCH' : 'POST';
-      const body = { ...form, parentId: form.parentId || null };
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setShowForm(false);
-        setEditingId(null);
-        setForm(emptyForm);
-        await fetchCategories();
+      const supabase = createClient();
+      const payload = {
+        name: form.name,
+        slug: form.slug,
+        parent_id: form.parentId || null,
+        sort_order: form.sortOrder,
+        depth: form.parentId ? 1 : 0,
+      };
+
+      if (editingId) {
+        const { error } = await supabase
+          .from('product_categories')
+          .update(payload)
+          .eq('id', editingId);
+        if (error) throw error;
       } else {
-        alert(json.error || '저장에 실패했습니다.');
+        const { error } = await supabase
+          .from('product_categories')
+          .insert(payload);
+        if (error) throw error;
       }
+
+      setShowForm(false);
+      setEditingId(null);
+      setForm(emptyForm);
+      await fetchCategories();
     } catch (err) {
       console.error('카테고리 저장 실패:', err);
       alert('저장 중 오류가 발생했습니다.');
@@ -124,13 +166,14 @@ export default function AdminCategoriesPage() {
     if (!confirm(`"${name}" 카테고리를 삭제하시겠습니까?`)) return;
     setDeletingId(id);
     try {
-      const res = await fetch(`/api/admin/categories/${id}`, { method: 'DELETE' });
-      const json = await res.json();
-      if (json.success) {
-        await fetchCategories();
-      } else {
-        alert(json.error || '삭제에 실패했습니다.');
-      }
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('product_categories')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      await fetchCategories();
     } catch (err) {
       console.error('카테고리 삭제 실패:', err);
       alert('삭제 중 오류가 발생했습니다.');

@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ArrowLeft } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface UserDetail {
   id: string;
@@ -77,16 +78,56 @@ export default function AdminUserDetailPage() {
   async function loadUser() {
     try {
       setLoading(true);
-      const response = await fetch(`/api/admin/users/${userId}`);
-      const data = await response.json();
+      const supabase = createClient();
 
-      if (data.success) {
-        setUserDetail(data.data);
-        setMemo(data.data.memo || '');
-        setSelectedLevel(data.data.level || 'bronze');
-      } else {
-        setError(data.error || '회원 정보를 불러오지 못했습니다.');
-      }
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id, name, email, phone, points, is_blocked, created_at, memo, level_id, user_levels(name)')
+        .eq('id', userId!)
+        .single();
+
+      if (userError) throw userError;
+
+      // Get default address
+      const { data: addressData } = await supabase
+        .from('user_addresses')
+        .select('address1, address2')
+        .eq('user_id', userId!)
+        .eq('is_default', true)
+        .single();
+
+      // Get orders
+      const { data: ordersData } = await supabase
+        .from('orders')
+        .select('id, order_number, status, total_amount, created_at')
+        .eq('user_id', userId!)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      const levelName = (userData.user_levels as any)?.name || '';
+      const detail: UserDetail = {
+        id: userData.id,
+        name: userData.name,
+        email: userData.email,
+        phone: userData.phone || '',
+        level: levelName,
+        points: userData.points || 0,
+        createdAt: userData.created_at,
+        isBlocked: userData.is_blocked,
+        memo: userData.memo || '',
+        address: addressData ? [addressData.address1, addressData.address2].filter(Boolean).join(' ') : '',
+        orders: (ordersData || []).map((o) => ({
+          id: o.id,
+          orderNumber: o.order_number,
+          status: o.status,
+          totalAmount: o.total_amount,
+          createdAt: o.created_at,
+        })),
+      };
+
+      setUserDetail(detail);
+      setMemo(detail.memo);
+      setSelectedLevel(detail.level || 'bronze');
     } catch {
       setError('회원 정보를 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -96,13 +137,13 @@ export default function AdminUserDetailPage() {
 
   async function handleSaveMemo() {
     try {
-      const response = await fetch(`/api/admin/users/${userId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memo }),
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      const supabase = createClient();
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ memo })
+        .eq('id', userId!);
+
+      if (updateError) throw updateError;
       setEditingMemo(false);
       await loadUser();
     } catch (err) {
@@ -113,13 +154,22 @@ export default function AdminUserDetailPage() {
   async function handleChangeLevel() {
     if (!confirm(`등급을 ${selectedLevel}(으)로 변경하시겠습니까?`)) return;
     try {
-      const response = await fetch(`/api/admin/users/${userId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ level: selectedLevel }),
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      const supabase = createClient();
+      // Find the level_id by name
+      const { data: levelData, error: levelError } = await supabase
+        .from('user_levels')
+        .select('id')
+        .eq('name', selectedLevel)
+        .single();
+
+      if (levelError || !levelData) throw new Error('등급을 찾을 수 없습니다.');
+
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ level_id: levelData.id })
+        .eq('id', userId!);
+
+      if (updateError) throw updateError;
       alert('등급이 변경되었습니다.');
       await loadUser();
     } catch (err) {
@@ -135,17 +185,35 @@ export default function AdminUserDetailPage() {
       return;
     }
     try {
-      const response = await fetch(`/api/admin/users/${userId}/points`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: pointAction,
-          amount,
-          reason: pointReason,
-        }),
+      const supabase = createClient();
+      const actualAmount = pointAction === 'add' ? amount : -amount;
+
+      // Get current points
+      const { data: currentUser } = await supabase
+        .from('users')
+        .select('points')
+        .eq('id', userId!)
+        .single();
+
+      const newBalance = (currentUser?.points || 0) + actualAmount;
+
+      // Update user points
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ points: newBalance })
+        .eq('id', userId!);
+
+      if (updateError) throw updateError;
+
+      // Insert point history
+      await supabase.from('user_points_history').insert({
+        user_id: userId!,
+        amount: actualAmount,
+        balance: newBalance,
+        type: pointAction === 'add' ? 'admin_add' : 'admin_subtract',
+        description: pointReason || (pointAction === 'add' ? '관리자 지급' : '관리자 차감'),
       });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+
       alert('포인트가 처리되었습니다.');
       setPointAmount('');
       setPointReason('');
@@ -160,13 +228,13 @@ export default function AdminUserDetailPage() {
     const action = userDetail.isBlocked ? '차단 해제' : '차단';
     if (!confirm(`해당 회원을 ${action}하시겠습니까?`)) return;
     try {
-      const response = await fetch(`/api/admin/users/${userId}/block`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isBlocked: !userDetail.isBlocked }),
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      const supabase = createClient();
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ is_blocked: !userDetail.isBlocked })
+        .eq('id', userId!);
+
+      if (updateError) throw updateError;
       await loadUser();
     } catch (err) {
       alert(err instanceof Error ? err.message : '처리 중 오류가 발생했습니다.');

@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/hooks/useAuth';
 import { format } from 'date-fns';
 import { ArrowLeft, Eye, Edit, Trash2, MessageCircle } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Post {
   id: string;
@@ -42,15 +43,36 @@ export default function PostDetailPage() {
 
   async function loadPost() {
     try {
-      const response = await fetch(`/api/posts/${id}`);
-      const data = await response.json();
+      const supabase = createClient();
 
-      if (data.success) {
-        setPost(data.data);
-      } else {
+      // Increment view count
+      try {
+        await supabase.rpc('increment_post_view_count', { post_id: id });
+      } catch {
+        // RPC doesn't exist, skip
+      }
+
+      const { data, error } = await supabase
+        .from('posts')
+        .select('id, title, content, view_count, created_at, user_id, users(name)')
+        .eq('id', id)
+        .single();
+
+      if (error || !data) {
         alert('게시글을 찾을 수 없습니다.');
         navigate(`/boards/${slug}`);
+        return;
       }
+
+      setPost({
+        id: data.id,
+        title: data.title,
+        content: data.content,
+        author: (data.users as any)?.name || '익명',
+        authorId: data.user_id,
+        viewCount: data.view_count,
+        createdAt: data.created_at,
+      });
     } catch (error) {
       console.error('Failed to load post:', error);
     } finally {
@@ -60,12 +82,26 @@ export default function PostDetailPage() {
 
   async function loadComments() {
     try {
-      const response = await fetch(`/api/posts/${id}/comments`);
-      const data = await response.json();
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('comments')
+        .select('id, content, created_at, user_id, users(name)')
+        .eq('post_id', id)
+        .eq('is_visible', true)
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: true });
 
-      if (data.success) {
-        setComments(data.data || []);
-      }
+      if (error) throw error;
+
+      setComments(
+        (data || []).map((c: any) => ({
+          id: c.id,
+          content: c.content,
+          author: c.users?.name || '익명',
+          authorId: c.user_id,
+          createdAt: c.created_at,
+        }))
+      );
     } catch (error) {
       console.error('Failed to load comments:', error);
     }
@@ -77,15 +113,14 @@ export default function PostDetailPage() {
     }
 
     try {
-      const response = await fetch(`/api/posts/${id}`, {
-        method: 'DELETE',
-      });
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('posts')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user!.id);
 
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || '게시글 삭제에 실패했습니다.');
-      }
+      if (error) throw error;
 
       alert('게시글이 삭제되었습니다.');
       navigate(`/boards/${slug}`);
@@ -110,17 +145,19 @@ export default function PostDetailPage() {
     try {
       setSubmitting(true);
 
-      const response = await fetch(`/api/posts/${id}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: newComment }),
-      });
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('comments')
+        .insert({
+          post_id: id,
+          user_id: user.id,
+          content: newComment,
+        });
 
-      const data = await response.json();
+      if (error) throw error;
 
-      if (!data.success) {
-        throw new Error(data.error || '댓글 작성에 실패했습니다.');
-      }
+      // Update comment count on post
+      try { await supabase.rpc('increment_post_comment_count', { post_id: id }); } catch {}
 
       setNewComment('');
       await loadComments();
@@ -138,15 +175,14 @@ export default function PostDetailPage() {
     }
 
     try {
-      const response = await fetch(`/api/comments/${commentId}`, {
-        method: 'DELETE',
-      });
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('comments')
+        .delete()
+        .eq('id', commentId)
+        .eq('user_id', user!.id);
 
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || '댓글 삭제에 실패했습니다.');
-      }
+      if (error) throw error;
 
       await loadComments();
     } catch (error) {

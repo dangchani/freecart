@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 export default function AdminNoticeNewPage() {
   const navigate = useNavigate();
@@ -24,13 +25,14 @@ export default function AdminNoticeNewPage() {
     setSubmitting(true);
     setError('');
     try {
-      const response = await fetch('/api/admin/notices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content, isPinned }),
+      const supabase = createClient();
+      const { error: insertError } = await supabase.from('notices').insert({
+        title,
+        content,
+        is_pinned: isPinned,
       });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+
+      if (insertError) throw insertError;
       alert('공지사항이 등록되었습니다.');
       navigate('/admin/notices');
     } catch (err) {

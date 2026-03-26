@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight, Tag, Truck, RefreshCw, Shield, Headphones } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Product {
   id: string;
   name: string;
   slug: string;
-  price: number;
-  comparePrice?: number;
-  thumbnail?: string;
-  images?: string[];
+  regularPrice: number;
+  salePrice: number;
+  images?: { id: string; url: string; isPrimary: boolean }[];
 }
 
 interface Category {
@@ -26,11 +26,12 @@ interface Notice {
 }
 
 function ProductCard({ product }: { product: Product }) {
-  const hasDiscount = product.comparePrice && product.comparePrice > product.price;
+  const hasDiscount = product.regularPrice > product.salePrice;
   const discountPercent = hasDiscount
-    ? Math.round(((product.comparePrice! - product.price) / product.comparePrice!) * 100)
+    ? Math.round(((product.regularPrice - product.salePrice) / product.regularPrice) * 100)
     : 0;
-  const imageUrl = product.thumbnail || product.images?.[0] || '/placeholder.png';
+  const primaryImage = product.images?.find((img) => img.isPrimary) || product.images?.[0];
+  const imageUrl = primaryImage?.url || '/placeholder.png';
 
   return (
     <Link to={`/products/${product.slug}`} className="group block">
@@ -50,10 +51,10 @@ function ProductCard({ product }: { product: Product }) {
         {product.name}
       </h3>
       <div className="flex items-center gap-2">
-        <span className="font-bold text-gray-900">{product.price.toLocaleString()}원</span>
+        <span className="font-bold text-gray-900">{product.salePrice.toLocaleString()}원</span>
         {hasDiscount && (
           <span className="text-xs text-gray-400 line-through">
-            {product.comparePrice!.toLocaleString()}원
+            {product.regularPrice.toLocaleString()}원
           </span>
         )}
       </div>
@@ -84,11 +85,45 @@ function ProductSection({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`/api/products?${query}&limit=8`)
-      .then((r) => r.json())
-      .then((data) => setProducts(data.products || data || []))
-      .catch(() => setProducts([]))
-      .finally(() => setLoading(false));
+    async function loadProducts() {
+      try {
+        const supabase = createClient();
+        const params = new URLSearchParams(query);
+
+        let q = supabase
+          .from('products')
+          .select('id, name, slug, regular_price, sale_price, product_images(id, url, is_primary)')
+          .eq('status', 'active')
+          .limit(8);
+
+        if (params.get('isFeatured') === 'true') q = q.eq('is_featured', true);
+        if (params.get('isNew') === 'true') q = q.eq('is_new', true);
+        if (params.get('isBest') === 'true') q = q.eq('is_best', true);
+
+        const { data, error } = await q.order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        const mapped = (data || []).map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          slug: p.slug,
+          regularPrice: p.regular_price,
+          salePrice: p.sale_price,
+          images: (p.product_images || []).map((img: any) => ({
+            id: img.id,
+            url: img.url,
+            isPrimary: img.is_primary,
+          })),
+        }));
+        setProducts(mapped);
+      } catch {
+        setProducts([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadProducts();
   }, [query]);
 
   return (
@@ -123,15 +158,45 @@ export default function HomePage() {
   const [notices, setNotices] = useState<Notice[]>([]);
 
   useEffect(() => {
-    fetch('/api/categories')
-      .then((r) => r.json())
-      .then((data) => setCategories(data.categories || data || []))
-      .catch(() => setCategories([]));
+    async function loadData() {
+      const supabase = createClient();
 
-    fetch('/api/notices?limit=3')
-      .then((r) => r.json())
-      .then((data) => setNotices(data.notices || data || []))
-      .catch(() => setNotices([]));
+      try {
+        const { data } = await supabase
+          .from('product_categories')
+          .select('id, name, slug, image_url')
+          .eq('is_visible', true)
+          .order('sort_order', { ascending: true });
+        setCategories(
+          (data || []).map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            slug: c.slug,
+            icon: c.image_url,
+          }))
+        );
+      } catch {
+        setCategories([]);
+      }
+
+      try {
+        const { data } = await supabase
+          .from('notices')
+          .select('id, title, created_at')
+          .order('created_at', { ascending: false })
+          .limit(3);
+        setNotices(
+          (data || []).map((n: any) => ({
+            id: n.id,
+            title: n.title,
+            createdAt: n.created_at,
+          }))
+        );
+      } catch {
+        setNotices([]);
+      }
+    }
+    loadData();
   }, []);
 
   const categoryIcons = ['🛍️', '👕', '👟', '🏠', '💻', '📱', '🍎', '🎮', '💄', '📚'];

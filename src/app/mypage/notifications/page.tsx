@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Bell } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface NotificationSettings {
   emailOrder: boolean;
@@ -70,9 +71,26 @@ export default function NotificationsPage() {
 
   async function fetchSettings() {
     try {
-      const res = await fetch('/api/users/me/notification-settings');
-      const json = await res.json();
-      if (json.success) setSettings(json.data);
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('notification_settings')
+        .select('email_order, email_shipping, email_marketing, sms_order, sms_shipping, sms_marketing, push_enabled')
+        .eq('user_id', user!.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+
+      if (data) {
+        setSettings({
+          emailOrder: data.email_order,
+          emailShipping: data.email_shipping,
+          emailMarketing: data.email_marketing,
+          smsOrder: data.sms_order,
+          smsShipping: data.sms_shipping,
+          smsMarketing: data.sms_marketing,
+          pushEnabled: data.push_enabled,
+        });
+      }
     } catch (err) {
       console.error('알림 설정 로딩 실패:', err);
     } finally {
@@ -84,17 +102,25 @@ export default function NotificationsPage() {
     setSaving(true);
     setMessage(null);
     try {
-      const res = await fetch('/api/users/me/notification-settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setMessage({ type: 'success', text: '알림 설정이 저장되었습니다.' });
-      } else {
-        setMessage({ type: 'error', text: json.error || '저장에 실패했습니다.' });
-      }
+      const supabase = createClient();
+      const payload = {
+        user_id: user!.id,
+        email_order: settings.emailOrder,
+        email_shipping: settings.emailShipping,
+        email_marketing: settings.emailMarketing,
+        sms_order: settings.smsOrder,
+        sms_shipping: settings.smsShipping,
+        sms_marketing: settings.smsMarketing,
+        push_enabled: settings.pushEnabled,
+      };
+
+      const { error } = await supabase
+        .from('notification_settings')
+        .upsert(payload, { onConflict: 'user_id' });
+
+      if (error) throw error;
+
+      setMessage({ type: 'success', text: '알림 설정이 저장되었습니다.' });
     } catch (err) {
       console.error('알림 설정 저장 실패:', err);
       setMessage({ type: 'error', text: '저장 중 오류가 발생했습니다.' });

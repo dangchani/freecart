@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { format } from 'date-fns';
 import { Lock, ChevronDown, ChevronUp } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface ProductQna {
   id: string;
@@ -48,15 +49,35 @@ export default function AdminProductQnaPage() {
   async function loadQna() {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      if (filter) params.set('filter', filter);
-      const response = await fetch(`/api/admin/product-qna?${params.toString()}`);
-      const data = await response.json();
-      if (data.success) {
-        setQnaList(data.data || []);
-      } else {
-        setError(data.error || 'Q&A 목록을 불러오지 못했습니다.');
+      const supabase = createClient();
+
+      let query = supabase
+        .from('product_qna')
+        .select('id, question, is_secret, answer, created_at, products(name), users(name)')
+        .order('created_at', { ascending: false });
+
+      if (filter === 'unanswered') {
+        query = query.is('answer', null);
+      } else if (filter === 'answered') {
+        query = query.not('answer', 'is', null);
       }
+
+      const { data, error: fetchError } = await query;
+
+      if (fetchError) throw fetchError;
+
+      setQnaList(
+        (data || []).map((q: any) => ({
+          id: q.id,
+          productName: q.products?.name || '',
+          authorName: q.users?.name || '',
+          content: q.question,
+          isSecret: q.is_secret,
+          isAnswered: !!q.answer,
+          createdAt: q.created_at,
+          answer: q.answer || undefined,
+        }))
+      );
     } catch {
       setError('Q&A 목록을 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -71,13 +92,16 @@ export default function AdminProductQnaPage() {
     }
     setSubmitting(true);
     try {
-      const response = await fetch(`/api/admin/product-qna/${qnaId}/answer`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: answerContent }),
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('product_qna')
+        .update({
+          answer: answerContent,
+          answered_at: new Date().toISOString(),
+        })
+        .eq('id', qnaId);
+
+      if (error) throw error;
       alert('답변이 등록되었습니다.');
       setExpandedId(null);
       setAnswerContent('');
@@ -159,9 +183,7 @@ export default function AdminProductQnaPage() {
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-gray-600">
-                        {qna.createdAt
-                          ? format(new Date(qna.createdAt), 'yyyy.MM.dd')
-                          : '-'}
+                        {qna.createdAt ? format(new Date(qna.createdAt), 'yyyy.MM.dd') : '-'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <Button
@@ -172,11 +194,7 @@ export default function AdminProductQnaPage() {
                             setAnswerContent('');
                           }}
                         >
-                          {expandedId === qna.id ? (
-                            <ChevronUp className="h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4" />
-                          )}
+                          {expandedId === qna.id ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                         </Button>
                       </td>
                     </tr>
@@ -194,9 +212,7 @@ export default function AdminProductQnaPage() {
                             </div>
                           )}
                           <div>
-                            <p className="mb-2 text-xs font-semibold text-gray-500">
-                              {qna.isAnswered ? '답변 수정' : '답변 작성'}
-                            </p>
+                            <p className="mb-2 text-xs font-semibold text-gray-500">{qna.isAnswered ? '답변 수정' : '답변 작성'}</p>
                             <textarea
                               value={answerContent}
                               onChange={(e) => setAnswerContent(e.target.value)}
@@ -205,20 +221,10 @@ export default function AdminProductQnaPage() {
                               className="mb-2 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                             <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                onClick={() => handleAnswer(qna.id)}
-                                disabled={submitting}
-                              >
+                              <Button size="sm" onClick={() => handleAnswer(qna.id)} disabled={submitting}>
                                 {submitting ? '등록 중...' : '답변 등록'}
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setExpandedId(null)}
-                              >
-                                닫기
-                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => setExpandedId(null)}>닫기</Button>
                             </div>
                           </div>
                         </td>

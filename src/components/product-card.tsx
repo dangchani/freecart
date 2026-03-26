@@ -9,10 +9,11 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product }: ProductCardProps) {
-  const thumbnail = product.thumbnail || product.images[0] || '/placeholder.png';
-  const hasDiscount = product.comparePrice && product.comparePrice > product.price;
+  const primaryImage = product.images?.find((img) => img.isPrimary) || product.images?.[0];
+  const thumbnail = primaryImage?.url || '/placeholder.png';
+  const hasDiscount = product.regularPrice > product.salePrice;
   const discountPercent = hasDiscount
-    ? Math.round(((product.comparePrice! - product.price) / product.comparePrice!) * 100)
+    ? Math.round(((product.regularPrice - product.salePrice) / product.regularPrice) * 100)
     : 0;
 
   return (
@@ -29,7 +30,7 @@ export function ProductCard({ product }: ProductCardProps) {
               {discountPercent}% OFF
             </div>
           )}
-          {product.stock === 0 && (
+          {product.stockQuantity === 0 && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/50">
               <span className="text-lg font-bold text-white">품절</span>
             </div>
@@ -42,18 +43,18 @@ export function ProductCard({ product }: ProductCardProps) {
           <h3 className="mb-2 line-clamp-2 font-medium hover:text-primary">{product.name}</h3>
         </Link>
         <div className="flex items-center gap-2">
-          <span className="text-lg font-bold">{formatCurrency(product.price)}</span>
+          <span className="text-lg font-bold">{formatCurrency(product.salePrice)}</span>
           {hasDiscount && (
             <span className="text-sm text-gray-500 line-through">
-              {formatCurrency(product.comparePrice!)}
+              {formatCurrency(product.regularPrice)}
             </span>
           )}
         </div>
       </CardContent>
 
       <CardFooter className="p-4 pt-0">
-        <Button className="w-full" disabled={product.stock === 0}>
-          {product.stock === 0 ? '품절' : '장바구니 담기'}
+        <Button className="w-full" disabled={product.stockQuantity === 0}>
+          {product.stockQuantity === 0 ? '품절' : '장바구니 담기'}
         </Button>
       </CardFooter>
     </Card>

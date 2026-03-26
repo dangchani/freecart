@@ -5,7 +5,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/hooks/useAuth';
@@ -14,7 +13,6 @@ import { ArrowLeft, Star } from 'lucide-react';
 
 const reviewSchema = z.object({
   rating: z.number().int().min(1).max(5),
-  title: z.string().min(1, '제목을 입력해주세요'),
   content: z.string().min(10, '최소 10자 이상 입력해주세요'),
 });
 
@@ -61,7 +59,6 @@ export default function NewReviewPage() {
         product_id: productId,
         user_id: user.id,
         rating: data.rating,
-        title: data.title,
         content: data.content,
       });
       if (error) throw error;
@@ -101,11 +98,6 @@ export default function NewReviewPage() {
               </div>
               <input type="hidden" {...register('rating', { valueAsNumber: true })} />
               {errors.rating && <p className="mt-1 text-sm text-red-500">{errors.rating.message}</p>}
-            </div>
-            <div>
-              <Label htmlFor="title">제목</Label>
-              <Input id="title" {...register('title')} placeholder="리뷰 제목을 입력해주세요" />
-              {errors.title && <p className="mt-1 text-sm text-red-500">{errors.title.message}</p>}
             </div>
             <div>
               <Label htmlFor="content">내용</Label>

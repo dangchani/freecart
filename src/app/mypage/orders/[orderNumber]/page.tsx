@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ArrowLeft } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface OrderDetail {
   id: string;
@@ -55,15 +56,43 @@ export default function OrderDetailPage() {
 
   async function loadOrderDetail() {
     try {
-      const response = await fetch(`/api/orders/${orderNumber}`);
-      const data = await response.json();
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('orders')
+        .select(`
+          id, order_number, status, total_amount, shipping_fee,
+          address1, address2, postal_code, recipient_name, recipient_phone,
+          shipping_message, created_at,
+          order_items(id, product_name, quantity, unit_price)
+        `)
+        .eq('order_number', orderNumber)
+        .eq('user_id', user!.id)
+        .single();
 
-      if (data.success) {
-        setOrder(data.data);
-      } else {
-        alert(data.error || '주문 정보를 불러올 수 없습니다.');
+      if (error || !data) {
+        alert('주문 정보를 불러올 수 없습니다.');
         navigate('/mypage/orders');
+        return;
       }
+
+      setOrder({
+        id: data.id,
+        orderNumber: data.order_number,
+        status: data.status,
+        totalAmount: data.total_amount,
+        shippingCost: data.shipping_fee,
+        shippingAddress: [data.address1, data.address2].filter(Boolean).join(' '),
+        recipientName: data.recipient_name,
+        recipientPhone: data.recipient_phone,
+        deliveryRequest: data.shipping_message,
+        createdAt: data.created_at,
+        items: (data.order_items || []).map((i: any) => ({
+          id: i.id,
+          productName: i.product_name,
+          quantity: i.quantity,
+          price: i.unit_price,
+        })),
+      });
     } catch (error) {
       console.error('Failed to load order:', error);
       alert('주문 정보를 불러오는 중 오류가 발생했습니다.');
@@ -79,15 +108,15 @@ export default function OrderDetailPage() {
     }
 
     try {
-      const response = await fetch(`/api/orders/${orderNumber}/cancel`, {
-        method: 'POST',
-      });
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: 'cancelled', cancelled_at: new Date().toISOString() })
+        .eq('order_number', orderNumber)
+        .eq('user_id', user!.id)
+        .in('status', ['pending', 'paid']);
 
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || '주문 취소에 실패했습니다.');
-      }
+      if (error) throw error;
 
       alert('주문이 취소되었습니다.');
       await loadOrderDetail();

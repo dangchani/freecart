@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Lock, Eye, EyeOff, CheckCircle } from 'lucide-react';
+import { updatePassword } from '@/lib/auth';
 
 function ResetPasswordForm() {
   const navigate = useNavigate();
@@ -36,18 +37,9 @@ function ResetPasswordForm() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch('/api/auth/password/reset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password: form.password }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setSuccess(true);
-        setTimeout(() => navigate('/auth/login'), 3000);
-      } else {
-        setError(json.error || '비밀번호 재설정에 실패했습니다.');
-      }
+      await updatePassword(form.password);
+      setSuccess(true);
+      setTimeout(() => navigate('/auth/login'), 3000);
     } catch (err) {
       console.error('비밀번호 재설정 실패:', err);
       setError('재설정 중 오류가 발생했습니다.');

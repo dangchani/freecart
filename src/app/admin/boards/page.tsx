@@ -1,50 +1,135 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useAuth } from '@/hooks/useAuth';
-import { ArrowLeft, Plus, Trash2, Edit } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Plus, Trash2, Edit, ChevronDown, ChevronUp, Tag, Settings } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+
+interface BoardCategory {
+  id: string;
+  name: string;
+  sortOrder: number;
+}
 
 interface Board {
   id: string;
   name: string;
   slug: string;
   description: string;
+  type: string;
+  listLevel: number;
+  readLevel: number;
+  writeLevel: number;
+  commentLevel: number;
+  useCategory: boolean;
+  useComment: boolean;
+  useSecret: boolean;
+  useAttachment: boolean;
+  sortOrder: number;
+  isActive: boolean;
   postCount: number;
+  categories: BoardCategory[];
 }
 
+const LEVEL_OPTIONS = [
+  { value: 0, label: '모든 사용자 (비로그인 포함)' },
+  { value: 1, label: '로그인 회원' },
+  { value: 2, label: '2등급 이상' },
+  { value: 3, label: '3등급 이상' },
+  { value: 9, label: '관리자만' },
+];
+
+const BOARD_TYPES = [
+  { value: 'normal', label: '일반 게시판' },
+  { value: 'notice', label: '공지사항' },
+  { value: 'qna', label: 'Q&A' },
+  { value: 'gallery', label: '갤러리' },
+  { value: 'review', label: '리뷰' },
+];
+
+const defaultForm = {
+  name: '',
+  slug: '',
+  description: '',
+  type: 'normal',
+  listLevel: 0,
+  readLevel: 0,
+  writeLevel: 1,
+  commentLevel: 1,
+  useCategory: false,
+  useComment: true,
+  useSecret: false,
+  useAttachment: true,
+  sortOrder: 0,
+  isActive: true,
+};
+
 export default function BoardsManagementPage() {
-  const navigate = useNavigate();
-  const { user, loading: authLoading } = useAuth();
   const [boards, setBoards] = useState<Board[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingBoard, setEditingBoard] = useState<Board | null>(null);
-  const [formData, setFormData] = useState({ name: '', slug: '', description: '' });
+  const [formData, setFormData] = useState(defaultForm);
   const [submitting, setSubmitting] = useState(false);
+  const [expandedBoard, setExpandedBoard] = useState<string | null>(null);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [addingCategory, setAddingCategory] = useState(false);
 
   useEffect(() => {
-    if (!authLoading) {
-      if (!user) {
-        navigate('/auth/login');
-        return;
-      }
-      loadBoards();
-    }
-  }, [user, authLoading, navigate]);
+    loadBoards();
+  }, []);
 
   async function loadBoards() {
     try {
-      const response = await fetch('/api/boards');
-      const data = await response.json();
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('boards')
+        .select(`
+          id, name, slug, description, type,
+          list_level, read_level, write_level, comment_level,
+          use_category, use_comment, use_secret, use_attachment,
+          sort_order, is_active,
+          board_categories(id, name, sort_order)
+        `)
+        .order('sort_order', { ascending: true });
 
-      if (data.success) {
-        setBoards(data.data || []);
+      if (error) throw error;
+
+      const boardList: Board[] = [];
+      for (const board of data || []) {
+        const { count } = await supabase
+          .from('posts')
+          .select('id', { count: 'exact', head: true })
+          .eq('board_id', board.id);
+
+        boardList.push({
+          id: board.id,
+          name: board.name,
+          slug: board.slug,
+          description: board.description || '',
+          type: board.type,
+          listLevel: board.list_level,
+          readLevel: board.read_level,
+          writeLevel: board.write_level,
+          commentLevel: board.comment_level,
+          useCategory: board.use_category,
+          useComment: board.use_comment,
+          useSecret: board.use_secret,
+          useAttachment: board.use_attachment,
+          sortOrder: board.sort_order,
+          isActive: board.is_active,
+          postCount: count || 0,
+          categories: (board.board_categories || []).map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            sortOrder: c.sort_order,
+          })),
+        });
       }
+
+      setBoards(boardList);
     } catch (error) {
       console.error('Failed to load boards:', error);
     } finally {
@@ -58,39 +143,59 @@ export default function BoardsManagementPage() {
       name: board.name,
       slug: board.slug,
       description: board.description,
+      type: board.type,
+      listLevel: board.listLevel,
+      readLevel: board.readLevel,
+      writeLevel: board.writeLevel,
+      commentLevel: board.commentLevel,
+      useCategory: board.useCategory,
+      useComment: board.useComment,
+      useSecret: board.useSecret,
+      useAttachment: board.useAttachment,
+      sortOrder: board.sortOrder,
+      isActive: board.isActive,
     });
     setShowForm(true);
+    setExpandedBoard(null);
   }
 
-  function handleCancelEdit() {
+  function handleCancel() {
     setEditingBoard(null);
-    setFormData({ name: '', slug: '', description: '' });
+    setFormData(defaultForm);
     setShowForm(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-
     try {
       setSubmitting(true);
+      const supabase = createClient();
 
-      const url = editingBoard ? `/api/boards/${editingBoard.slug}` : '/api/boards';
-      const method = editingBoard ? 'PUT' : 'POST';
+      const payload = {
+        name: formData.name,
+        description: formData.description,
+        type: formData.type,
+        list_level: formData.listLevel,
+        read_level: formData.readLevel,
+        write_level: formData.writeLevel,
+        comment_level: formData.commentLevel,
+        use_category: formData.useCategory,
+        use_comment: formData.useComment,
+        use_secret: formData.useSecret,
+        use_attachment: formData.useAttachment,
+        sort_order: formData.sortOrder,
+        is_active: formData.isActive,
+      };
 
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || '게시판 저장에 실패했습니다.');
+      if (editingBoard) {
+        const { error } = await supabase.from('boards').update(payload).eq('id', editingBoard.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('boards').insert({ ...payload, slug: formData.slug });
+        if (error) throw error;
       }
 
-      alert(editingBoard ? '게시판이 수정되었습니다.' : '게시판이 생성되었습니다.');
-      handleCancelEdit();
+      handleCancel();
       await loadBoards();
     } catch (error) {
       console.error('Failed to save board:', error);
@@ -100,79 +205,138 @@ export default function BoardsManagementPage() {
     }
   }
 
-  async function handleDelete(boardSlug: string) {
-    if (!confirm('게시판을 삭제하시겠습니까? 모든 게시글도 함께 삭제됩니다.')) {
-      return;
-    }
-
+  async function handleDelete(boardId: string) {
+    if (!confirm('게시판을 삭제하시겠습니까? 모든 게시글도 함께 삭제됩니다.')) return;
     try {
-      const response = await fetch(`/api/boards/${boardSlug}`, {
-        method: 'DELETE',
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || '게시판 삭제에 실패했습니다.');
-      }
-
-      alert('게시판이 삭제되었습니다.');
+      const supabase = createClient();
+      const { error } = await supabase.from('boards').delete().eq('id', boardId);
+      if (error) throw error;
       await loadBoards();
     } catch (error) {
-      console.error('Failed to delete board:', error);
-      alert(error instanceof Error ? error.message : '게시판 삭제 중 오류가 발생했습니다.');
+      alert(error instanceof Error ? error.message : '삭제 중 오류가 발생했습니다.');
     }
   }
 
-  if (authLoading || loading) {
-    return <div className="container py-8">로딩 중...</div>;
+  async function handleToggleActive(board: Board) {
+    try {
+      const supabase = createClient();
+      await supabase.from('boards').update({ is_active: !board.isActive }).eq('id', board.id);
+      await loadBoards();
+    } catch (error) {
+      alert('상태 변경 중 오류가 발생했습니다.');
+    }
+  }
+
+  async function handleAddCategory(boardId: string) {
+    if (!newCategoryName.trim()) return;
+    try {
+      setAddingCategory(true);
+      const supabase = createClient();
+      const { error } = await supabase.from('board_categories').insert({
+        board_id: boardId,
+        name: newCategoryName.trim(),
+        sort_order: 0,
+      });
+      if (error) throw error;
+      setNewCategoryName('');
+      await loadBoards();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : '카테고리 추가 중 오류가 발생했습니다.');
+    } finally {
+      setAddingCategory(false);
+    }
+  }
+
+  async function handleDeleteCategory(categoryId: string) {
+    if (!confirm('카테고리를 삭제하시겠습니까?')) return;
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.from('board_categories').delete().eq('id', categoryId);
+      if (error) throw error;
+      await loadBoards();
+    } catch (error) {
+      alert('카테고리 삭제 중 오류가 발생했습니다.');
+    }
+  }
+
+  const levelLabel = (v: number) => LEVEL_OPTIONS.find((o) => o.value === v)?.label ?? v;
+
+  if (loading) {
+    return (
+      <div className="p-8 space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-24 bg-gray-200 animate-pulse rounded-xl" />
+        ))}
+      </div>
+    );
   }
 
   return (
-    <div className="container py-8">
-      <Link to="/admin" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
-        <ArrowLeft className="mr-1 h-4 w-4" />
-        대시보드로 돌아가기
-      </Link>
-
+    <div className="p-8">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-3xl font-bold">게시판 관리</h1>
-        <Button onClick={() => setShowForm(!showForm)}>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">게시판 관리</h1>
+          <p className="text-sm text-gray-500 mt-1">게시판 생성, 권한 설정, 카테고리를 관리합니다.</p>
+        </div>
+        <Button onClick={() => { setShowForm(!showForm); if (showForm) handleCancel(); }}>
           <Plus className="mr-2 h-4 w-4" />
-          {showForm ? '취소' : '게시판 추가'}
+          게시판 추가
         </Button>
       </div>
 
+      {/* 게시판 생성/수정 폼 */}
       {showForm && (
         <Card className="mb-6 p-6">
-          <h2 className="mb-4 text-lg font-bold">
-            {editingBoard ? '게시판 수정' : '새 게시판'}
-          </h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <Label htmlFor="name">게시판명</Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="게시판명"
-                required
-              />
+          <h2 className="mb-5 text-lg font-bold">{editingBoard ? '게시판 수정' : '새 게시판'}</h2>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="name">게시판명 *</Label>
+                <Input
+                  id="name"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="자유게시판"
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="slug">URL 슬러그 *</Label>
+                <Input
+                  id="slug"
+                  value={formData.slug}
+                  onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
+                  placeholder="free-board"
+                  required
+                  disabled={!!editingBoard}
+                />
+                {editingBoard && <p className="mt-1 text-xs text-gray-400">슬러그는 변경할 수 없습니다.</p>}
+              </div>
             </div>
 
-            <div>
-              <Label htmlFor="slug">URL 슬러그</Label>
-              <Input
-                id="slug"
-                value={formData.slug}
-                onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
-                placeholder="board-slug"
-                required
-                disabled={!!editingBoard}
-              />
-              {editingBoard && (
-                <p className="mt-1 text-xs text-gray-500">슬러그는 수정할 수 없습니다.</p>
-              )}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="type">게시판 유형</Label>
+                <select
+                  id="type"
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {BOARD_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label htmlFor="sortOrder">정렬 순서</Label>
+                <Input
+                  id="sortOrder"
+                  type="number"
+                  value={formData.sortOrder}
+                  onChange={(e) => setFormData({ ...formData, sortOrder: parseInt(e.target.value) || 0 })}
+                />
+              </div>
             </div>
 
             <div>
@@ -182,16 +346,65 @@ export default function BoardsManagementPage() {
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 placeholder="게시판 설명"
-                rows={3}
-                required
+                rows={2}
               />
+            </div>
+
+            {/* 권한 설정 */}
+            <div className="rounded-lg border bg-gray-50 p-4">
+              <h3 className="mb-3 text-sm font-semibold text-gray-700">접근 권한 설정</h3>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { key: 'listLevel', label: '목록 보기' },
+                  { key: 'readLevel', label: '글 읽기' },
+                  { key: 'writeLevel', label: '글 쓰기' },
+                  { key: 'commentLevel', label: '댓글 쓰기' },
+                ].map(({ key, label }) => (
+                  <div key={key}>
+                    <Label className="text-xs">{label}</Label>
+                    <select
+                      value={(formData as any)[key]}
+                      onChange={(e) => setFormData({ ...formData, [key]: parseInt(e.target.value) })}
+                      className="mt-1 w-full rounded-md border px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {LEVEL_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 기능 설정 */}
+            <div className="rounded-lg border bg-gray-50 p-4">
+              <h3 className="mb-3 text-sm font-semibold text-gray-700">기능 설정</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { key: 'useComment', label: '댓글 허용' },
+                  { key: 'useSecret', label: '비밀글 허용' },
+                  { key: 'useAttachment', label: '첨부파일 허용' },
+                  { key: 'useCategory', label: '카테고리 사용' },
+                  { key: 'isActive', label: '게시판 활성화' },
+                ].map(({ key, label }) => (
+                  <label key={key} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={(formData as any)[key]}
+                      onChange={(e) => setFormData({ ...formData, [key]: e.target.checked })}
+                      className="rounded"
+                    />
+                    <span className="text-sm">{label}</span>
+                  </label>
+                ))}
+              </div>
             </div>
 
             <div className="flex gap-2">
               <Button type="submit" disabled={submitting}>
                 {submitting ? '저장 중...' : '저장'}
               </Button>
-              <Button type="button" variant="outline" onClick={handleCancelEdit}>
+              <Button type="button" variant="outline" onClick={handleCancel}>
                 취소
               </Button>
             </div>
@@ -199,33 +412,148 @@ export default function BoardsManagementPage() {
         </Card>
       )}
 
+      {/* 게시판 목록 */}
       {boards.length === 0 ? (
         <Card className="p-12 text-center">
-          <p className="text-gray-500">등록된 게시판이 없습니다.</p>
+          <p className="text-gray-500 mb-3">등록된 게시판이 없습니다.</p>
+          <Button onClick={() => setShowForm(true)}><Plus className="mr-2 h-4 w-4" />첫 게시판 만들기</Button>
         </Card>
       ) : (
-        <Card>
-          <div className="divide-y">
-            {boards.map((board) => (
-              <div key={board.id} className="flex items-center justify-between p-4">
-                <div className="flex-1">
-                  <h3 className="font-bold">{board.name}</h3>
-                  <p className="text-sm text-gray-500">{board.slug}</p>
-                  <p className="text-sm text-gray-600">{board.description}</p>
-                  <p className="mt-1 text-xs text-gray-500">게시글: {board.postCount || 0}개</p>
+        <div className="space-y-3">
+          {boards.map((board) => (
+            <Card key={board.id} className={!board.isActive ? 'opacity-60' : ''}>
+              <div className="flex items-center justify-between p-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold">{board.name}</h3>
+                    <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">{board.slug}</span>
+                    <span className="text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                      {BOARD_TYPES.find((t) => t.value === board.type)?.label}
+                    </span>
+                    {!board.isActive && (
+                      <span className="text-xs text-red-600 bg-red-50 px-2 py-0.5 rounded">비활성</span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-500 mt-0.5">{board.description}</p>
+                  <div className="mt-1.5 flex flex-wrap gap-3 text-xs text-gray-400">
+                    <span>게시글 {board.postCount}개</span>
+                    <span>쓰기: {levelLabel(board.writeLevel)}</span>
+                    <span>댓글: {levelLabel(board.commentLevel)}</span>
+                    {board.useCategory && <span className="text-purple-600">카테고리 {board.categories.length}개</span>}
+                  </div>
                 </div>
-                <div className="flex gap-2">
+
+                <div className="flex items-center gap-2 ml-4 shrink-0">
+                  <button
+                    onClick={() => setExpandedBoard(expandedBoard === board.id ? null : board.id)}
+                    className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 px-2 py-1 rounded border"
+                  >
+                    <Settings className="h-3.5 w-3.5" />
+                    {expandedBoard === board.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                  </button>
                   <Button size="sm" variant="outline" onClick={() => handleEdit(board)}>
                     <Edit className="h-4 w-4" />
                   </Button>
-                  <Button size="sm" variant="ghost" onClick={() => handleDelete(board.slug)}>
+                  <Button size="sm" variant="ghost" onClick={() => handleDelete(board.id)}>
                     <Trash2 className="h-4 w-4 text-red-500" />
                   </Button>
                 </div>
               </div>
-            ))}
-          </div>
-        </Card>
+
+              {/* 확장 패널 - 권한 상세 + 카테고리 */}
+              {expandedBoard === board.id && (
+                <div className="border-t bg-gray-50 p-4 space-y-4">
+                  {/* 권한 요약 */}
+                  <div>
+                    <h4 className="text-xs font-semibold text-gray-600 mb-2">권한 설정</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {[
+                        { label: '목록', value: board.listLevel },
+                        { label: '읽기', value: board.readLevel },
+                        { label: '쓰기', value: board.writeLevel },
+                        { label: '댓글', value: board.commentLevel },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="rounded bg-white border px-3 py-2 text-xs">
+                          <span className="text-gray-500">{label}: </span>
+                          <span className="font-medium">{levelLabel(value)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {[
+                        { key: 'useComment', label: '댓글', value: board.useComment },
+                        { key: 'useSecret', label: '비밀글', value: board.useSecret },
+                        { key: 'useAttachment', label: '첨부', value: board.useAttachment },
+                        { key: 'useCategory', label: '카테고리', value: board.useCategory },
+                      ].map(({ label, value }) => (
+                        <span
+                          key={label}
+                          className={`text-xs px-2 py-0.5 rounded-full ${
+                            value ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
+                          }`}
+                        >
+                          {value ? '✓' : '✗'} {label}
+                        </span>
+                      ))}
+                      <button
+                        onClick={() => handleToggleActive(board)}
+                        className={`text-xs px-2 py-0.5 rounded-full cursor-pointer ${
+                          board.isActive ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'
+                        }`}
+                      >
+                        {board.isActive ? '● 활성' : '○ 비활성'} (클릭하여 전환)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 카테고리 관리 */}
+                  {board.useCategory && (
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
+                        <Tag className="h-3.5 w-3.5" /> 카테고리 관리
+                      </h4>
+                      <div className="space-y-1.5 mb-2">
+                        {board.categories.length === 0 ? (
+                          <p className="text-xs text-gray-400">등록된 카테고리가 없습니다.</p>
+                        ) : (
+                          board.categories.map((cat) => (
+                            <div key={cat.id} className="flex items-center justify-between rounded bg-white border px-3 py-1.5">
+                              <span className="text-sm">{cat.name}</span>
+                              <button
+                                onClick={() => handleDeleteCategory(cat.id)}
+                                className="text-red-400 hover:text-red-600"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <Input
+                          value={newCategoryName}
+                          onChange={(e) => setNewCategoryName(e.target.value)}
+                          placeholder="카테고리명"
+                          className="h-8 text-sm"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); handleAddCategory(board.id); }
+                          }}
+                        />
+                        <Button
+                          size="sm"
+                          onClick={() => handleAddCategory(board.id)}
+                          disabled={addingCategory || !newCategoryName.trim()}
+                        >
+                          추가
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   );

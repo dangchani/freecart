@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Wallet } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/client';
 
 interface DepositHistory {
   id: string;
@@ -29,6 +30,7 @@ export default function DepositsPage() {
   const [data, setData] = useState<DepositData>({ balance: 0, history: [], totalPages: 1, totalCount: 0 });
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const LIMIT = 10;
 
   useEffect(() => {
     if (!authLoading) {
@@ -43,10 +45,42 @@ export default function DepositsPage() {
   async function fetchDeposits() {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), limit: '10' });
-      const res = await fetch(`/api/users/me/deposits?${params}`);
-      const json = await res.json();
-      if (json.success) setData(json.data);
+      const supabase = createClient();
+
+      // Get user's current deposit balance
+      const { data: userData } = await supabase
+        .from('users')
+        .select('deposit')
+        .eq('id', user!.id)
+        .single();
+
+      const from = (page - 1) * LIMIT;
+      const to = from + LIMIT - 1;
+
+      const { data: history, error, count } = await supabase
+        .from('user_deposits_history')
+        .select('id, type, amount, balance, description, created_at', { count: 'exact' })
+        .eq('user_id', user!.id)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      if (error) throw error;
+
+      const totalCount = count || 0;
+
+      setData({
+        balance: userData?.deposit || 0,
+        history: (history || []).map((h: any) => ({
+          id: h.id,
+          type: h.type,
+          amount: h.amount,
+          balance: h.balance,
+          description: h.description,
+          createdAt: h.created_at,
+        })),
+        totalPages: Math.max(1, Math.ceil(totalCount / LIMIT)),
+        totalCount,
+      });
     } catch (err) {
       console.error('예치금 로딩 실패:', err);
     } finally {

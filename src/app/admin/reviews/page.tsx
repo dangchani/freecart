@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { format } from 'date-fns';
 import { Star } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Review {
   id: string;
@@ -40,13 +41,26 @@ export default function AdminReviewsPage() {
   async function loadReviews() {
     try {
       setLoading(true);
-      const response = await fetch('/api/admin/reviews');
-      const data = await response.json();
-      if (data.success) {
-        setReviews(data.data || []);
-      } else {
-        setError(data.error || '리뷰 목록을 불러오지 못했습니다.');
-      }
+      const supabase = createClient();
+      const { data, error: fetchError } = await supabase
+        .from('reviews')
+        .select('id, rating, content, is_visible, is_best, created_at, products(name), users(name)')
+        .order('created_at', { ascending: false });
+
+      if (fetchError) throw fetchError;
+
+      setReviews(
+        (data || []).map((r: any) => ({
+          id: r.id,
+          productName: r.products?.name || '',
+          authorName: r.users?.name || '',
+          rating: r.rating,
+          content: r.content,
+          createdAt: r.created_at,
+          isVisible: r.is_visible,
+          isBest: r.is_best,
+        }))
+      );
     } catch {
       setError('리뷰 목록을 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -56,13 +70,12 @@ export default function AdminReviewsPage() {
 
   async function handleToggleVisible(reviewId: string, current: boolean) {
     try {
-      const response = await fetch(`/api/admin/reviews/${reviewId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isVisible: !current }),
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('reviews')
+        .update({ is_visible: !current })
+        .eq('id', reviewId);
+      if (error) throw error;
       await loadReviews();
     } catch (err) {
       alert(err instanceof Error ? err.message : '처리 중 오류가 발생했습니다.');
@@ -71,13 +84,12 @@ export default function AdminReviewsPage() {
 
   async function handleToggleBest(reviewId: string, current: boolean) {
     try {
-      const response = await fetch(`/api/admin/reviews/${reviewId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isBest: !current }),
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('reviews')
+        .update({ is_best: !current })
+        .eq('id', reviewId);
+      if (error) throw error;
       await loadReviews();
     } catch (err) {
       alert(err instanceof Error ? err.message : '처리 중 오류가 발생했습니다.');
@@ -90,13 +102,15 @@ export default function AdminReviewsPage() {
       return;
     }
     try {
-      const response = await fetch(`/api/admin/reviews/${reviewId}/reply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: replyContent }),
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('reviews')
+        .update({
+          admin_reply: replyContent,
+          admin_replied_at: new Date().toISOString(),
+        })
+        .eq('id', reviewId);
+      if (error) throw error;
       alert('답변이 등록되었습니다.');
       setReplyingId(null);
       setReplyContent('');

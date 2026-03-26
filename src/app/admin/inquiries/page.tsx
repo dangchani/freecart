@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { format } from 'date-fns';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Inquiry {
   id: string;
@@ -57,15 +58,33 @@ export default function AdminInquiriesPage() {
   async function loadInquiries() {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      if (statusFilter) params.set('status', statusFilter);
-      const response = await fetch(`/api/admin/inquiries?${params.toString()}`);
-      const data = await response.json();
-      if (data.success) {
-        setInquiries(data.data || []);
-      } else {
-        setError(data.error || '문의 목록을 불러오지 못했습니다.');
+      const supabase = createClient();
+
+      let query = supabase
+        .from('inquiries')
+        .select('id, title, category, status, content, answer, created_at, users(name)')
+        .order('created_at', { ascending: false });
+
+      if (statusFilter) {
+        query = query.eq('status', statusFilter);
       }
+
+      const { data, error: fetchError } = await query;
+
+      if (fetchError) throw fetchError;
+
+      setInquiries(
+        (data || []).map((i: any) => ({
+          id: i.id,
+          title: i.title,
+          category: i.category,
+          authorName: i.users?.name || '',
+          status: i.status,
+          createdAt: i.created_at,
+          content: i.content,
+          answer: i.answer || undefined,
+        }))
+      );
     } catch {
       setError('문의 목록을 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -80,13 +99,17 @@ export default function AdminInquiriesPage() {
     }
     setSubmitting(true);
     try {
-      const response = await fetch(`/api/admin/inquiries/${inquiryId}/answer`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: answerContent }),
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('inquiries')
+        .update({
+          answer: answerContent,
+          status: 'answered',
+          answered_at: new Date().toISOString(),
+        })
+        .eq('id', inquiryId);
+
+      if (error) throw error;
       alert('답변이 등록되었습니다.');
       setExpandedId(null);
       setAnswerContent('');
@@ -145,27 +168,17 @@ export default function AdminInquiriesPage() {
                   <div className="flex-1">
                     <div className="mb-1 flex items-center gap-2">
                       <h3 className="font-medium">{inquiry.title}</h3>
-                      <Badge variant="outline">
-                        {categoryLabels[inquiry.category] || inquiry.category}
-                      </Badge>
+                      <Badge variant="outline">{categoryLabels[inquiry.category] || inquiry.category}</Badge>
                       <Badge variant={inquiry.status === 'answered' ? 'default' : 'secondary'}>
                         {inquiry.status === 'answered' ? '답변완료' : '미답변'}
                       </Badge>
                     </div>
                     <div className="flex items-center gap-3 text-sm text-gray-500">
                       <span>{inquiry.authorName}</span>
-                      <span>
-                        {inquiry.createdAt
-                          ? format(new Date(inquiry.createdAt), 'yyyy.MM.dd HH:mm')
-                          : '-'}
-                      </span>
+                      <span>{inquiry.createdAt ? format(new Date(inquiry.createdAt), 'yyyy.MM.dd HH:mm') : '-'}</span>
                     </div>
                   </div>
-                  {expandedId === inquiry.id ? (
-                    <ChevronUp className="h-4 w-4 text-gray-400" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 text-gray-400" />
-                  )}
+                  {expandedId === inquiry.id ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
                 </div>
 
                 {expandedId === inquiry.id && (
@@ -192,11 +205,7 @@ export default function AdminInquiriesPage() {
                           placeholder="답변 내용을 입력하세요"
                           className="mb-2 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
-                        <Button
-                          size="sm"
-                          onClick={() => handleAnswer(inquiry.id)}
-                          disabled={submitting}
-                        >
+                        <Button size="sm" onClick={() => handleAnswer(inquiry.id)} disabled={submitting}>
                           {submitting ? '등록 중...' : '답변 등록'}
                         </Button>
                       </div>

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { FileText, Edit2, Plus, X, Save } from 'lucide-react';
+import { FileText, Edit2, Plus, X, Save, Trash2 } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Terms {
   id: string;
@@ -30,12 +31,34 @@ export default function AdminTermsPage() {
   }
 
   useEffect(() => {
-    fetch('/api/admin/terms')
-      .then((r) => r.json())
-      .then((data) => setTerms(data.terms || data || []))
-      .catch(() => setTerms([]))
-      .finally(() => setLoading(false));
+    loadTerms();
   }, []);
+
+  async function loadTerms() {
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('terms')
+        .select('id, title, content, type, is_required, created_at')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setTerms(
+        (data || []).map((t) => ({
+          id: t.id,
+          title: t.title,
+          content: t.content,
+          type: t.type,
+          isRequired: t.is_required,
+          updatedAt: t.created_at,
+        }))
+      );
+    } catch {
+      setTerms([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   function startEdit(term: Terms) {
     setEditingId(term.id);
@@ -53,56 +76,85 @@ export default function AdminTermsPage() {
     if (!editingId) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/admin/terms/${editingId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: editTitle, content: editContent }),
-      });
-      const data = await res.json();
-      if (data.success || res.ok) {
-        setTerms((prev) =>
-          prev.map((t) =>
-            t.id === editingId
-              ? { ...t, title: editTitle, content: editContent, updatedAt: new Date().toISOString() }
-              : t
-          )
-        );
-        cancelEdit();
-        showToast('약관이 저장되었습니다.');
-      } else showToast('저장에 실패했습니다.');
-    } catch { showToast('오류가 발생했습니다.'); }
-    finally { setSaving(false); }
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('terms')
+        .update({ title: editTitle, content: editContent })
+        .eq('id', editingId);
+
+      if (error) throw error;
+      setTerms((prev) =>
+        prev.map((t) =>
+          t.id === editingId
+            ? { ...t, title: editTitle, content: editContent, updatedAt: new Date().toISOString() }
+            : t
+        )
+      );
+      cancelEdit();
+      showToast('약관이 저장되었습니다.');
+    } catch {
+      showToast('저장에 실패했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteTerm(id: string) {
+    if (!confirm('이 약관을 삭제하시겠습니까?')) return;
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.from('terms').delete().eq('id', id);
+      if (error) throw error;
+      setTerms((prev) => prev.filter((t) => t.id !== id));
+      showToast('약관이 삭제되었습니다.');
+    } catch {
+      showToast('삭제에 실패했습니다.');
+    }
   }
 
   async function createTerm() {
     if (!newTitle.trim() || !newType.trim()) return;
     setCreating(true);
     try {
-      const res = await fetch('/api/admin/terms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: newTitle, type: newType, content: newContent }),
-      });
-      const data = await res.json();
-      if (data.success || data.id) {
-        const created = data.term || { id: data.id, title: newTitle, type: newType, content: newContent, updatedAt: new Date().toISOString() };
-        setTerms((prev) => [...prev, created]);
-        setShowCreate(false);
-        setNewTitle('');
-        setNewType('');
-        setNewContent('');
-        showToast('약관이 생성되었습니다.');
-      } else showToast('생성에 실패했습니다.');
-    } catch { showToast('오류가 발생했습니다.'); }
-    finally { setCreating(false); }
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('terms')
+        .insert({
+          title: newTitle,
+          type: newType,
+          content: newContent,
+          version: '1.0',
+          is_required: true,
+          is_active: true,
+        })
+        .select('id')
+        .single();
+
+      if (error) throw error;
+      const created: Terms = {
+        id: data.id,
+        title: newTitle,
+        type: newType,
+        content: newContent,
+        updatedAt: new Date().toISOString(),
+      };
+      setTerms((prev) => [created, ...prev]);
+      setShowCreate(false);
+      setNewTitle('');
+      setNewType('');
+      setNewContent('');
+      showToast('약관이 생성되었습니다.');
+    } catch {
+      showToast('생성에 실패했습니다.');
+    } finally {
+      setCreating(false);
+    }
   }
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
       {toast && (
-        <div className="fixed top-4 right-4 z-50 bg-gray-900 text-white px-4 py-3 rounded-lg shadow-lg text-sm">
-          {toast}
-        </div>
+        <div className="fixed top-4 right-4 z-50 bg-gray-900 text-white px-4 py-3 rounded-lg shadow-lg text-sm">{toast}</div>
       )}
 
       <div className="flex items-center justify-between mb-6">
@@ -113,70 +165,35 @@ export default function AdminTermsPage() {
           </h1>
           <p className="text-gray-500 text-sm mt-1">이용약관, 개인정보처리방침 등을 관리합니다.</p>
         </div>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          새 약관 추가
+        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+          <Plus className="h-4 w-4" />새 약관 추가
         </button>
       </div>
 
-      {/* 새 약관 작성 폼 */}
       {showCreate && (
         <div className="mb-6 border rounded-xl p-6 bg-green-50">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-gray-900">새 약관 작성</h3>
-            <button onClick={() => setShowCreate(false)}>
-              <X className="h-5 w-5 text-gray-400 hover:text-gray-600" />
-            </button>
+            <button onClick={() => setShowCreate(false)}><X className="h-5 w-5 text-gray-400 hover:text-gray-600" /></button>
           </div>
           <div className="grid md:grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">약관 제목</label>
-              <input
-                type="text"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                placeholder="예: 이용약관"
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-              />
+              <input type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="예: 이용약관" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">약관 유형</label>
-              <input
-                type="text"
-                value={newType}
-                onChange={(e) => setNewType(e.target.value)}
-                placeholder="예: terms_of_service"
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-              />
+              <input type="text" value={newType} onChange={(e) => setNewType(e.target.value)} placeholder="예: terms_of_service" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
             </div>
           </div>
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">약관 내용</label>
-            <textarea
-              value={newContent}
-              onChange={(e) => setNewContent(e.target.value)}
-              rows={6}
-              className="w-full border rounded-lg px-3 py-2 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-green-500"
-              placeholder="약관 내용을 입력하세요..."
-            />
+            <textarea value={newContent} onChange={(e) => setNewContent(e.target.value)} rows={6} className="w-full border rounded-lg px-3 py-2 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="약관 내용을 입력하세요..." />
           </div>
           <div className="flex gap-3 justify-end">
-            <button
-              onClick={() => setShowCreate(false)}
-              className="border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50"
-            >
-              취소
-            </button>
-            <button
-              onClick={createTerm}
-              disabled={creating || !newTitle.trim() || !newType.trim()}
-              className="bg-green-600 hover:bg-green-700 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 flex items-center gap-2"
-            >
-              <Save className="h-4 w-4" />
-              {creating ? '저장 중...' : '저장'}
+            <button onClick={() => setShowCreate(false)} className="border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50">취소</button>
+            <button onClick={createTerm} disabled={creating || !newTitle.trim() || !newType.trim()} className="bg-green-600 hover:bg-green-700 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 flex items-center gap-2">
+              <Save className="h-4 w-4" />{creating ? '저장 중...' : '저장'}
             </button>
           </div>
         </div>
@@ -199,21 +216,19 @@ export default function AdminTermsPage() {
                 <div>
                   <h3 className="font-semibold text-gray-900">{term.title}</h3>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    유형: {term.type} · 최종 수정:{' '}
-                    {new Date(term.updatedAt).toLocaleDateString('ko-KR')}
-                    {term.isRequired && (
-                      <span className="ml-2 bg-red-100 text-red-600 text-xs px-1.5 py-0.5 rounded">필수</span>
-                    )}
+                    유형: {term.type} · 최종 수정: {new Date(term.updatedAt).toLocaleDateString('ko-KR')}
+                    {term.isRequired && <span className="ml-2 bg-red-100 text-red-600 text-xs px-1.5 py-0.5 rounded">필수</span>}
                   </p>
                 </div>
                 {editingId !== term.id && (
-                  <button
-                    onClick={() => startEdit(term)}
-                    className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium"
-                  >
-                    <Edit2 className="h-4 w-4" />
-                    수정
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => startEdit(term)} className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium">
+                      <Edit2 className="h-4 w-4" />수정
+                    </button>
+                    <button onClick={() => deleteTerm(term.id)} className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-600 font-medium">
+                      <Trash2 className="h-4 w-4" />삭제
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -221,44 +236,22 @@ export default function AdminTermsPage() {
                 <div className="p-5">
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 mb-1">제목</label>
-                    <input
-                      type="text"
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                    <input type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 mb-1">내용</label>
-                    <textarea
-                      value={editContent}
-                      onChange={(e) => setEditContent(e.target.value)}
-                      rows={10}
-                      className="w-full border rounded-lg px-3 py-2 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                    <textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} rows={10} className="w-full border rounded-lg px-3 py-2 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div className="flex gap-3 justify-end">
-                    <button
-                      onClick={cancelEdit}
-                      className="border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50"
-                    >
-                      취소
-                    </button>
-                    <button
-                      onClick={saveTerm}
-                      disabled={saving}
-                      className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 flex items-center gap-2"
-                    >
-                      <Save className="h-4 w-4" />
-                      {saving ? '저장 중...' : '저장'}
+                    <button onClick={cancelEdit} className="border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50">취소</button>
+                    <button onClick={saveTerm} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 flex items-center gap-2">
+                      <Save className="h-4 w-4" />{saving ? '저장 중...' : '저장'}
                     </button>
                   </div>
                 </div>
               ) : (
                 <div className="p-5">
-                  <pre className="text-sm text-gray-600 whitespace-pre-wrap font-sans leading-relaxed max-h-40 overflow-y-auto">
-                    {term.content}
-                  </pre>
+                  <pre className="text-sm text-gray-600 whitespace-pre-wrap font-sans leading-relaxed max-h-40 overflow-y-auto">{term.content}</pre>
                 </div>
               )}
             </div>

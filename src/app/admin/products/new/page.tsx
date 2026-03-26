@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select';
 import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 const productSchema = z.object({
   name: z.string().min(1, '상품명을 입력해주세요'),
@@ -59,11 +60,15 @@ export default function NewProductPage() {
 
   async function loadCategories() {
     try {
-      const response = await fetch('/api/categories');
-      const data = await response.json();
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('product_categories')
+        .select('id, name, slug, parent_id, depth, sort_order')
+        .eq('is_visible', true)
+        .order('sort_order', { ascending: true });
 
-      if (data.success) {
-        setCategories(data.data || []);
+      if (!error) {
+        setCategories(data || []);
       }
     } catch (error) {
       console.error('Failed to load categories:', error);
@@ -73,17 +78,33 @@ export default function NewProductPage() {
   async function onSubmit(data: ProductForm) {
     try {
       setSubmitting(true);
+      const supabase = createClient();
 
-      const response = await fetch('/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
+      const { data: product, error } = await supabase
+        .from('products')
+        .insert({
+          name: data.name,
+          slug: data.slug,
+          description: data.description,
+          sale_price: data.price,
+          regular_price: data.comparePrice || data.price,
+          stock_quantity: data.stock,
+          category_id: data.categoryId,
+          status: 'active',
+        })
+        .select('id')
+        .single();
 
-      const result = await response.json();
+      if (error) throw error;
 
-      if (!result.success) {
-        throw new Error(result.error || '상품 등록에 실패했습니다.');
+      // If thumbnail provided, insert into product_images
+      if (data.thumbnail && product) {
+        await supabase.from('product_images').insert({
+          product_id: product.id,
+          url: data.thumbnail,
+          sort_order: 0,
+          is_primary: true,
+        });
       }
 
       alert('상품이 등록되었습니다.');

@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
+import { createClient } from '@/lib/supabase/client';
 import {
   Package,
   ShoppingCart,
@@ -82,13 +83,86 @@ export default function AdminDashboard() {
 
   async function loadDashboard() {
     try {
-      const res = await fetch('/api/admin/dashboard');
-      const json = await res.json();
-      if (json.success) {
-        setData(json.data);
-      } else {
-        setError(json.error || '대시보드 데이터를 불러오지 못했습니다.');
-      }
+      const supabase = createClient();
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayISO = today.toISOString();
+
+      // Fetch today's orders for sales & count
+      const { data: todayOrders } = await supabase
+        .from('orders')
+        .select('total_amount, status')
+        .gte('created_at', todayISO)
+        .neq('status', 'cancelled');
+
+      const todaySales = (todayOrders || []).reduce((sum, o) => sum + (o.total_amount || 0), 0);
+      const todayOrderCount = todayOrders?.length || 0;
+
+      // Total users
+      const { count: totalUsers } = await supabase
+        .from('users')
+        .select('id', { count: 'exact', head: true });
+
+      // Order status counts
+      const { data: allOrders } = await supabase
+        .from('orders')
+        .select('status');
+
+      const orderStatusCounts = {
+        pending: 0,
+        paid: 0,
+        preparing: 0,
+        shipping: 0,
+        delivered: 0,
+        cancelled: 0,
+      };
+      (allOrders || []).forEach((o) => {
+        const s = o.status as keyof typeof orderStatusCounts;
+        if (s in orderStatusCounts) orderStatusCounts[s]++;
+      });
+
+      // Recent orders (last 10)
+      const { data: recentOrdersRaw } = await supabase
+        .from('orders')
+        .select('id, order_number, orderer_name, total_amount, status, created_at')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      const recentOrders: RecentOrder[] = (recentOrdersRaw || []).map((o) => ({
+        id: o.id,
+        orderNumber: o.order_number,
+        customerName: o.orderer_name,
+        totalAmount: o.total_amount,
+        status: o.status,
+        createdAt: o.created_at,
+      }));
+
+      // Low stock products (stock_quantity <= 10)
+      const { data: lowStockRaw } = await supabase
+        .from('products')
+        .select('id, name, slug, stock_quantity')
+        .lte('stock_quantity', 10)
+        .eq('status', 'active')
+        .order('stock_quantity', { ascending: true })
+        .limit(10);
+
+      const lowStockProducts: LowStockProduct[] = (lowStockRaw || []).map((p) => ({
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        stock: p.stock_quantity,
+      }));
+
+      setData({
+        stats: {
+          todaySales,
+          todayOrders: todayOrderCount,
+          totalUsers: totalUsers || 0,
+          orderStatusCounts,
+        },
+        recentOrders,
+        lowStockProducts,
+      });
     } catch (err) {
       console.error('대시보드 로딩 실패:', err);
       setError('데이터를 불러오는 중 오류가 발생했습니다.');

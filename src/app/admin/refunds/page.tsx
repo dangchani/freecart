@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
+import { createClient } from '@/lib/supabase/client';
 
 interface Refund {
   id: string;
@@ -42,13 +43,24 @@ export default function AdminRefundsPage() {
   async function loadRefunds() {
     try {
       setLoading(true);
-      const response = await fetch('/api/admin/refunds');
-      const data = await response.json();
-      if (data.success) {
-        setRefunds(data.data || []);
-      } else {
-        setError(data.error || '환불 목록을 불러오지 못했습니다.');
-      }
+      const supabase = createClient();
+      const { data, error: fetchError } = await supabase
+        .from('refunds')
+        .select('id, amount, reason, status, created_at, orders(order_number)')
+        .order('created_at', { ascending: false });
+
+      if (fetchError) throw fetchError;
+
+      setRefunds(
+        (data || []).map((r: any) => ({
+          id: r.id,
+          orderNumber: r.orders?.order_number || '',
+          refundAmount: r.amount,
+          reason: r.reason,
+          status: r.status,
+          createdAt: r.created_at,
+        }))
+      );
     } catch {
       setError('환불 목록을 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -61,13 +73,20 @@ export default function AdminRefundsPage() {
     if (!confirm(`환불 요청을 ${actionLabel}하시겠습니까?`)) return;
 
     try {
-      const response = await fetch(`/api/admin/refunds/${refundId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      const supabase = createClient();
+      const updateData: Record<string, any> = {
+        status: action === 'approve' ? 'approved' : 'rejected',
+      };
+      if (action === 'approve') {
+        updateData.approved_at = new Date().toISOString();
+      }
+
+      const { error } = await supabase
+        .from('refunds')
+        .update(updateData)
+        .eq('id', refundId);
+
+      if (error) throw error;
       await loadRefunds();
     } catch (err) {
       alert(err instanceof Error ? err.message : '처리 중 오류가 발생했습니다.');
@@ -106,16 +125,11 @@ export default function AdminRefundsPage() {
               </thead>
               <tbody className="divide-y">
                 {refunds.map((refund) => {
-                  const statusInfo = statusLabels[refund.status] || {
-                    label: refund.status,
-                    variant: 'outline' as const,
-                  };
+                  const statusInfo = statusLabels[refund.status] || { label: refund.status, variant: 'outline' as const };
                   return (
                     <tr key={refund.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium">{refund.orderNumber}</td>
-                      <td className="px-4 py-3 text-right font-medium">
-                        {formatCurrency(refund.refundAmount)}
-                      </td>
+                      <td className="px-4 py-3 text-right font-medium">{formatCurrency(refund.refundAmount)}</td>
                       <td className="max-w-xs px-4 py-3 text-gray-600">
                         <span className="line-clamp-2">{refund.reason}</span>
                       </td>
@@ -123,26 +137,13 @@ export default function AdminRefundsPage() {
                         <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
                       </td>
                       <td className="px-4 py-3 text-gray-600">
-                        {refund.createdAt
-                          ? format(new Date(refund.createdAt), 'yyyy.MM.dd HH:mm')
-                          : '-'}
+                        {refund.createdAt ? format(new Date(refund.createdAt), 'yyyy.MM.dd HH:mm') : '-'}
                       </td>
                       <td className="px-4 py-3">
                         {refund.status === 'pending' && (
                           <div className="flex justify-center gap-1">
-                            <Button
-                              size="sm"
-                              onClick={() => handleAction(refund.id, 'approve')}
-                            >
-                              승인
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => handleAction(refund.id, 'reject')}
-                            >
-                              거부
-                            </Button>
+                            <Button size="sm" onClick={() => handleAction(refund.id, 'approve')}>승인</Button>
+                            <Button size="sm" variant="destructive" onClick={() => handleAction(refund.id, 'reject')}>거부</Button>
                           </div>
                         )}
                       </td>

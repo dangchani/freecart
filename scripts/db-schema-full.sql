@@ -537,8 +537,8 @@ CREATE TABLE IF NOT EXISTS coupons (
   target_type           VARCHAR(20) NOT NULL DEFAULT 'all',
   target_ids            JSONB,
   auto_issue_type       VARCHAR(30),
-  starts_at             TIMESTAMPTZ NOT NULL,
-  expires_at            TIMESTAMPTZ NOT NULL,
+  starts_at             TIMESTAMPTZ,                      -- NULL = 즉시 적용
+  expires_at            TIMESTAMPTZ,                      -- NULL = 무기한
   is_active             BOOLEAN NOT NULL DEFAULT true,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -1185,8 +1185,9 @@ CREATE TABLE IF NOT EXISTS popups (
   position          VARCHAR(20) NOT NULL DEFAULT 'center',
   width             INTEGER NOT NULL DEFAULT 500,
   height            INTEGER,
-  starts_at         TIMESTAMPTZ NOT NULL,
-  ends_at           TIMESTAMPTZ NOT NULL,
+  starts_at         TIMESTAMPTZ,                          -- NULL = 즉시 노출
+  ends_at           TIMESTAMPTZ,                          -- NULL = 무기한 노출
+  sort_order        INTEGER NOT NULL DEFAULT 0,
   is_active         BOOLEAN NOT NULL DEFAULT true,
   show_today_close  BOOLEAN NOT NULL DEFAULT true,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -2086,6 +2087,41 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- =============================================================================
+-- SECTION 11: PAYMENT GATEWAYS (PG사 설정)
+-- =============================================================================
+
+-- PG사 설정 테이블
+CREATE TABLE IF NOT EXISTS payment_gateways (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider     VARCHAR(30) NOT NULL UNIQUE,  -- 'toss', 'inicis', 'kiwoom', 'nicepay', 'kcp'
+  name         VARCHAR(100) NOT NULL,
+  client_key   VARCHAR(500),                 -- 공개키 (프론트에서 사용)
+  secret_key   VARCHAR(500),                 -- 비밀키 (Edge Function에서만 사용)
+  is_active    BOOLEAN NOT NULL DEFAULT false,
+  settings     JSONB,                        -- PG사별 추가 설정 (mid, 상점아이디 등)
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+DROP TRIGGER IF EXISTS trg_payment_gateways_updated_at ON payment_gateways;
+CREATE TRIGGER trg_payment_gateways_updated_at
+  BEFORE UPDATE ON payment_gateways
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- RLS: 관리자만 수정 가능, 공개키는 누구나 조회 가능
+ALTER TABLE payment_gateways ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "payment_gateways_select" ON payment_gateways;
+CREATE POLICY "payment_gateways_select" ON payment_gateways
+  FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "payment_gateways_admin" ON payment_gateways;
+CREATE POLICY "payment_gateways_admin" ON payment_gateways
+  FOR ALL USING (
+    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'admin')
+  );
 
 -- =============================================================================
 -- SEED DATA: 기본 데이터

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MessageCircle, Plus, ChevronDown, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
+import { createClient } from '@/lib/supabase/client';
 
 interface Inquiry {
   id: string;
@@ -52,9 +53,27 @@ export default function InquiriesPage() {
 
   async function fetchInquiries() {
     try {
-      const res = await fetch('/api/users/me/inquiries');
-      const json = await res.json();
-      if (json.success) setInquiries(json.data || []);
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('inquiries')
+        .select('id, title, category, status, content, answer, answered_at, created_at')
+        .eq('user_id', user!.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setInquiries(
+        (data || []).map((i: any) => ({
+          id: i.id,
+          title: i.title,
+          category: i.category,
+          status: i.status,
+          content: i.content,
+          answer: i.answer,
+          answeredAt: i.answered_at,
+          createdAt: i.created_at,
+        }))
+      );
     } catch (err) {
       console.error('문의 로딩 실패:', err);
     } finally {

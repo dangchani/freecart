@@ -11,8 +11,14 @@ import { formatCurrency } from '@/lib/utils';
 import { getCart } from '@/services/cart';
 import { createOrder } from '@/services/orders';
 import { useAuth } from '@/hooks/useAuth';
+import { createClient } from '@/lib/supabase/client';
 import type { CartItem } from '@/types';
-import { loadTossPayments } from '@tosspayments/payment-sdk';
+
+interface ActivePG {
+  provider: string;
+  name: string;
+  clientKey: string;
+}
 
 const checkoutSchema = z.object({
   recipientName: z.string().min(1, '수령인 이름을 입력해주세요'),
@@ -24,12 +30,118 @@ const checkoutSchema = z.object({
 
 type CheckoutForm = z.infer<typeof checkoutSchema>;
 
+async function loadActivePG(): Promise<ActivePG | null> {
+  try {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from('payment_gateways')
+      .select('provider, name, client_key')
+      .eq('is_active', true)
+      .single();
+
+    if (!data) return null;
+    return { provider: data.provider, name: data.name, clientKey: data.client_key || '' };
+  } catch {
+    return null;
+  }
+}
+
+async function requestPayment(
+  pg: ActivePG,
+  params: {
+    amount: number;
+    orderId: string;
+    orderName: string;
+    customerName: string;
+    customerPhone: string;
+    successUrl: string;
+    failUrl: string;
+  }
+) {
+  switch (pg.provider) {
+    case 'toss': {
+      const { loadTossPayments } = await import('@tosspayments/payment-sdk');
+      const toss = await loadTossPayments(pg.clientKey);
+      await toss.requestPayment('카드', {
+        amount: params.amount,
+        orderId: params.orderId,
+        orderName: params.orderName,
+        customerName: params.customerName,
+        customerMobilePhone: params.customerPhone,
+        successUrl: params.successUrl,
+        failUrl: params.failUrl,
+      });
+      break;
+    }
+
+    case 'inicis': {
+      // KG이니시스 - script 방식 (INIpay)
+      await loadScript('https://stdpay.inicis.com/stdjs/INIStdPay.js');
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = 'https://stdpay.inicis.com/stdjs/INIStdPay.js';
+
+      const fields: Record<string, string> = {
+        P_INI_PAYMENT: 'CARD',
+        P_MID: pg.clientKey,
+        P_OID: params.orderId,
+        P_AMT: params.amount.toString(),
+        P_GOODS: params.orderName,
+        P_UNAME: params.customerName,
+        P_MOBILE: params.customerPhone,
+        P_NEXT_URL: params.successUrl,
+        P_RETURN_URL: params.failUrl,
+      };
+
+      Object.entries(fields).forEach(([key, val]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = val;
+        form.appendChild(input);
+      });
+
+      document.body.appendChild(form);
+      form.submit();
+      break;
+    }
+
+    case 'kiwoom':
+    case 'kcp':
+    case 'nicepay': {
+      // 팝업/리다이렉트 방식 - 각 PG SDK 연동 필요
+      // 현재는 기본 구현 제공, 실제 SDK로 교체 필요
+      alert(`${pg.name} SDK가 아직 연동되지 않았습니다. PG사 개발 문서를 참고하세요.`);
+      break;
+    }
+
+    default:
+      throw new Error(`지원하지 않는 PG사입니다: ${pg.provider}`);
+  }
+}
+
+function loadScript(src: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) {
+      resolve();
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Script load failed: ${src}`));
+    document.head.appendChild(script);
+  });
+}
+
 export default function CheckoutPage() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [items, setItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [activePG, setActivePG] = useState<ActivePG | null>(null);
+  const [pgError, setPgError] = useState(false);
 
   const {
     register,
@@ -45,7 +157,10 @@ export default function CheckoutPage() {
         navigate('/auth/login');
         return;
       }
-      loadCart();
+      Promise.all([loadCart(), loadActivePG().then((pg) => {
+        if (!pg) setPgError(true);
+        else setActivePG(pg);
+      })]);
     }
   }, [user, authLoading, navigate]);
 
@@ -53,12 +168,10 @@ export default function CheckoutPage() {
     try {
       if (!user) return;
       const cartItems = await getCart(user.id);
-
       if (cartItems.length === 0) {
         navigate('/cart');
         return;
       }
-
       setItems(cartItems);
     } catch (error) {
       console.error('Failed to load cart:', error);
@@ -68,45 +181,44 @@ export default function CheckoutPage() {
   }
 
   const subtotal = items.reduce(
-    (sum, item) => sum + (item.product?.price || 0) * item.quantity,
+    (sum, item) => sum + (item.product?.salePrice || 0) * item.quantity,
     0
   );
   const shippingCost = subtotal >= 50000 ? 0 : 3000;
   const total = subtotal + shippingCost;
 
   async function onSubmit(data: CheckoutForm) {
-    if (!user) return;
+    if (!user || !activePG) return;
 
     try {
       setSubmitting(true);
 
-      // 주문 생성
       const order = await createOrder(
         user.id,
         items.map((item) => ({
           productId: item.productId,
+          productName: item.product?.name || '',
           quantity: item.quantity,
-          price: item.product?.price || 0,
+          unitPrice: item.product?.salePrice || 0,
         })),
         {
-          address: `${data.postalCode} ${data.address}`,
-          phone: data.recipientPhone,
-          name: data.recipientName,
+          ordererName: user.name,
+          ordererPhone: data.recipientPhone,
+          recipientName: data.recipientName,
+          recipientPhone: data.recipientPhone,
+          postalCode: data.postalCode,
+          address1: data.address,
+          shippingMessage: data.deliveryRequest,
         },
-        '카드'
+        activePG.name
       );
 
-      // 토스페이먼츠 결제 호출
-      const tossPayments = await loadTossPayments(
-        import.meta.env.VITE_TOSS_CLIENT_KEY || ''
-      );
-
-      await tossPayments.requestPayment('카드', {
+      await requestPayment(activePG, {
         amount: total,
         orderId: order.orderNumber,
         orderName: `${items[0].product?.name || '상품'}${items.length > 1 ? ` 외 ${items.length - 1}건` : ''}`,
         customerName: data.recipientName,
-        customerMobilePhone: data.recipientPhone,
+        customerPhone: data.recipientPhone,
         successUrl: `${window.location.origin}/checkout/success`,
         failUrl: `${window.location.origin}/checkout/fail`,
       });
@@ -125,6 +237,18 @@ export default function CheckoutPage() {
   return (
     <div className="container py-8">
       <h1 className="mb-8 text-3xl font-bold">주문하기</h1>
+
+      {pgError && (
+        <div className="mb-6 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          활성화된 결제 수단이 없습니다. 관리자에게 문의해주세요.
+        </div>
+      )}
+
+      {activePG && (
+        <div className="mb-4 text-sm text-gray-500">
+          결제 수단: <span className="font-medium text-gray-700">{activePG.name}</span>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit(onSubmit)}>
         <div className="grid gap-8 lg:grid-cols-3">
@@ -205,7 +329,7 @@ export default function CheckoutPage() {
                       <p className="text-sm text-gray-500">수량: {item.quantity}개</p>
                     </div>
                     <p className="font-bold">
-                      {formatCurrency((item.product?.price || 0) * item.quantity)}
+                      {formatCurrency((item.product?.salePrice || 0) * item.quantity)}
                     </p>
                   </div>
                 ))}
@@ -238,9 +362,9 @@ export default function CheckoutPage() {
                 type="submit"
                 className="mt-6 w-full"
                 size="lg"
-                disabled={submitting}
+                disabled={submitting || pgError || !activePG}
               >
-                {submitting ? '처리 중...' : '결제하기'}
+                {submitting ? '처리 중...' : `${activePG?.name || 'PG'} 결제하기`}
               </Button>
 
               <p className="mt-4 text-center text-xs text-gray-500">

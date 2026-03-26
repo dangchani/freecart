@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { format } from 'date-fns';
 import { Plus, Pin, Trash2, Edit } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Notice {
   id: string;
@@ -36,13 +37,25 @@ export default function AdminNoticesPage() {
   async function loadNotices() {
     try {
       setLoading(true);
-      const response = await fetch('/api/notices?limit=100');
-      const data = await response.json();
-      if (data.success) {
-        setNotices(data.data || []);
-      } else {
-        setError(data.error || '공지사항을 불러오지 못했습니다.');
-      }
+      const supabase = createClient();
+      const { data, error: fetchError } = await supabase
+        .from('notices')
+        .select('id, title, is_pinned, view_count, created_at')
+        .order('is_pinned', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (fetchError) throw fetchError;
+
+      setNotices(
+        (data || []).map((n) => ({
+          id: n.id,
+          title: n.title,
+          isPinned: n.is_pinned,
+          viewCount: n.view_count,
+          createdAt: n.created_at,
+        }))
+      );
     } catch {
       setError('공지사항을 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -52,13 +65,12 @@ export default function AdminNoticesPage() {
 
   async function handleTogglePin(noticeId: string, currentPinned: boolean) {
     try {
-      const response = await fetch(`/api/admin/notices/${noticeId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isPinned: !currentPinned }),
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('notices')
+        .update({ is_pinned: !currentPinned })
+        .eq('id', noticeId);
+      if (error) throw error;
       await loadNotices();
     } catch (err) {
       alert(err instanceof Error ? err.message : '처리 중 오류가 발생했습니다.');
@@ -68,11 +80,12 @@ export default function AdminNoticesPage() {
   async function handleDelete(noticeId: string) {
     if (!confirm('공지사항을 삭제하시겠습니까?')) return;
     try {
-      const response = await fetch(`/api/admin/notices/${noticeId}`, {
-        method: 'DELETE',
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('notices')
+        .delete()
+        .eq('id', noticeId);
+      if (error) throw error;
       await loadNotices();
     } catch (err) {
       alert(err instanceof Error ? err.message : '삭제 중 오류가 발생했습니다.');

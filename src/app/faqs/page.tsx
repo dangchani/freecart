@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronUp, HelpCircle } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface FAQ {
   id: string;
@@ -23,14 +24,25 @@ export default function FAQsPage() {
 
   async function fetchFAQs() {
     try {
-      const res = await fetch('/api/faqs');
-      const json = await res.json();
-      if (json.success) {
-        const data: FAQ[] = json.data || [];
-        setFaqs(data);
-        const cats = Array.from(new Set(data.map((f) => f.category)));
-        setCategories(cats);
-      }
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('faqs')
+        .select('id, question, answer, category')
+        .eq('is_visible', true)
+        .order('sort_order', { ascending: true });
+
+      if (error) throw error;
+
+      const items: FAQ[] = (data || []).map((f: any) => ({
+        id: f.id,
+        question: f.question,
+        answer: f.answer,
+        category: f.category,
+      }));
+
+      setFaqs(items);
+      const cats = Array.from(new Set(items.map((f) => f.category)));
+      setCategories(cats);
     } catch (err) {
       console.error('FAQ 로딩 실패:', err);
     } finally {

@@ -4,7 +4,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
-import { Heart, Trash2 } from 'lucide-react';
+import { Heart, Trash2, ShoppingCart } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
+import { addToCart } from '@/services/cart';
 
 interface WishlistItem {
   id: string;
@@ -28,6 +30,7 @@ export default function WishlistPage() {
   const [wishlist, setWishlist] = useState<WishlistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [addingToCart, setAddingToCart] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading) {
@@ -41,9 +44,40 @@ export default function WishlistPage() {
 
   async function fetchWishlist() {
     try {
-      const res = await fetch('/api/users/me/wishlist');
-      const json = await res.json();
-      if (json.success) setWishlist(json.data || []);
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('user_wishlist')
+        .select(`
+          id, product_id, created_at,
+          products(id, name, slug, sale_price, regular_price, stock_quantity, product_images(url, is_primary))
+        `)
+        .eq('user_id', user!.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setWishlist(
+        (data || []).map((w: any) => {
+          const p = w.products;
+          const primaryImg = (p?.product_images || []).find((i: any) => i.is_primary);
+          const firstImg = (p?.product_images || [])[0];
+          return {
+            id: w.id,
+            productId: w.product_id,
+            product: {
+              id: p?.id || w.product_id,
+              name: p?.name || '',
+              slug: p?.slug || '',
+              price: p?.sale_price || 0,
+              comparePrice: p?.regular_price,
+              thumbnail: primaryImg?.url || firstImg?.url,
+              images: (p?.product_images || []).map((i: any) => i.url),
+              stock: p?.stock_quantity || 0,
+            },
+            createdAt: w.created_at,
+          };
+        })
+      );
     } catch (err) {
       console.error('찜 목록 로딩 실패:', err);
     } finally {
@@ -51,17 +85,33 @@ export default function WishlistPage() {
     }
   }
 
+  async function handleAddToCart(productId: string, productName: string) {
+    if (!user) return;
+    setAddingToCart(productId);
+    try {
+      await addToCart(user.id, productId, 1);
+      alert(`"${productName}"이(가) 장바구니에 담겼습니다.`);
+    } catch (err) {
+      alert('장바구니 담기 중 오류가 발생했습니다.');
+    } finally {
+      setAddingToCart(null);
+    }
+  }
+
   async function handleDelete(productId: string) {
     if (!confirm('찜 목록에서 삭제하시겠습니까?')) return;
     setDeletingId(productId);
     try {
-      const res = await fetch(`/api/users/me/wishlist/${productId}`, { method: 'DELETE' });
-      const json = await res.json();
-      if (json.success) {
-        setWishlist((prev) => prev.filter((item) => item.productId !== productId));
-      } else {
-        alert(json.error || '삭제에 실패했습니다.');
-      }
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('user_wishlist')
+        .delete()
+        .eq('user_id', user!.id)
+        .eq('product_id', productId);
+
+      if (error) throw error;
+
+      setWishlist((prev) => prev.filter((item) => item.productId !== productId));
     } catch (err) {
       console.error('찜 삭제 실패:', err);
       alert('삭제 중 오류가 발생했습니다.');
@@ -131,16 +181,26 @@ export default function WishlistPage() {
                       </span>
                     )}
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full text-red-500 hover:bg-red-50 hover:text-red-600"
-                    onClick={() => handleDelete(product.id)}
-                    disabled={deletingId === product.id}
-                  >
-                    <Trash2 className="mr-1.5 h-4 w-4" />
-                    {deletingId === product.id ? '삭제 중...' : '찜 해제'}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => handleAddToCart(product.id, product.name)}
+                      disabled={addingToCart === product.id || product.stock === 0}
+                    >
+                      <ShoppingCart className="mr-1.5 h-4 w-4" />
+                      {addingToCart === product.id ? '담는 중...' : product.stock === 0 ? '품절' : '장바구니'}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-red-500 hover:bg-red-50 hover:text-red-600"
+                      onClick={() => handleDelete(product.id)}
+                      disabled={deletingId === product.id}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </Card>
             );

@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { createClient } from '@/lib/supabase/client';
 
 const profileSchema = z.object({
   displayName: z.string().min(1, '이름을 입력해주세요').optional(),
@@ -48,15 +49,21 @@ export default function ProfilePage() {
     try {
       if (!user) return;
 
-      const response = await fetch('/api/profiles');
-      const data = await response.json();
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, name, nickname, phone, email')
+        .eq('id', user.id)
+        .single();
 
-      if (data.success && data.data) {
-        setProfile(data.data);
+      if (error) throw error;
+
+      if (data) {
+        setProfile(data);
         reset({
-          displayName: data.data.displayName || '',
-          phone: data.data.phone || '',
-          address: data.data.address || '',
+          displayName: data.name || '',
+          phone: data.phone || '',
+          address: '',
         });
       }
     } catch (error) {
@@ -70,17 +77,16 @@ export default function ProfilePage() {
     try {
       setLoading(true);
 
-      const response = await fetch(`/api/profiles/${user.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('users')
+        .update({
+          name: data.displayName,
+          phone: data.phone,
+        })
+        .eq('id', user.id);
 
-      const result = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.error || '프로필 업데이트에 실패했습니다.');
-      }
+      if (error) throw error;
 
       alert('프로필이 업데이트되었습니다.');
       await loadProfile();
@@ -100,15 +106,14 @@ export default function ProfilePage() {
     }
 
     try {
-      const response = await fetch(`/api/profiles/${user.id}`, {
-        method: 'DELETE',
-      });
+      const supabase = createClient();
+      // Mark user as dormant/blocked instead of hard delete (due to FK constraints)
+      const { error } = await supabase
+        .from('users')
+        .update({ is_blocked: true, blocked_reason: '사용자 탈퇴 요청' })
+        .eq('id', user.id);
 
-      const result = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.error || '계정 삭제에 실패했습니다.');
-      }
+      if (error) throw error;
 
       alert('계정이 삭제되었습니다.');
       navigate('/');

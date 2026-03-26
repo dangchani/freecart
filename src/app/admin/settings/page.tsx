@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
+import { createClient } from '@/lib/supabase/client';
 
 interface Settings {
   siteName: string;
@@ -42,22 +43,37 @@ export default function AdminSettingsPage() {
   async function loadSettings() {
     try {
       setLoading(true);
-      const response = await fetch('/api/admin/settings');
-      const data = await response.json();
-      if (data.success) {
-        const s = data.data || {};
-        setSettings({
-          siteName: s.siteName || '',
-          siteDescription: s.siteDescription || '',
-          shippingFee: s.shippingFee != null ? String(s.shippingFee) : '',
-          freeShippingThreshold:
-            s.freeShippingThreshold != null ? String(s.freeShippingThreshold) : '',
-          pointEarnRate: s.pointEarnRate != null ? String(s.pointEarnRate) : '',
-          signupPoints: s.signupPoints != null ? String(s.signupPoints) : '',
-        });
-      } else {
-        setError(data.error || '설정을 불러오지 못했습니다.');
-      }
+      const supabase = createClient();
+      const { data, error: fetchError } = await supabase
+        .from('settings')
+        .select('key, value');
+
+      if (fetchError) throw fetchError;
+
+      const map: Record<string, string> = {};
+      (data || []).forEach((s) => {
+        map[s.key] = s.value;
+      });
+
+      // Parse JSON values (settings store values as text, often JSON-encoded)
+      const parseValue = (val: string | undefined) => {
+        if (!val) return '';
+        try {
+          const parsed = JSON.parse(val);
+          return String(parsed);
+        } catch {
+          return val;
+        }
+      };
+
+      setSettings({
+        siteName: parseValue(map['site_name']),
+        siteDescription: parseValue(map['site_description']),
+        shippingFee: parseValue(map['shipping_fee']),
+        freeShippingThreshold: parseValue(map['free_shipping_threshold']),
+        pointEarnRate: parseValue(map['point_earn_rate']),
+        signupPoints: parseValue(map['signup_points']),
+      });
     } catch {
       setError('설정을 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -76,23 +92,28 @@ export default function AdminSettingsPage() {
     setError('');
     setSuccess('');
     try {
-      const payload = {
-        siteName: settings.siteName,
-        siteDescription: settings.siteDescription,
-        shippingFee: settings.shippingFee ? parseInt(settings.shippingFee) : 0,
-        freeShippingThreshold: settings.freeShippingThreshold
-          ? parseInt(settings.freeShippingThreshold)
-          : 0,
-        pointEarnRate: settings.pointEarnRate ? parseFloat(settings.pointEarnRate) : 0,
-        signupPoints: settings.signupPoints ? parseInt(settings.signupPoints) : 0,
+      const supabase = createClient();
+
+      const settingsMap: Record<string, string> = {
+        site_name: JSON.stringify(settings.siteName),
+        site_description: JSON.stringify(settings.siteDescription),
+        shipping_fee: JSON.stringify(settings.shippingFee ? parseInt(settings.shippingFee) : 0),
+        free_shipping_threshold: JSON.stringify(settings.freeShippingThreshold ? parseInt(settings.freeShippingThreshold) : 0),
+        point_earn_rate: JSON.stringify(settings.pointEarnRate ? parseFloat(settings.pointEarnRate) : 0),
+        signup_points: JSON.stringify(settings.signupPoints ? parseInt(settings.signupPoints) : 0),
       };
-      const response = await fetch('/api/admin/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+
+      for (const [key, value] of Object.entries(settingsMap)) {
+        const { error: upsertError } = await supabase
+          .from('settings')
+          .upsert(
+            { key, value },
+            { onConflict: 'key' }
+          );
+
+        if (upsertError) throw upsertError;
+      }
+
       setSuccess('설정이 저장되었습니다.');
     } catch (err) {
       setError(err instanceof Error ? err.message : '설정 저장 중 오류가 발생했습니다.');
@@ -115,104 +136,45 @@ export default function AdminSettingsPage() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* 사이트 기본 정보 */}
         <Card className="p-6">
           <h2 className="mb-4 text-lg font-bold">사이트 기본 정보</h2>
           <div className="space-y-4">
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">사이트 이름</label>
-              <input
-                type="text"
-                name="siteName"
-                value={settings.siteName}
-                onChange={handleChange}
-                className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="FreeCart"
-              />
+              <input type="text" name="siteName" value={settings.siteName} onChange={handleChange} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="FreeCart" />
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">사이트 설명</label>
-              <textarea
-                name="siteDescription"
-                value={settings.siteDescription}
-                onChange={handleChange}
-                rows={3}
-                className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="쇼핑몰 설명을 입력하세요"
-              />
+              <textarea name="siteDescription" value={settings.siteDescription} onChange={handleChange} rows={3} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="쇼핑몰 설명을 입력하세요" />
             </div>
           </div>
         </Card>
 
-        {/* 배송 설정 */}
         <Card className="p-6">
           <h2 className="mb-4 text-lg font-bold">배송 설정</h2>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                기본 배송비 (원)
-              </label>
-              <input
-                type="number"
-                name="shippingFee"
-                value={settings.shippingFee}
-                onChange={handleChange}
-                min="0"
-                className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="3000"
-              />
+              <label className="mb-1 block text-sm font-medium text-gray-700">기본 배송비 (원)</label>
+              <input type="number" name="shippingFee" value={settings.shippingFee} onChange={handleChange} min="0" className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="3000" />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                무료 배송 기준금액 (원)
-              </label>
-              <input
-                type="number"
-                name="freeShippingThreshold"
-                value={settings.freeShippingThreshold}
-                onChange={handleChange}
-                min="0"
-                className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="50000"
-              />
+              <label className="mb-1 block text-sm font-medium text-gray-700">무료 배송 기준금액 (원)</label>
+              <input type="number" name="freeShippingThreshold" value={settings.freeShippingThreshold} onChange={handleChange} min="0" className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="50000" />
             </div>
           </div>
         </Card>
 
-        {/* 포인트 설정 */}
         <Card className="p-6">
           <h2 className="mb-4 text-lg font-bold">포인트 설정</h2>
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                기본 포인트 적립률 (%)
-              </label>
-              <input
-                type="number"
-                name="pointEarnRate"
-                value={settings.pointEarnRate}
-                onChange={handleChange}
-                min="0"
-                max="100"
-                step="0.1"
-                className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="1"
-              />
+              <label className="mb-1 block text-sm font-medium text-gray-700">기본 포인트 적립률 (%)</label>
+              <input type="number" name="pointEarnRate" value={settings.pointEarnRate} onChange={handleChange} min="0" max="100" step="0.1" className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="1" />
               <p className="mt-1 text-xs text-gray-500">구매금액의 몇 %를 포인트로 적립할지 설정합니다.</p>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                회원가입 포인트 지급 (P)
-              </label>
-              <input
-                type="number"
-                name="signupPoints"
-                value={settings.signupPoints}
-                onChange={handleChange}
-                min="0"
-                className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="1000"
-              />
+              <label className="mb-1 block text-sm font-medium text-gray-700">회원가입 포인트 지급 (P)</label>
+              <input type="number" name="signupPoints" value={settings.signupPoints} onChange={handleChange} min="0" className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="1000" />
               <p className="mt-1 text-xs text-gray-500">신규 회원가입 시 지급할 포인트입니다.</p>
             </div>
           </div>

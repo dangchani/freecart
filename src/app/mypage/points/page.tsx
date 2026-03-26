@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Coins } from 'lucide-react';
 import { format } from 'date-fns';
+import { createClient } from '@/lib/supabase/client';
 
 type FilterType = 'all' | 'earn' | 'use' | 'expire';
 
@@ -39,6 +40,7 @@ export default function PointsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>('all');
   const [page, setPage] = useState(1);
+  const LIMIT = 10;
 
   useEffect(() => {
     if (!authLoading) {
@@ -53,11 +55,49 @@ export default function PointsPage() {
   async function fetchPoints() {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ page: String(page), limit: '10' });
-      if (filter !== 'all') params.set('type', filter);
-      const res = await fetch(`/api/users/me/points?${params}`);
-      const json = await res.json();
-      if (json.success) setData(json.data);
+      const supabase = createClient();
+
+      // Get user's current point balance
+      const { data: userData } = await supabase
+        .from('users')
+        .select('points')
+        .eq('id', user!.id)
+        .single();
+
+      // Build query for history
+      let query = supabase
+        .from('user_points_history')
+        .select('id, type, amount, balance, description, created_at', { count: 'exact' })
+        .eq('user_id', user!.id);
+
+      if (filter !== 'all') {
+        query = query.eq('type', filter);
+      }
+
+      const from = (page - 1) * LIMIT;
+      const to = from + LIMIT - 1;
+
+      const { data: history, error, count } = await query
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      if (error) throw error;
+
+      const totalCount = count || 0;
+
+      setData({
+        balance: userData?.points || 0,
+        history: (history || []).map((h: any) => ({
+          id: h.id,
+          type: h.type,
+          amount: h.amount,
+          balance: h.balance,
+          description: h.description,
+          createdAt: h.created_at,
+        })),
+        totalPages: Math.max(1, Math.ceil(totalCount / LIMIT)),
+        totalCount,
+      });
     } catch (err) {
       console.error('포인트 로딩 실패:', err);
     } finally {

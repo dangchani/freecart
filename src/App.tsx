@@ -40,6 +40,7 @@ import MypageWishlistPage from './app/mypage/wishlist/page';
 import MypageReviewsPage from './app/mypage/reviews/page';
 import MypageSubscriptionsPage from './app/mypage/subscriptions/page';
 import MypageInquiriesPage from './app/mypage/inquiries/page';
+import MypageInquiryNewPage from './app/mypage/inquiries/new/page';
 import MypageNotificationsPage from './app/mypage/notifications/page';
 import MypageAttendancePage from './app/mypage/attendance/page';
 
@@ -85,6 +86,7 @@ import AdminMenusPage from './app/admin/menus/page';
 import AdminTermsPage from './app/admin/terms/page';
 import AdminUserLevelsPage from './app/admin/user-levels/page';
 import AdminExternalConnectionsPage from './app/admin/external-connections/page';
+import AdminPaymentGatewaysPage from './app/admin/payment-gateways/page';
 
 function MainLayout() {
   return (
@@ -172,6 +174,7 @@ export default function App() {
               <Route path="/mypage/reviews" element={<MypageReviewsPage />} />
               <Route path="/mypage/subscriptions" element={<MypageSubscriptionsPage />} />
               <Route path="/mypage/inquiries" element={<MypageInquiriesPage />} />
+              <Route path="/mypage/inquiries/new" element={<MypageInquiryNewPage />} />
               <Route path="/mypage/notifications" element={<MypageNotificationsPage />} />
               <Route path="/mypage/attendance" element={<MypageAttendancePage />} />
             </Route>
@@ -208,6 +211,7 @@ export default function App() {
             <Route path="/admin/terms" element={<AdminTermsPage />} />
             <Route path="/admin/user-levels" element={<AdminUserLevelsPage />} />
             <Route path="/admin/external-connections" element={<AdminExternalConnectionsPage />} />
+            <Route path="/admin/payment-gateways" element={<AdminPaymentGatewaysPage />} />
           </Route>
         </Route>
       </Routes>

@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 const postSchema = z.object({
   title: z.string().min(1, '제목을 입력해주세요'),
@@ -40,17 +41,29 @@ export default function NewPostPage() {
 
   async function onSubmit(data: PostForm) {
     try {
-      const response = await fetch(`/api/boards/${slug}/posts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
+      const supabase = createClient();
 
-      const result = await response.json();
+      // Get board id from slug
+      const { data: boardData, error: boardError } = await supabase
+        .from('boards')
+        .select('id')
+        .eq('slug', slug)
+        .single();
 
-      if (!result.success) {
-        throw new Error(result.error || '게시글 작성에 실패했습니다.');
+      if (boardError || !boardData) {
+        throw new Error('게시판을 찾을 수 없습니다.');
       }
+
+      const { error } = await supabase
+        .from('posts')
+        .insert({
+          board_id: boardData.id,
+          user_id: user!.id,
+          title: data.title,
+          content: data.content,
+        });
+
+      if (error) throw error;
 
       alert('게시글이 작성되었습니다.');
       navigate(`/boards/${slug}`);

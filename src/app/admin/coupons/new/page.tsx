@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface CouponForm {
   name: string;
@@ -68,27 +69,22 @@ export default function AdminCouponNewPage() {
     setSubmitting(true);
     setError('');
     try {
-      const payload = {
+      const supabase = createClient();
+      const { error: insertError } = await supabase.from('coupons').insert({
         name: form.name,
         code: form.code.toUpperCase(),
-        description: form.description,
-        discountType: form.discountType,
-        discountValue: parseFloat(form.discountValue),
-        minOrderAmount: form.minOrderAmount ? parseFloat(form.minOrderAmount) : null,
-        maxDiscountAmount: form.maxDiscountAmount ? parseFloat(form.maxDiscountAmount) : null,
-        totalQuantity: form.totalQuantity ? parseInt(form.totalQuantity) : null,
-        startsAt: form.startsAt || null,
-        expiresAt: form.expiresAt || null,
-        isActive: form.isActive,
-      };
-
-      const response = await fetch('/api/admin/coupons', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        description: form.description || null,
+        discount_type: form.discountType,
+        discount_value: parseFloat(form.discountValue),
+        min_order_amount: form.minOrderAmount ? parseFloat(form.minOrderAmount) : 0,
+        max_discount_amount: form.maxDiscountAmount ? parseFloat(form.maxDiscountAmount) : null,
+        total_quantity: form.totalQuantity ? parseInt(form.totalQuantity) : null,
+        starts_at: form.startsAt || new Date().toISOString(),
+        expires_at: form.expiresAt || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+        is_active: form.isActive,
       });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+
+      if (insertError) throw insertError;
       alert('쿠폰이 생성되었습니다.');
       navigate('/admin/coupons');
     } catch (err) {

@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { format } from 'date-fns';
 import { Plus, Edit, Trash2 } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Banner {
   id: string;
@@ -65,13 +66,27 @@ export default function AdminBannersPage() {
   async function loadBanners() {
     try {
       setLoading(true);
-      const response = await fetch('/api/admin/banners');
-      const data = await response.json();
-      if (data.success) {
-        setBanners(data.data || []);
-      } else {
-        setError(data.error || '배너 목록을 불러오지 못했습니다.');
-      }
+      const supabase = createClient();
+      const { data, error: fetchError } = await supabase
+        .from('banners')
+        .select('id, name, image_url, link_url, position, starts_at, ends_at, is_active, sort_order')
+        .order('sort_order', { ascending: true });
+
+      if (fetchError) throw fetchError;
+
+      setBanners(
+        (data || []).map((b) => ({
+          id: b.id,
+          name: b.name,
+          imageUrl: b.image_url,
+          linkUrl: b.link_url || '',
+          position: b.position,
+          startsAt: b.starts_at,
+          endsAt: b.ends_at,
+          isActive: b.is_active,
+          sortOrder: b.sort_order,
+        }))
+      );
     } catch {
       setError('배너 목록을 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -112,27 +127,31 @@ export default function AdminBannersPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
+      const supabase = createClient();
       const payload = {
         name: form.name,
-        imageUrl: form.imageUrl,
-        linkUrl: form.linkUrl,
+        image_url: form.imageUrl,
+        link_url: form.linkUrl || null,
         position: form.position,
-        startsAt: form.startsAt || null,
-        endsAt: form.endsAt || null,
-        isActive: form.isActive,
-        sortOrder: parseInt(form.sortOrder) || 0,
+        starts_at: form.startsAt || null,
+        ends_at: form.endsAt || null,
+        is_active: form.isActive,
+        sort_order: parseInt(form.sortOrder) || 0,
       };
 
-      const url = editingId ? `/api/admin/banners/${editingId}` : '/api/admin/banners';
-      const method = editingId ? 'PATCH' : 'POST';
+      if (editingId) {
+        const { error } = await supabase
+          .from('banners')
+          .update(payload)
+          .eq('id', editingId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('banners')
+          .insert(payload);
+        if (error) throw error;
+      }
 
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
       setShowModal(false);
       await loadBanners();
     } catch (err) {
@@ -145,9 +164,9 @@ export default function AdminBannersPage() {
   async function handleDelete(bannerId: string) {
     if (!confirm('배너를 삭제하시겠습니까?')) return;
     try {
-      const response = await fetch(`/api/admin/banners/${bannerId}`, { method: 'DELETE' });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      const supabase = createClient();
+      const { error } = await supabase.from('banners').delete().eq('id', bannerId);
+      if (error) throw error;
       await loadBanners();
     } catch (err) {
       alert(err instanceof Error ? err.message : '삭제 중 오류가 발생했습니다.');
@@ -156,13 +175,12 @@ export default function AdminBannersPage() {
 
   async function handleToggleActive(bannerId: string, current: boolean) {
     try {
-      const response = await fetch(`/api/admin/banners/${bannerId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: !current }),
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('banners')
+        .update({ is_active: !current })
+        .eq('id', bannerId);
+      if (error) throw error;
       await loadBanners();
     } catch (err) {
       alert(err instanceof Error ? err.message : '처리 중 오류가 발생했습니다.');
@@ -212,28 +230,18 @@ export default function AdminBannersPage() {
                     <td className="px-4 py-3">
                       {banner.imageUrl ? (
                         <div className="relative h-12 w-24 overflow-hidden rounded bg-gray-100">
-                          <img
-                            src={banner.imageUrl}
-                            alt={banner.name}
-                            className="object-cover w-full h-full"
-                          />
+                          <img src={banner.imageUrl} alt={banner.name} className="object-cover w-full h-full" />
                         </div>
                       ) : (
-                        <div className="flex h-12 w-24 items-center justify-center rounded bg-gray-100 text-xs text-gray-400">
-                          이미지 없음
-                        </div>
+                        <div className="flex h-12 w-24 items-center justify-center rounded bg-gray-100 text-xs text-gray-400">이미지 없음</div>
                       )}
                     </td>
                     <td className="px-4 py-3 font-medium">{banner.name}</td>
                     <td className="px-4 py-3 text-gray-600">{banner.position}</td>
                     <td className="px-4 py-3 text-gray-600 text-xs">
-                      {banner.startsAt
-                        ? format(new Date(banner.startsAt), 'yyyy.MM.dd')
-                        : '시작일 없음'}
+                      {banner.startsAt ? format(new Date(banner.startsAt), 'yyyy.MM.dd') : '시작일 없음'}
                       {' ~ '}
-                      {banner.endsAt
-                        ? format(new Date(banner.endsAt), 'yyyy.MM.dd')
-                        : '종료일 없음'}
+                      {banner.endsAt ? format(new Date(banner.endsAt), 'yyyy.MM.dd') : '종료일 없음'}
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant={banner.isActive ? 'default' : 'secondary'}>
@@ -242,21 +250,13 @@ export default function AdminBannersPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex justify-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleToggleActive(banner.id, banner.isActive)}
-                        >
+                        <Button size="sm" variant="outline" onClick={() => handleToggleActive(banner.id, banner.isActive)}>
                           {banner.isActive ? '비활성화' : '활성화'}
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => openEdit(banner)}>
                           <Edit className="h-3.5 w-3.5" />
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleDelete(banner.id)}
-                        >
+                        <Button size="sm" variant="ghost" onClick={() => handleDelete(banner.id)}>
                           <Trash2 className="h-3.5 w-3.5 text-red-500" />
                         </Button>
                       </div>
@@ -273,51 +273,24 @@ export default function AdminBannersPage() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <Card className="w-full max-w-lg p-6">
-            <h2 className="mb-4 text-lg font-bold">
-              {editingId ? '배너 수정' : '배너 추가'}
-            </h2>
+            <h2 className="mb-4 text-lg font-bold">{editingId ? '배너 수정' : '배너 추가'}</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">이름</label>
-                <input
-                  type="text"
-                  name="name"
-                  value={form.name}
-                  onChange={handleChange}
-                  required
-                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <input type="text" name="name" value={form.name} onChange={handleChange} required className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">이미지 URL</label>
-                <input
-                  type="text"
-                  name="imageUrl"
-                  value={form.imageUrl}
-                  onChange={handleChange}
-                  required
-                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <input type="text" name="imageUrl" value={form.imageUrl} onChange={handleChange} required className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">링크 URL</label>
-                <input
-                  type="text"
-                  name="linkUrl"
-                  value={form.linkUrl}
-                  onChange={handleChange}
-                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <input type="text" name="linkUrl" value={form.linkUrl} onChange={handleChange} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">위치</label>
-                  <select
-                    name="position"
-                    value={form.position}
-                    onChange={handleChange}
-                    className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
+                  <select name="position" value={form.position} onChange={handleChange} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     <option value="main">메인</option>
                     <option value="sub">서브</option>
                     <option value="popup">팝업</option>
@@ -326,57 +299,26 @@ export default function AdminBannersPage() {
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">정렬 순서</label>
-                  <input
-                    type="number"
-                    name="sortOrder"
-                    value={form.sortOrder}
-                    onChange={handleChange}
-                    className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <input type="number" name="sortOrder" value={form.sortOrder} onChange={handleChange} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">시작일</label>
-                  <input
-                    type="datetime-local"
-                    name="startsAt"
-                    value={form.startsAt}
-                    onChange={handleChange}
-                    className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <input type="datetime-local" name="startsAt" value={form.startsAt} onChange={handleChange} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-700">종료일</label>
-                  <input
-                    type="datetime-local"
-                    name="endsAt"
-                    value={form.endsAt}
-                    onChange={handleChange}
-                    className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
+                  <input type="datetime-local" name="endsAt" value={form.endsAt} onChange={handleChange} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="bannerActive"
-                  name="isActive"
-                  checked={form.isActive}
-                  onChange={handleChange}
-                  className="h-4 w-4 rounded border-gray-300"
-                />
-                <label htmlFor="bannerActive" className="text-sm font-medium text-gray-700">
-                  활성화
-                </label>
+                <input type="checkbox" id="bannerActive" name="isActive" checked={form.isActive} onChange={handleChange} className="h-4 w-4 rounded border-gray-300" />
+                <label htmlFor="bannerActive" className="text-sm font-medium text-gray-700">활성화</label>
               </div>
               <div className="flex gap-3 pt-2">
-                <Button type="submit" disabled={submitting}>
-                  {submitting ? '처리 중...' : editingId ? '수정' : '추가'}
-                </Button>
-                <Button type="button" variant="outline" onClick={() => setShowModal(false)}>
-                  취소
-                </Button>
+                <Button type="submit" disabled={submitting}>{submitting ? '처리 중...' : editingId ? '수정' : '추가'}</Button>
+                <Button type="button" variant="outline" onClick={() => setShowModal(false)}>취소</Button>
               </div>
             </form>
           </Card>

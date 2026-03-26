@@ -15,6 +15,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ArrowLeft } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Order {
   id: string;
@@ -60,12 +61,24 @@ export default function AdminOrdersPage() {
 
   async function loadOrders() {
     try {
-      const response = await fetch('/api/orders?admin=true');
-      const data = await response.json();
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('orders')
+        .select('id, order_number, status, total_amount, orderer_name, created_at')
+        .order('created_at', { ascending: false });
 
-      if (data.success) {
-        setOrders(data.data || []);
-      }
+      if (error) throw error;
+
+      setOrders(
+        (data || []).map((o) => ({
+          id: o.id,
+          orderNumber: o.order_number,
+          status: o.status,
+          totalAmount: o.total_amount,
+          customerName: o.orderer_name,
+          createdAt: o.created_at,
+        }))
+      );
     } catch (error) {
       console.error('Failed to load orders:', error);
     } finally {
@@ -75,18 +88,13 @@ export default function AdminOrdersPage() {
 
   async function handleStatusChange(orderId: string, newStatus: string) {
     try {
-      const response = await fetch(`/api/orders/${orderId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      });
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: newStatus })
+        .eq('id', orderId);
 
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || '주문 상태 변경에 실패했습니다.');
-      }
-
+      if (error) throw error;
       await loadOrders();
     } catch (error) {
       console.error('Failed to update order status:', error);

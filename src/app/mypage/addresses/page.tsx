@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MapPin, Plus, Pencil, Trash2, X } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Address {
   id: string;
@@ -60,9 +61,28 @@ export default function AddressesPage() {
 
   async function fetchAddresses() {
     try {
-      const res = await fetch('/api/users/me/addresses');
-      const json = await res.json();
-      if (json.success) setAddresses(json.data || []);
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('user_addresses')
+        .select('id, name, recipient_name, recipient_phone, postal_code, address1, address2, is_default')
+        .eq('user_id', user!.id)
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setAddresses(
+        (data || []).map((a: any) => ({
+          id: a.id,
+          name: a.name,
+          recipientName: a.recipient_name,
+          recipientPhone: a.recipient_phone,
+          postalCode: a.postal_code,
+          address1: a.address1,
+          address2: a.address2 || '',
+          isDefault: a.is_default,
+        }))
+      );
     } catch (err) {
       console.error('배송지 로딩 실패:', err);
     } finally {
@@ -94,22 +114,44 @@ export default function AddressesPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const url = editingId ? `/api/users/me/addresses/${editingId}` : '/api/users/me/addresses';
-      const method = editingId ? 'PATCH' : 'POST';
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setShowForm(false);
-        setEditingId(null);
-        setForm(emptyForm);
-        await fetchAddresses();
-      } else {
-        alert(json.error || '저장에 실패했습니다.');
+      const supabase = createClient();
+      const payload = {
+        user_id: user!.id,
+        name: form.name,
+        recipient_name: form.recipientName,
+        recipient_phone: form.recipientPhone,
+        postal_code: form.postalCode,
+        address1: form.address1,
+        address2: form.address2,
+        is_default: form.isDefault,
+      };
+
+      // If setting as default, unset other defaults first
+      if (form.isDefault) {
+        await supabase
+          .from('user_addresses')
+          .update({ is_default: false })
+          .eq('user_id', user!.id);
       }
+
+      if (editingId) {
+        const { error } = await supabase
+          .from('user_addresses')
+          .update(payload)
+          .eq('id', editingId)
+          .eq('user_id', user!.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('user_addresses')
+          .insert(payload);
+        if (error) throw error;
+      }
+
+      setShowForm(false);
+      setEditingId(null);
+      setForm(emptyForm);
+      await fetchAddresses();
     } catch (err) {
       console.error('배송지 저장 실패:', err);
       alert('저장 중 오류가 발생했습니다.');
@@ -122,13 +164,16 @@ export default function AddressesPage() {
     if (!confirm('배송지를 삭제하시겠습니까?')) return;
     setDeletingId(id);
     try {
-      const res = await fetch(`/api/users/me/addresses/${id}`, { method: 'DELETE' });
-      const json = await res.json();
-      if (json.success) {
-        setAddresses((prev) => prev.filter((a) => a.id !== id));
-      } else {
-        alert(json.error || '삭제에 실패했습니다.');
-      }
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('user_addresses')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user!.id);
+
+      if (error) throw error;
+
+      setAddresses((prev) => prev.filter((a) => a.id !== id));
     } catch (err) {
       console.error('배송지 삭제 실패:', err);
       alert('삭제 중 오류가 발생했습니다.');

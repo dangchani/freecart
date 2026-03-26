@@ -59,7 +59,7 @@ export default function CartPage() {
   }
 
   const subtotal = items.reduce(
-    (sum, item) => sum + (item.product?.price || 0) * item.quantity,
+    (sum, item) => sum + (item.product?.salePrice || 0) * item.quantity,
     0
   );
   const shippingCost = subtotal >= 50000 ? 0 : 3000;
@@ -84,7 +84,7 @@ export default function CartPage() {
                 <div className="flex gap-4">
                   <div className="relative h-24 w-24 overflow-hidden rounded-lg bg-gray-100">
                     <img
-                      src={item.product?.thumbnail || '/placeholder.png'}
+                      src={item.product?.images?.find((img) => img.isPrimary)?.url || item.product?.images?.[0]?.url || '/placeholder.png'}
                       alt={item.product?.name || ''}
                       className="object-cover w-full h-full"
                     />
@@ -93,7 +93,7 @@ export default function CartPage() {
                   <div className="flex-1">
                     <h3 className="font-medium">{item.product?.name}</h3>
                     <p className="text-lg font-bold">
-                      {formatCurrency(item.product?.price || 0)}
+                      {formatCurrency(item.product?.salePrice || 0)}
                     </p>
 
                     <div className="mt-2 flex items-center gap-2">

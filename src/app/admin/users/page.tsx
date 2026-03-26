@@ -3,9 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useAuth } from '@/hooks/useAuth';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { format } from 'date-fns';
-import { Search } from 'lucide-react';
+import { Search, Plus, X } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface User {
   id: string;
@@ -18,55 +20,70 @@ interface User {
   isBlocked: boolean;
 }
 
-const levelOptions = [
-  { value: '', label: '전체 등급' },
-  { value: 'bronze', label: '브론즈' },
-  { value: 'silver', label: '실버' },
-  { value: 'gold', label: '골드' },
-  { value: 'vip', label: 'VIP' },
-];
-
-const levelLabels: Record<string, string> = {
-  bronze: '브론즈',
-  silver: '실버',
-  gold: '골드',
-  vip: 'VIP',
-};
+interface UserLevel {
+  id: string;
+  name: string;
+}
 
 export default function AdminUsersPage() {
   const navigate = useNavigate();
-  const { user, loading: authLoading } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
+  const [userLevels, setUserLevels] = useState<UserLevel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('');
 
+  // 회원 추가 모달
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addForm, setAddForm] = useState({ name: '', email: '', password: '', phone: '' });
+  const [addSubmitting, setAddSubmitting] = useState(false);
+  const [addError, setAddError] = useState('');
+
   useEffect(() => {
-    if (!authLoading) {
-      if (!user) {
-        navigate('/auth/login');
-        return;
-      }
-      loadUsers();
-    }
-  }, [user, authLoading, navigate]);
+    loadUserLevels();
+    loadUsers();
+  }, []);
+
+  async function loadUserLevels() {
+    const supabase = createClient();
+    const { data } = await supabase.from('user_levels').select('id, name').order('level');
+    setUserLevels(data?.map((l: any) => ({ id: l.id, name: l.name })) || []);
+  }
 
   async function loadUsers() {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      if (search) params.set('search', search);
-      if (levelFilter) params.set('level', levelFilter);
+      const supabase = createClient();
 
-      const response = await fetch(`/api/admin/users?${params.toString()}`);
-      const data = await response.json();
+      let query = supabase
+        .from('users')
+        .select('id, name, email, phone, points, is_blocked, created_at, level_id, user_levels(name)')
+        .order('created_at', { ascending: false });
 
-      if (data.success) {
-        setUsers(data.data || []);
-      } else {
-        setError(data.error || '회원 목록을 불러오지 못했습니다.');
+      if (search) {
+        query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
       }
+
+      if (levelFilter) {
+        query = query.eq('level_id', levelFilter);
+      }
+
+      const { data, error: fetchError } = await query;
+      if (fetchError) throw fetchError;
+
+      setUsers(
+        (data || []).map((u: any) => ({
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          phone: u.phone || '',
+          level: (u.user_levels as any)?.name || '',
+          points: u.points || 0,
+          createdAt: u.created_at,
+          isBlocked: u.is_blocked,
+        }))
+      );
     } catch {
       setError('회원 목록을 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -77,18 +94,41 @@ export default function AdminUsersPage() {
   async function handleToggleBlock(userId: string, currentlyBlocked: boolean) {
     const action = currentlyBlocked ? '차단 해제' : '차단';
     if (!confirm(`해당 회원을 ${action}하시겠습니까?`)) return;
-
     try {
-      const response = await fetch(`/api/admin/users/${userId}/block`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isBlocked: !currentlyBlocked }),
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      const supabase = createClient();
+      await supabase.from('users').update({ is_blocked: !currentlyBlocked }).eq('id', userId);
       await loadUsers();
     } catch (err) {
       alert(err instanceof Error ? err.message : '처리 중 오류가 발생했습니다.');
+    }
+  }
+
+  async function handleAddUser(e: React.FormEvent) {
+    e.preventDefault();
+    if (addForm.password.length < 8) {
+      setAddError('비밀번호는 8자 이상이어야 합니다.');
+      return;
+    }
+    setAddSubmitting(true);
+    setAddError('');
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signUp({
+        email: addForm.email,
+        password: addForm.password,
+        options: {
+          data: { name: addForm.name, phone: addForm.phone },
+        },
+      });
+      if (error) throw error;
+      alert(`${addForm.name}(${addForm.email}) 회원이 생성되었습니다.\n이메일 인증 후 로그인이 가능합니다.`);
+      setAddForm({ name: '', email: '', password: '', phone: '' });
+      setShowAddModal(false);
+      await loadUsers();
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : '회원 생성 중 오류가 발생했습니다.');
+    } finally {
+      setAddSubmitting(false);
     }
   }
 
@@ -97,14 +137,20 @@ export default function AdminUsersPage() {
     loadUsers();
   }
 
-  if (authLoading) {
-    return <div className="container py-8">로딩 중...</div>;
-  }
-
   return (
-    <div className="container py-8">
-      <h1 className="mb-6 text-3xl font-bold">회원 관리</h1>
+    <div className="p-8">
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">회원 관리</h1>
+          <p className="text-sm text-gray-500 mt-1">총 {users.length}명</p>
+        </div>
+        <Button onClick={() => { setShowAddModal(true); setAddError(''); }}>
+          <Plus className="mr-2 h-4 w-4" />
+          회원 추가
+        </Button>
+      </div>
 
+      {/* 검색/필터 */}
       <Card className="mb-6 p-4">
         <form onSubmit={handleSearch} className="flex flex-wrap gap-3">
           <div className="relative flex-1 min-w-48">
@@ -122,25 +168,25 @@ export default function AdminUsersPage() {
             onChange={(e) => setLevelFilter(e.target.value)}
             className="rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            {levelOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
+            <option value="">전체 등급</option>
+            {userLevels.map((l) => (
+              <option key={l.id} value={l.id}>{l.name}</option>
             ))}
           </select>
           <Button type="submit">검색</Button>
         </form>
       </Card>
 
-      {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-4 text-red-700">{error}</div>
-      )}
+      {error && <div className="mb-4 rounded-md bg-red-50 p-4 text-red-700">{error}</div>}
 
       {loading ? (
-        <div className="py-8 text-center text-gray-500">로딩 중...</div>
+        <div className="space-y-2">
+          {[1,2,3,4,5].map(i => <div key={i} className="h-14 bg-gray-200 animate-pulse rounded" />)}
+        </div>
       ) : users.length === 0 ? (
         <Card className="p-12 text-center">
-          <p className="text-gray-500">회원이 없습니다.</p>
+          <p className="text-gray-500 mb-3">회원이 없습니다.</p>
+          <Button onClick={() => setShowAddModal(true)}><Plus className="mr-2 h-4 w-4" />첫 회원 추가</Button>
         </Card>
       ) : (
         <Card>
@@ -169,7 +215,7 @@ export default function AdminUsersPage() {
                     <td className="px-4 py-3 text-gray-600">{u.email}</td>
                     <td className="px-4 py-3 text-gray-600">{u.phone || '-'}</td>
                     <td className="px-4 py-3">
-                      <Badge variant="outline">{levelLabels[u.level] || u.level}</Badge>
+                      <Badge variant="outline">{u.level || '-'}</Badge>
                     </td>
                     <td className="px-4 py-3 text-right">{(u.points || 0).toLocaleString()}P</td>
                     <td className="px-4 py-3 text-gray-600">
@@ -180,10 +226,7 @@ export default function AdminUsersPage() {
                         {u.isBlocked ? '차단됨' : '정상'}
                       </Badge>
                     </td>
-                    <td
-                      className="px-4 py-3 text-center"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                       <Button
                         size="sm"
                         variant={u.isBlocked ? 'outline' : 'destructive'}
@@ -198,6 +241,82 @@ export default function AdminUsersPage() {
             </table>
           </div>
         </Card>
+      )}
+
+      {/* 회원 추가 모달 */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <Card className="w-full max-w-md p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold">회원 추가</h2>
+              <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddUser} className="space-y-4">
+              <div>
+                <Label htmlFor="add-name">이름 *</Label>
+                <Input
+                  id="add-name"
+                  value={addForm.name}
+                  onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
+                  placeholder="홍길동"
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="add-email">이메일 *</Label>
+                <Input
+                  id="add-email"
+                  type="email"
+                  value={addForm.email}
+                  onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
+                  placeholder="user@example.com"
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="add-password">초기 비밀번호 * (8자 이상)</Label>
+                <Input
+                  id="add-password"
+                  type="password"
+                  value={addForm.password}
+                  onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
+                  placeholder="8자 이상"
+                  minLength={8}
+                  required
+                />
+              </div>
+              <div>
+                <Label htmlFor="add-phone">전화번호</Label>
+                <Input
+                  id="add-phone"
+                  value={addForm.phone}
+                  onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })}
+                  placeholder="01012345678"
+                />
+              </div>
+
+              {addError && (
+                <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{addError}</p>
+              )}
+
+              <p className="text-xs text-gray-400">
+                * 생성 후 해당 이메일로 인증 메일이 발송됩니다. 이메일 인증 완료 시 로그인 가능합니다.
+              </p>
+
+              <div className="flex gap-2 pt-2">
+                <Button type="submit" disabled={addSubmitting} className="flex-1">
+                  {addSubmitting ? '생성 중...' : '회원 생성'}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowAddModal(false)}>
+                  취소
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
       )}
     </div>
   );

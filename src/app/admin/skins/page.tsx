@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Layers, CheckCircle, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Skin {
   id: string;
@@ -32,39 +33,70 @@ export default function AdminSkinsPage() {
   }
 
   useEffect(() => {
-    fetch('/api/admin/skins')
-      .then((r) => r.json())
-      .then((data) => setSkins(data.skins || data || []))
-      .catch(() => setSkins([]))
-      .finally(() => setLoading(false));
+    loadSkins();
   }, []);
+
+  async function loadSkins() {
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('skins')
+        .select('id, name, type, version, is_active, installed_at')
+        .order('type', { ascending: true });
+
+      if (error) throw error;
+      setSkins(
+        (data || []).map((s) => ({
+          id: s.id,
+          name: s.name,
+          type: s.type,
+          version: s.version,
+          isActive: s.is_active,
+          installedAt: s.installed_at,
+        }))
+      );
+    } catch {
+      setSkins([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function toggleActive(id: string, current: boolean) {
     setActionLoading(id + '-toggle');
     try {
-      const res = await fetch(`/api/admin/skins/${id}/activate`, { method: 'POST' });
-      const data = await res.json();
-      if (data.success || res.ok) {
-        setSkins((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, isActive: !current } : s))
-        );
-        showToast(current ? '스킨이 비활성화되었습니다.' : '스킨이 활성화되었습니다.');
-      } else showToast('변경에 실패했습니다.');
-    } catch { showToast('오류가 발생했습니다.'); }
-    finally { setActionLoading(null); }
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('skins')
+        .update({ is_active: !current })
+        .eq('id', id);
+
+      if (error) throw error;
+      setSkins((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, isActive: !current } : s))
+      );
+      showToast(current ? '스킨이 비활성화되었습니다.' : '스킨이 활성화되었습니다.');
+    } catch {
+      showToast('변경에 실패했습니다.');
+    } finally {
+      setActionLoading(null);
+    }
   }
 
   async function deleteSkin(id: string) {
     if (!confirm('이 스킨을 삭제하시겠습니까?')) return;
     setActionLoading(id + '-delete');
     try {
-      const res = await fetch(`/api/admin/skins/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setSkins((prev) => prev.filter((s) => s.id !== id));
-        showToast('스킨이 삭제되었습니다.');
-      } else showToast('삭제에 실패했습니다.');
-    } catch { showToast('오류가 발생했습니다.'); }
-    finally { setActionLoading(null); }
+      const supabase = createClient();
+      const { error } = await supabase.from('skins').delete().eq('id', id);
+      if (error) throw error;
+      setSkins((prev) => prev.filter((s) => s.id !== id));
+      showToast('스킨이 삭제되었습니다.');
+    } catch {
+      showToast('삭제에 실패했습니다.');
+    } finally {
+      setActionLoading(null);
+    }
   }
 
   return (
@@ -120,9 +152,7 @@ export default function AdminSkinsPage() {
                         <CheckCircle className="h-3 w-3" /> 활성
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-500 text-xs font-medium px-2 py-1 rounded-full">
-                        비활성
-                      </span>
+                      <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-500 text-xs font-medium px-2 py-1 rounded-full">비활성</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -133,11 +163,7 @@ export default function AdminSkinsPage() {
                         title={skin.isActive ? '비활성화' : '활성화'}
                         className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
                       >
-                        {skin.isActive ? (
-                          <ToggleRight className="h-5 w-5 text-green-600" />
-                        ) : (
-                          <ToggleLeft className="h-5 w-5 text-gray-400" />
-                        )}
+                        {skin.isActive ? <ToggleRight className="h-5 w-5 text-green-600" /> : <ToggleLeft className="h-5 w-5 text-gray-400" />}
                       </button>
                       <button
                         onClick={() => deleteSkin(skin.id)}

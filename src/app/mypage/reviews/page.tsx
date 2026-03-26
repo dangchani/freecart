@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { format } from 'date-fns';
 import { ArrowLeft, Star, Edit, Trash2 } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Review {
   id: string;
@@ -35,12 +36,31 @@ export default function ReviewsPage() {
 
   async function loadReviews() {
     try {
-      const response = await fetch('/api/reviews');
-      const data = await response.json();
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('reviews')
+        .select(`
+          id, product_id, rating, content, created_at,
+          products(name),
+          review_images(url)
+        `)
+        .eq('user_id', user!.id)
+        .order('created_at', { ascending: false });
 
-      if (data.success) {
-        setReviews(data.data || []);
-      }
+      if (error) throw error;
+
+      setReviews(
+        (data || []).map((r: any) => ({
+          id: r.id,
+          productId: r.product_id,
+          productName: r.products?.name || '',
+          rating: r.rating,
+          title: '',
+          content: r.content,
+          images: (r.review_images || []).map((img: any) => img.url),
+          createdAt: r.created_at,
+        }))
+      );
     } catch (error) {
       console.error('Failed to load reviews:', error);
     } finally {
@@ -54,15 +74,14 @@ export default function ReviewsPage() {
     }
 
     try {
-      const response = await fetch(`/api/reviews/${reviewId}`, {
-        method: 'DELETE',
-      });
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('reviews')
+        .delete()
+        .eq('id', reviewId)
+        .eq('user_id', user!.id);
 
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || '리뷰 삭제에 실패했습니다.');
-      }
+      if (error) throw error;
 
       alert('리뷰가 삭제되었습니다.');
       await loadReviews();
@@ -128,7 +147,7 @@ export default function ReviewsPage() {
                 </div>
               </div>
 
-              <h3 className="mb-2 font-semibold">{review.title}</h3>
+              {review.title && <h3 className="mb-2 font-semibold">{review.title}</h3>}
               <p className="mb-3 whitespace-pre-wrap text-gray-600">{review.content}</p>
 
               {review.images && review.images.length > 0 && (

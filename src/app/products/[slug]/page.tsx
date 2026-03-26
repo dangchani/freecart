@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
-import { Minus, Plus, ShoppingCart, Zap, ArrowLeft, Check, Star, ChevronDown, ChevronUp } from 'lucide-react';
+import { Minus, Plus, ShoppingCart, Zap, ArrowLeft, Check, Star, ChevronDown, ChevronUp, Heart } from 'lucide-react';
 
 interface Review {
   id: string;
@@ -32,12 +32,12 @@ interface Product {
   id: string;
   name: string;
   slug: string;
-  price: number;
-  comparePrice?: number;
+  regularPrice: number;
+  salePrice: number;
   description?: string;
-  thumbnail?: string;
-  images: string[];
-  stock: number;
+  summary?: string;
+  stockQuantity: number;
+  images?: { id: string; url: string; alt?: string; isPrimary: boolean; sortOrder: number }[];
 }
 
 export default function ProductDetailPage() {
@@ -61,6 +61,8 @@ export default function ProductDetailPage() {
   const [toast, setToast] = useState<{ show: boolean; message: string; type: 'success' | 'error' }>({
     show: false, message: '', type: 'success',
   });
+  const [isWishlisted, setIsWishlisted] = useState(false);
+  const [wishlistLoading, setWishlistLoading] = useState(false);
 
   useEffect(() => {
     if (!slug) return;
@@ -74,20 +76,36 @@ export default function ProductDetailPage() {
   }, [slug]);
 
   useEffect(() => {
+    if (!user || !product) return;
+    const supabase = createClient();
+    supabase
+      .from('user_wishlist')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('product_id', product.id)
+      .maybeSingle()
+      .then(({ data }) => setIsWishlisted(!!data));
+  }, [user, product]);
+
+  useEffect(() => {
     if (!slug) return;
     const supabase = createClient();
     async function loadReviews() {
       setReviewsLoading(true);
       try {
-        const { data } = await supabase.from('reviews').select('*, profiles(name)').eq('product_slug', slug);
-        setReviews(data?.map((r: any) => ({ ...r, userName: r.profiles?.name || '익명' })) || []);
+        const { data: prod } = await supabase.from('products').select('id').eq('slug', slug).single();
+        if (!prod) { setReviews([]); setReviewsLoading(false); return; }
+        const { data } = await supabase.from('reviews').select('*, users(name)').eq('product_id', prod.id).eq('is_visible', true);
+        setReviews(data?.map((r: any) => ({ ...r, userName: r.users?.name || '익명' })) || []);
       } catch { setReviews([]); } finally { setReviewsLoading(false); }
     }
     async function loadQna() {
       setQnaLoading(true);
       try {
-        const { data } = await supabase.from('product_qna').select('*, profiles(name)').eq('product_slug', slug);
-        setQnaList(data?.map((q: any) => ({ ...q, userName: q.profiles?.name || '익명' })) || []);
+        const { data: prod2 } = await supabase.from('products').select('id').eq('slug', slug).single();
+        if (!prod2) { setQnaList([]); setQnaLoading(false); return; }
+        const { data } = await supabase.from('product_qna').select('*, users(name)').eq('product_id', prod2.id);
+        setQnaList(data?.map((q: any) => ({ ...q, userName: q.users?.name || '익명' })) || []);
       } catch { setQnaList([]); } finally { setQnaLoading(false); }
     }
     if (activeTab === 'reviews' && reviews.length === 0) loadReviews();
@@ -113,6 +131,28 @@ export default function ProductDetailPage() {
     }
   }
 
+  async function handleWishlist() {
+    if (!product) return;
+    if (!user) { navigate('/auth/login'); return; }
+    setWishlistLoading(true);
+    const supabase = createClient();
+    try {
+      if (isWishlisted) {
+        await supabase.from('user_wishlist').delete().eq('user_id', user.id).eq('product_id', product.id);
+        setIsWishlisted(false);
+        showToast('찜 목록에서 삭제되었습니다.', 'success');
+      } else {
+        await supabase.from('user_wishlist').insert({ user_id: user.id, product_id: product.id });
+        setIsWishlisted(true);
+        showToast('찜 목록에 추가되었습니다.', 'success');
+      }
+    } catch {
+      showToast('오류가 발생했습니다.', 'error');
+    } finally {
+      setWishlistLoading(false);
+    }
+  }
+
   async function handleBuyNow() {
     if (!product) return;
     if (!user) { navigate('/auth/login'); return; }
@@ -131,8 +171,10 @@ export default function ProductDetailPage() {
     setQnaSubmitting(true);
     const supabase = createClient();
     try {
+      const { data: prod3 } = await supabase.from('products').select('id').eq('slug', slug).single();
+      if (!prod3) { showToast('상품을 찾을 수 없습니다.', 'error'); return; }
       const { error } = await supabase.from('product_qna').insert({
-        product_slug: slug,
+        product_id: prod3.id,
         user_id: user.id,
         question: qnaQuestion,
         is_secret: qnaSecret,
@@ -156,7 +198,7 @@ export default function ProductDetailPage() {
     setQuantity((prev) => {
       const next = prev + delta;
       if (next < 1) return 1;
-      if (product && next > product.stock) return product.stock;
+      if (product && next > product.stockQuantity) return product.stockQuantity;
       return next;
     });
   }
@@ -185,10 +227,11 @@ export default function ProductDetailPage() {
   }
 
   const avgRating = reviews.length > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
-  const hasDiscount = product.comparePrice && product.comparePrice > product.price;
-  const discountPercent = hasDiscount ? Math.round(((product.comparePrice! - product.price) / product.comparePrice!) * 100) : 0;
-  const imageUrl = product.thumbnail || product.images?.[0] || '/placeholder.png';
-  const isSoldOut = product.stock === 0;
+  const hasDiscount = product.regularPrice > product.salePrice;
+  const discountPercent = hasDiscount ? Math.round(((product.regularPrice - product.salePrice) / product.regularPrice) * 100) : 0;
+  const primaryImage = product.images?.find((img) => img.isPrimary) || product.images?.[0];
+  const imageUrl = primaryImage?.url || '/placeholder.png';
+  const isSoldOut = product.stockQuantity === 0;
 
   return (
     <div className="container py-8">
@@ -217,10 +260,10 @@ export default function ProductDetailPage() {
           <h1 className="mb-4 text-3xl font-bold">{product.name}</h1>
           <div className="mb-6">
             <div className="flex items-center gap-3">
-              <span className="text-3xl font-bold">{formatCurrency(product.price)}</span>
+              <span className="text-3xl font-bold">{formatCurrency(product.salePrice)}</span>
               {hasDiscount && (
                 <>
-                  <span className="text-xl text-gray-500 line-through">{formatCurrency(product.comparePrice!)}</span>
+                  <span className="text-xl text-gray-500 line-through">{formatCurrency(product.regularPrice)}</span>
                   <span className="rounded-md bg-red-500 px-2 py-1 text-sm font-bold text-white">{discountPercent}% OFF</span>
                 </>
               )}
@@ -234,7 +277,7 @@ export default function ProductDetailPage() {
             </div>
             <div className="flex justify-between">
               <span className="text-gray-600">재고</span>
-              <span className={isSoldOut ? 'text-red-500 font-medium' : ''}>{isSoldOut ? '품절' : `${product.stock}개`}</span>
+              <span className={isSoldOut ? 'text-red-500 font-medium' : ''}>{isSoldOut ? '품절' : `${product.stockQuantity}개`}</span>
             </div>
           </div>
 
@@ -254,13 +297,13 @@ export default function ProductDetailPage() {
                     <Minus className="h-4 w-4" />
                   </button>
                   <span className="w-12 text-center text-sm font-medium">{quantity}</span>
-                  <button className="flex h-10 w-10 items-center justify-center hover:bg-gray-50 disabled:opacity-50" onClick={() => changeQuantity(1)} disabled={quantity >= product.stock}>
+                  <button className="flex h-10 w-10 items-center justify-center hover:bg-gray-50 disabled:opacity-50" onClick={() => changeQuantity(1)} disabled={quantity >= product.stockQuantity}>
                     <Plus className="h-4 w-4" />
                   </button>
                 </div>
-                <span className="text-sm text-gray-500">최대 {product.stock}개</span>
+                <span className="text-sm text-gray-500">최대 {product.stockQuantity}개</span>
               </div>
-              <p className="mt-2 text-sm font-medium text-gray-700">합계: <span className="text-lg font-bold text-blue-600">{formatCurrency(product.price * quantity)}</span></p>
+              <p className="mt-2 text-sm font-medium text-gray-700">합계: <span className="text-lg font-bold text-blue-600">{formatCurrency(product.salePrice * quantity)}</span></p>
             </div>
           )}
 
@@ -272,6 +315,15 @@ export default function ProductDetailPage() {
             <Button size="lg" variant="outline" className="flex-1" onClick={handleBuyNow} disabled={isSoldOut || cartLoading || buyLoading}>
               {buyLoading ? <span className="flex items-center gap-2"><span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />처리 중...</span>
                 : <span className="flex items-center gap-2"><Zap className="h-4 w-4" />바로 구매</span>}
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={handleWishlist}
+              disabled={wishlistLoading}
+              className={isWishlisted ? 'text-red-500 border-red-300 hover:bg-red-50' : ''}
+            >
+              <Heart className={`h-5 w-5 ${isWishlisted ? 'fill-red-500 text-red-500' : ''}`} />
             </Button>
           </div>
         </div>

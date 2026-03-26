@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { Plus, Trash2, Edit, ChevronRight } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface MenuItem {
   id: string;
@@ -56,17 +57,26 @@ export default function AdminMenusPage() {
   async function loadMenus() {
     try {
       setLoading(true);
-      const response = await fetch('/api/admin/menus');
-      const data = await response.json();
-      if (data.success) {
-        const flat: MenuItem[] = data.data || [];
-        setFlatMenus(flat);
-        // Build tree
-        const tree = buildTree(flat);
-        setMenus(tree);
-      } else {
-        setError(data.error || '메뉴를 불러오지 못했습니다.');
-      }
+      const supabase = createClient();
+      const { data, error: fetchError } = await supabase
+        .from('menus')
+        .select('id, name, url, parent_id, sort_order, is_visible')
+        .order('sort_order', { ascending: true });
+
+      if (fetchError) throw fetchError;
+
+      const flat: MenuItem[] = (data || []).map((m) => ({
+        id: m.id,
+        label: m.name,
+        url: m.url || '',
+        parentId: m.parent_id,
+        sortOrder: m.sort_order,
+        isActive: m.is_visible,
+      }));
+
+      setFlatMenus(flat);
+      const tree = buildTree(flat);
+      setMenus(tree);
     } catch {
       setError('메뉴를 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -121,22 +131,23 @@ export default function AdminMenusPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
+      const supabase = createClient();
       const payload = {
-        label: form.label,
+        name: form.label,
         url: form.url,
-        parentId: form.parentId || null,
-        sortOrder: parseInt(form.sortOrder) || 0,
-        isActive: form.isActive,
+        parent_id: form.parentId || null,
+        sort_order: parseInt(form.sortOrder) || 0,
+        is_visible: form.isActive,
       };
-      const url = editingId ? `/api/admin/menus/${editingId}` : '/api/admin/menus';
-      const method = editingId ? 'PATCH' : 'POST';
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+
+      if (editingId) {
+        const { error } = await supabase.from('menus').update(payload).eq('id', editingId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('menus').insert(payload);
+        if (error) throw error;
+      }
+
       setShowForm(false);
       await loadMenus();
     } catch (err) {
@@ -149,9 +160,9 @@ export default function AdminMenusPage() {
   async function handleDelete(menuId: string) {
     if (!confirm('메뉴를 삭제하시겠습니까? 하위 메뉴도 함께 삭제됩니다.')) return;
     try {
-      const response = await fetch(`/api/admin/menus/${menuId}`, { method: 'DELETE' });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      const supabase = createClient();
+      const { error } = await supabase.from('menus').delete().eq('id', menuId);
+      if (error) throw error;
       await loadMenus();
     } catch (err) {
       alert(err instanceof Error ? err.message : '삭제 중 오류가 발생했습니다.');
@@ -162,20 +173,14 @@ export default function AdminMenusPage() {
     return (
       <div key={item.id}>
         <div
-          className={`flex items-center gap-3 py-2.5 hover:bg-gray-50 ${
-            depth > 0 ? 'pl-' + (4 + depth * 4) : 'pl-4'
-          } pr-4`}
+          className={`flex items-center gap-3 py-2.5 hover:bg-gray-50 pr-4`}
           style={{ paddingLeft: `${16 + depth * 24}px` }}
         >
           {depth > 0 && <ChevronRight className="h-3.5 w-3.5 text-gray-400 shrink-0" />}
           <div className="flex-1">
-            <span className={`font-medium ${!item.isActive ? 'text-gray-400' : ''}`}>
-              {item.label}
-            </span>
+            <span className={`font-medium ${!item.isActive ? 'text-gray-400' : ''}`}>{item.label}</span>
             <span className="ml-2 text-xs text-gray-400">{item.url}</span>
-            {!item.isActive && (
-              <span className="ml-2 text-xs text-gray-400">(비활성)</span>
-            )}
+            {!item.isActive && <span className="ml-2 text-xs text-gray-400">(비활성)</span>}
           </div>
           <span className="text-xs text-gray-400">순서: {item.sortOrder}</span>
           <Button size="sm" variant="outline" onClick={() => openEdit(item)}>
@@ -187,9 +192,7 @@ export default function AdminMenusPage() {
         </div>
         {item.children && item.children.length > 0 && (
           <div className="border-l border-gray-100 ml-6">
-            {item.children
-              .sort((a, b) => a.sortOrder - b.sortOrder)
-              .map((child) => renderMenuItem(child, depth + 1))}
+            {item.children.sort((a, b) => a.sortOrder - b.sortOrder).map((child) => renderMenuItem(child, depth + 1))}
           </div>
         )}
       </div>
@@ -208,9 +211,7 @@ export default function AdminMenusPage() {
         </Button>
       </div>
 
-      {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-4 text-red-700">{error}</div>
-      )}
+      {error && <div className="mb-4 rounded-md bg-red-50 p-4 text-red-700">{error}</div>}
 
       {showForm && (
         <Card className="mb-6 p-6">
@@ -219,77 +220,33 @@ export default function AdminMenusPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">메뉴명</label>
-                <input
-                  type="text"
-                  name="label"
-                  value={form.label}
-                  onChange={handleChange}
-                  required
-                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="메뉴명"
-                />
+                <input type="text" name="label" value={form.label} onChange={handleChange} required className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="메뉴명" />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">URL</label>
-                <input
-                  type="text"
-                  name="url"
-                  value={form.url}
-                  onChange={handleChange}
-                  required
-                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="/products"
-                />
+                <input type="text" name="url" value={form.url} onChange={handleChange} required className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="/products" />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">상위 메뉴</label>
-                <select
-                  name="parentId"
-                  value={form.parentId}
-                  onChange={handleChange}
-                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
+                <select name="parentId" value={form.parentId} onChange={handleChange} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                   <option value="">최상위 메뉴</option>
-                  {flatMenus
-                    .filter((m) => !m.parentId && m.id !== editingId)
-                    .map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.label}
-                      </option>
-                    ))}
+                  {flatMenus.filter((m) => !m.parentId && m.id !== editingId).map((m) => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
                 </select>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">정렬 순서</label>
-                <input
-                  type="number"
-                  name="sortOrder"
-                  value={form.sortOrder}
-                  onChange={handleChange}
-                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <input type="number" name="sortOrder" value={form.sortOrder} onChange={handleChange} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="menuActive"
-                name="isActive"
-                checked={form.isActive}
-                onChange={handleChange}
-                className="h-4 w-4 rounded border-gray-300"
-              />
-              <label htmlFor="menuActive" className="text-sm font-medium text-gray-700">
-                활성화
-              </label>
+              <input type="checkbox" id="menuActive" name="isActive" checked={form.isActive} onChange={handleChange} className="h-4 w-4 rounded border-gray-300" />
+              <label htmlFor="menuActive" className="text-sm font-medium text-gray-700">활성화</label>
             </div>
             <div className="flex gap-3">
-              <Button type="submit" disabled={submitting}>
-                {submitting ? '처리 중...' : editingId ? '수정' : '추가'}
-              </Button>
-              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
-                취소
-              </Button>
+              <Button type="submit" disabled={submitting}>{submitting ? '처리 중...' : editingId ? '수정' : '추가'}</Button>
+              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>취소</Button>
             </div>
           </form>
         </Card>
@@ -305,9 +262,7 @@ export default function AdminMenusPage() {
       ) : (
         <Card>
           <div className="divide-y">
-            {menus
-              .sort((a, b) => a.sortOrder - b.sortOrder)
-              .map((item) => renderMenuItem(item))}
+            {menus.sort((a, b) => a.sortOrder - b.sortOrder).map((item) => renderMenuItem(item))}
           </div>
         </Card>
       )}

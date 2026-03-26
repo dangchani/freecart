@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/client';
 
 interface Subscription {
   id: string;
@@ -51,9 +52,31 @@ export default function SubscriptionsPage() {
 
   async function fetchSubscriptions() {
     try {
-      const res = await fetch('/api/users/me/subscriptions');
-      const json = await res.json();
-      if (json.success) setSubscriptions(json.data || []);
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('user_subscriptions')
+        .select(`
+          id, product_id, quantity, cycle, next_delivery_date, price_per_delivery, status, created_at,
+          products(name)
+        `)
+        .eq('user_id', user!.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      setSubscriptions(
+        (data || []).map((s: any) => ({
+          id: s.id,
+          productId: s.product_id,
+          productName: s.products?.name || '',
+          quantity: s.quantity,
+          price: s.price_per_delivery,
+          cycle: s.cycle,
+          nextDeliveryDate: s.next_delivery_date,
+          status: s.status,
+          createdAt: s.created_at,
+        }))
+      );
     } catch (err) {
       console.error('정기배송 로딩 실패:', err);
     } finally {
@@ -71,13 +94,29 @@ export default function SubscriptionsPage() {
 
     setActionLoading(id);
     try {
-      const res = await fetch(`/api/users/me/subscriptions/${id}/${action}`, { method: 'POST' });
-      const json = await res.json();
-      if (json.success) {
-        await fetchSubscriptions();
-      } else {
-        alert(json.error || '처리에 실패했습니다.');
+      const supabase = createClient();
+      const updates: Record<string, any> = {};
+
+      if (action === 'pause') {
+        updates.status = 'paused';
+        updates.paused_at = new Date().toISOString();
+      } else if (action === 'resume') {
+        updates.status = 'active';
+        updates.paused_at = null;
+      } else if (action === 'cancel') {
+        updates.status = 'cancelled';
+        updates.cancelled_at = new Date().toISOString();
       }
+
+      const { error } = await supabase
+        .from('user_subscriptions')
+        .update(updates)
+        .eq('id', id)
+        .eq('user_id', user!.id);
+
+      if (error) throw error;
+
+      await fetchSubscriptions();
     } catch (err) {
       console.error('정기배송 액션 실패:', err);
       alert('처리 중 오류가 발생했습니다.');

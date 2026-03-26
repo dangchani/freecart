@@ -44,7 +44,7 @@ export async function getCurrentUser(): Promise<User | null> {
   if (!user) return null;
 
   const { data: profile } = await supabase
-    .from('profiles')
+    .from('users')
     .select('*')
     .eq('id', user.id)
     .single();
@@ -66,7 +66,7 @@ export async function updateProfile(userId: string, data: Partial<User>) {
   const supabase = createClient();
 
   const { error } = await supabase
-    .from('profiles')
+    .from('users')
     .update({
       name: data.name,
       phone: data.phone,

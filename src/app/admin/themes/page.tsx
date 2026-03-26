@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Package, CheckCircle, Trash2, Download, Key, X } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Theme {
   id: string;
@@ -37,69 +38,106 @@ export default function AdminThemesPage() {
   }
 
   useEffect(() => {
-    fetch('/api/admin/themes')
-      .then((r) => r.json())
-      .then((data) => setThemes(data.themes || data || []))
-      .catch(() => setThemes([]))
-      .finally(() => setLoading(false));
+    loadThemes();
   }, []);
+
+  async function loadThemes() {
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('installed_themes')
+        .select('id, name, version, is_active, installed_at')
+        .order('installed_at', { ascending: false });
+
+      if (error) throw error;
+      setThemes(
+        (data || []).map((t) => ({
+          id: t.id,
+          name: t.name,
+          version: t.version,
+          isActive: t.is_active,
+          installedAt: t.installed_at,
+        }))
+      );
+    } catch {
+      setThemes([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (activeTab === 'available' && available.length === 0) {
       setAvailableLoading(true);
-      fetch('/api/admin/themes/available')
-        .then((r) => r.json())
-        .then((data) => setAvailable(data.themes || data || []))
-        .catch(() => setAvailable([]))
-        .finally(() => setAvailableLoading(false));
+      // Available themes would typically come from an external store/API
+      // For now, we show empty state since there's no external API
+      setAvailable([]);
+      setAvailableLoading(false);
     }
   }, [activeTab]);
 
   async function activateTheme(id: string) {
     setActionLoading(id + '-activate');
     try {
-      const res = await fetch(`/api/admin/themes/${id}/activate`, { method: 'POST' });
-      const data = await res.json();
-      if (data.success || res.ok) {
-        setThemes((prev) => prev.map((t) => ({ ...t, isActive: t.id === id })));
-        showToast('테마가 활성화되었습니다.');
-      } else showToast('활성화에 실패했습니다.');
-    } catch { showToast('오류가 발생했습니다.'); }
-    finally { setActionLoading(null); }
+      const supabase = createClient();
+      // Deactivate all themes first
+      await supabase.from('installed_themes').update({ is_active: false }).neq('id', '');
+      // Activate the selected theme
+      const { error } = await supabase
+        .from('installed_themes')
+        .update({ is_active: true, activated_at: new Date().toISOString() })
+        .eq('id', id);
+
+      if (error) throw error;
+      setThemes((prev) => prev.map((t) => ({ ...t, isActive: t.id === id })));
+      showToast('테마가 활성화되었습니다.');
+    } catch {
+      showToast('활성화에 실패했습니다.');
+    } finally {
+      setActionLoading(null);
+    }
   }
 
   async function deleteTheme(id: string) {
     if (!confirm('이 테마를 삭제하시겠습니까?')) return;
     setActionLoading(id + '-delete');
     try {
-      const res = await fetch(`/api/admin/themes/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setThemes((prev) => prev.filter((t) => t.id !== id));
-        showToast('테마가 삭제되었습니다.');
-      } else showToast('삭제에 실패했습니다.');
-    } catch { showToast('오류가 발생했습니다.'); }
-    finally { setActionLoading(null); }
+      const supabase = createClient();
+      const { error } = await supabase.from('installed_themes').delete().eq('id', id);
+      if (error) throw error;
+      setThemes((prev) => prev.filter((t) => t.id !== id));
+      showToast('테마가 삭제되었습니다.');
+    } catch {
+      showToast('삭제에 실패했습니다.');
+    } finally {
+      setActionLoading(null);
+    }
   }
 
   async function installTheme() {
     if (!licenseModal) return;
     setInstallLoading(true);
     try {
-      const res = await fetch(`/api/admin/themes/${licenseModal.themeId}/install`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ licenseKey }),
+      const supabase = createClient();
+      const { error } = await supabase.from('installed_themes').insert({
+        slug: licenseModal.themeId,
+        name: licenseModal.themeName,
+        version: '1.0.0',
+        source: 'store',
+        license_key: licenseKey || null,
+        is_active: false,
       });
-      const data = await res.json();
-      if (data.success || res.ok) {
-        showToast('테마가 설치되었습니다.');
-        setLicenseModal(null);
-        setLicenseKey('');
-        const refreshed = await fetch('/api/admin/themes').then((r) => r.json());
-        setThemes(refreshed.themes || refreshed || []);
-      } else showToast(data.message || '설치에 실패했습니다.');
-    } catch { showToast('오류가 발생했습니다.'); }
-    finally { setInstallLoading(false); }
+
+      if (error) throw error;
+      showToast('테마가 설치되었습니다.');
+      setLicenseModal(null);
+      setLicenseKey('');
+      await loadThemes();
+    } catch {
+      showToast('설치에 실패했습니다.');
+    } finally {
+      setInstallLoading(false);
+    }
   }
 
   return (
@@ -110,7 +148,6 @@ export default function AdminThemesPage() {
         </div>
       )}
 
-      {/* 라이선스 키 모달 */}
       {licenseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
@@ -134,17 +171,8 @@ export default function AdminThemesPage() {
               />
             </div>
             <div className="flex gap-3">
-              <button
-                onClick={() => setLicenseModal(null)}
-                className="flex-1 border border-gray-300 rounded-lg py-2 text-sm font-medium hover:bg-gray-50"
-              >
-                취소
-              </button>
-              <button
-                onClick={installTheme}
-                disabled={installLoading}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-2 text-sm font-medium disabled:opacity-50"
-              >
+              <button onClick={() => setLicenseModal(null)} className="flex-1 border border-gray-300 rounded-lg py-2 text-sm font-medium hover:bg-gray-50">취소</button>
+              <button onClick={installTheme} disabled={installLoading} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-2 text-sm font-medium disabled:opacity-50">
                 {installLoading ? '설치 중...' : '설치'}
               </button>
             </div>
@@ -160,16 +188,13 @@ export default function AdminThemesPage() {
         <p className="text-gray-500 text-sm mt-1">쇼핑몰 테마를 설치하고 관리합니다.</p>
       </div>
 
-      {/* 탭 */}
       <div className="flex border-b mb-6">
         {(['installed', 'available'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === tab
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+              activeTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
             {tab === 'installed' ? '설치된 테마' : '테마 스토어'}
@@ -177,7 +202,6 @@ export default function AdminThemesPage() {
         ))}
       </div>
 
-      {/* 설치된 테마 */}
       {activeTab === 'installed' && (
         <div>
           {loading ? (
@@ -212,33 +236,20 @@ export default function AdminThemesPage() {
                             <CheckCircle className="h-3 w-3" /> 활성
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-500 text-xs font-medium px-2 py-1 rounded-full">
-                            비활성
-                          </span>
+                          <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-500 text-xs font-medium px-2 py-1 rounded-full">비활성</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-gray-500">
-                        {new Date(theme.installedAt).toLocaleDateString('ko-KR')}
-                      </td>
+                      <td className="px-4 py-3 text-gray-500">{new Date(theme.installedAt).toLocaleDateString('ko-KR')}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           {!theme.isActive && (
-                            <button
-                              onClick={() => activateTheme(theme.id)}
-                              disabled={actionLoading === theme.id + '-activate'}
-                              className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50 transition-colors"
-                            >
+                            <button onClick={() => activateTheme(theme.id)} disabled={actionLoading === theme.id + '-activate'} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-50 transition-colors">
                               {actionLoading === theme.id + '-activate' ? '처리 중...' : '활성화'}
                             </button>
                           )}
                           {!theme.isActive && (
-                            <button
-                              onClick={() => deleteTheme(theme.id)}
-                              disabled={actionLoading === theme.id + '-delete'}
-                              className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg disabled:opacity-50 transition-colors flex items-center gap-1"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                              삭제
+                            <button onClick={() => deleteTheme(theme.id)} disabled={actionLoading === theme.id + '-delete'} className="text-xs bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1.5 rounded-lg disabled:opacity-50 transition-colors flex items-center gap-1">
+                              <Trash2 className="h-3 w-3" />삭제
                             </button>
                           )}
                         </div>
@@ -252,7 +263,6 @@ export default function AdminThemesPage() {
         </div>
       )}
 
-      {/* 테마 스토어 */}
       {activeTab === 'available' && (
         <div>
           {availableLoading ? (
@@ -272,25 +282,18 @@ export default function AdminThemesPage() {
                     {theme.thumbnail ? (
                       <img src={theme.thumbnail} alt={theme.name} className="w-full h-full object-cover" />
                     ) : (
-                      <div className="flex items-center justify-center h-full text-gray-300">
-                        <Package className="h-12 w-12" />
-                      </div>
+                      <div className="flex items-center justify-center h-full text-gray-300"><Package className="h-12 w-12" /></div>
                     )}
                   </div>
                   <div className="p-4">
                     <h3 className="font-semibold text-gray-900">{theme.name}</h3>
                     <p className="text-xs text-gray-500 mt-0.5">v{theme.version}</p>
-                    {theme.description && (
-                      <p className="text-sm text-gray-600 mt-2 line-clamp-2">{theme.description}</p>
-                    )}
+                    {theme.description && <p className="text-sm text-gray-600 mt-2 line-clamp-2">{theme.description}</p>}
                     <button
-                      onClick={() =>
-                        setLicenseModal({ themeId: theme.id, themeName: theme.name })
-                      }
+                      onClick={() => setLicenseModal({ themeId: theme.id, themeName: theme.name })}
                       className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 rounded-lg flex items-center justify-center gap-2 transition-colors"
                     >
-                      <Download className="h-4 w-4" />
-                      설치
+                      <Download className="h-4 w-4" />설치
                     </button>
                   </div>
                 </div>

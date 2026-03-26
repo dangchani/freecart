@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 const categories = [
   { value: 'order', label: '주문' },
@@ -37,17 +38,20 @@ export default function NewInquiryPage() {
     setSubmitting(true);
     setError('');
     try {
-      const res = await fetch('/api/inquiries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      const json = await res.json();
-      if (json.success) {
-        navigate('/mypage/inquiries');
-      } else {
-        setError(json.error || '문의 등록에 실패했습니다.');
-      }
+      const supabase = createClient();
+      const { error: err } = await supabase
+        .from('inquiries')
+        .insert({
+          user_id: user!.id,
+          category: form.category,
+          title: form.title,
+          content: form.content,
+          status: 'pending',
+        });
+
+      if (err) throw err;
+
+      navigate('/mypage/inquiries');
     } catch (err) {
       console.error('문의 등록 실패:', err);
       setError('문의 등록 중 오류가 발생했습니다.');

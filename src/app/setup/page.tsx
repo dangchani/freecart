@@ -78,7 +78,7 @@ export default function SetupPage() {
 
       // 2. 관리자 계정 확인
       const { data: existingAdmin } = await adminSupabase
-        .from('profiles')
+        .from('users')
         .select('id, role')
         .eq('email', ADMIN_EMAIL)
         .single();
@@ -92,7 +92,7 @@ export default function SetupPage() {
         }
         // 프로필은 있지만 admin이 아닌 경우
         await adminSupabase
-          .from('profiles')
+          .from('users')
           .update({ role: 'admin', updated_at: new Date().toISOString() })
           .eq('id', existingAdmin.id);
         setDbStatus('done');
@@ -117,7 +117,7 @@ export default function SetupPage() {
       await new Promise((r) => setTimeout(r, 1000));
 
       const { error: profileError } = await adminSupabase
-        .from('profiles')
+        .from('users')
         .upsert({
           id: authData.user.id,
           email: ADMIN_EMAIL,

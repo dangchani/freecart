@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 const postSchema = z.object({
   title: z.string().min(1, '제목을 입력해주세요'),
@@ -46,24 +47,26 @@ export default function EditPostPage() {
 
   async function loadPost() {
     try {
-      const response = await fetch(`/api/posts/${id}`);
-      const data = await response.json();
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('posts')
+        .select('id, title, content, user_id')
+        .eq('id', id)
+        .single();
 
-      if (!data.success) {
-        throw new Error(data.error || '게시글을 불러올 수 없습니다.');
+      if (error || !data) {
+        throw new Error('게시글을 불러올 수 없습니다.');
       }
 
-      const post = data.data;
-
-      if (post.authorId !== user?.id) {
+      if (data.user_id !== user?.id) {
         alert('수정 권한이 없습니다.');
         navigate(`/boards/${slug}/posts/${id}`);
         return;
       }
 
       reset({
-        title: post.title,
-        content: post.content,
+        title: data.title,
+        content: data.content,
       });
     } catch (error) {
       console.error('Failed to load post:', error);
@@ -76,17 +79,17 @@ export default function EditPostPage() {
 
   async function onSubmit(data: PostForm) {
     try {
-      const response = await fetch(`/api/posts/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('posts')
+        .update({
+          title: data.title,
+          content: data.content,
+        })
+        .eq('id', id)
+        .eq('user_id', user!.id);
 
-      const result = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.error || '게시글 수정에 실패했습니다.');
-      }
+      if (error) throw error;
 
       alert('게시글이 수정되었습니다.');
       navigate(`/boards/${slug}/posts/${id}`);

@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/select';
 import { useAuth } from '@/hooks/useAuth';
 import { format } from 'date-fns';
+import { createClient } from '@/lib/supabase/client';
 
 interface Subscription {
   id: string;
@@ -60,13 +61,24 @@ export default function AdminSubscriptionsPage() {
   async function loadSubscriptions() {
     try {
       setLoading(true);
-      const response = await fetch('/api/admin/subscriptions');
-      const data = await response.json();
-      if (data.success) {
-        setSubscriptions(data.data || []);
-      } else {
-        setError(data.error || '정기배송 목록을 불러오지 못했습니다.');
-      }
+      const supabase = createClient();
+      const { data, error: fetchError } = await supabase
+        .from('user_subscriptions')
+        .select('id, cycle, next_delivery_date, status, users(name), products(name)')
+        .order('created_at', { ascending: false });
+
+      if (fetchError) throw fetchError;
+
+      setSubscriptions(
+        (data || []).map((s: any) => ({
+          id: s.id,
+          memberName: s.users?.name || '',
+          productName: s.products?.name || '',
+          cycle: s.cycle,
+          nextDeliveryDate: s.next_delivery_date,
+          status: s.status,
+        }))
+      );
     } catch {
       setError('정기배송 목록을 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -76,13 +88,20 @@ export default function AdminSubscriptionsPage() {
 
   async function handleStatusChange(subscriptionId: string, newStatus: string) {
     try {
-      const response = await fetch(`/api/admin/subscriptions/${subscriptionId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      });
-      const data = await response.json();
-      if (!data.success) throw new Error(data.error);
+      const supabase = createClient();
+      const updateData: Record<string, any> = { status: newStatus };
+      if (newStatus === 'paused') {
+        updateData.paused_at = new Date().toISOString();
+      } else if (newStatus === 'cancelled') {
+        updateData.cancelled_at = new Date().toISOString();
+      }
+
+      const { error } = await supabase
+        .from('user_subscriptions')
+        .update(updateData)
+        .eq('id', subscriptionId);
+
+      if (error) throw error;
       await loadSubscriptions();
     } catch (err) {
       alert(err instanceof Error ? err.message : '상태 변경 중 오류가 발생했습니다.');
@@ -124,13 +143,9 @@ export default function AdminSubscriptionsPage() {
                   <tr key={sub.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-medium">{sub.memberName}</td>
                     <td className="px-4 py-3 text-gray-700">{sub.productName}</td>
+                    <td className="px-4 py-3 text-gray-600">{cycleLabels[sub.cycle] || sub.cycle}</td>
                     <td className="px-4 py-3 text-gray-600">
-                      {cycleLabels[sub.cycle] || sub.cycle}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">
-                      {sub.nextDeliveryDate
-                        ? format(new Date(sub.nextDeliveryDate), 'yyyy.MM.dd')
-                        : '-'}
+                      {sub.nextDeliveryDate ? format(new Date(sub.nextDeliveryDate), 'yyyy.MM.dd') : '-'}
                     </td>
                     <td className="px-4 py-3">
                       <Badge variant={statusVariants[sub.status] || 'outline'}>
@@ -138,18 +153,13 @@ export default function AdminSubscriptionsPage() {
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <Select
-                        value={sub.status}
-                        onValueChange={(value) => handleStatusChange(sub.id, value)}
-                      >
+                      <Select value={sub.status} onValueChange={(value) => handleStatusChange(sub.id, value)}>
                         <SelectTrigger className="w-32">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           {statusOptions.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </SelectItem>
+                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>

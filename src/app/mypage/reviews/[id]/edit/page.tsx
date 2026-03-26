@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft, Star } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 const reviewSchema = z.object({
   rating: z.number().int().min(1).max(5),
@@ -52,19 +53,28 @@ export default function EditReviewPage() {
 
   async function loadReview() {
     try {
-      const response = await fetch(`/api/reviews/${id}`);
-      const data = await response.json();
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('reviews')
+        .select('id, rating, content, user_id')
+        .eq('id', id)
+        .single();
 
-      if (!data.success) {
-        throw new Error(data.error || '리뷰를 불러올 수 없습니다.');
+      if (error || !data) {
+        throw new Error('리뷰를 불러올 수 없습니다.');
       }
 
-      const review = data.data;
-      setRating(review.rating);
+      if (data.user_id !== user?.id) {
+        alert('수정 권한이 없습니다.');
+        navigate('/mypage/reviews');
+        return;
+      }
+
+      setRating(data.rating);
       reset({
-        rating: review.rating,
-        title: review.title,
-        content: review.content,
+        rating: data.rating,
+        title: '',
+        content: data.content,
       });
     } catch (error) {
       console.error('Failed to load review:', error);
@@ -79,17 +89,17 @@ export default function EditReviewPage() {
     try {
       setSubmitting(true);
 
-      const response = await fetch(`/api/reviews/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('reviews')
+        .update({
+          rating: data.rating,
+          content: data.content,
+        })
+        .eq('id', id)
+        .eq('user_id', user!.id);
 
-      const result = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.error || '리뷰 수정에 실패했습니다.');
-      }
+      if (error) throw error;
 
       alert('리뷰가 수정되었습니다.');
       navigate('/mypage/reviews');

@@ -1,6 +1,49 @@
 import { createClient } from '@/lib/supabase/client';
 import type { Product, PaginatedResponse } from '@/types';
 
+function mapProduct(p: any): Product {
+  return {
+    id: p.id,
+    categoryId: p.category_id,
+    brandId: p.brand_id,
+    name: p.name,
+    slug: p.slug,
+    summary: p.summary,
+    description: p.description,
+    regularPrice: p.regular_price,
+    salePrice: p.sale_price,
+    costPrice: p.cost_price,
+    stockQuantity: p.stock_quantity,
+    stockAlertQuantity: p.stock_alert_quantity,
+    minPurchaseQuantity: p.min_purchase_quantity,
+    maxPurchaseQuantity: p.max_purchase_quantity,
+    status: p.status,
+    isFeatured: p.is_featured,
+    isNew: p.is_new,
+    isBest: p.is_best,
+    isSale: p.is_sale,
+    viewCount: p.view_count,
+    salesCount: p.sales_count,
+    reviewCount: p.review_count,
+    reviewAvg: p.review_avg ? parseFloat(p.review_avg) : 0,
+    hasOptions: p.has_options,
+    shippingType: p.shipping_type,
+    shippingFee: p.shipping_fee,
+    tags: p.tags,
+    videoUrl: p.video_url,
+    sku: p.sku,
+    images: p.product_images?.map((img: any) => ({
+      id: img.id,
+      url: img.url,
+      alt: img.alt,
+      isPrimary: img.is_primary,
+      sortOrder: img.sort_order,
+    })),
+    createdAt: p.created_at,
+    updatedAt: p.updated_at,
+  };
+}
+
 export async function getProducts(params?: {
   page?: number;
   limit?: number;
@@ -15,8 +58,8 @@ export async function getProducts(params?: {
 
   let query = supabase
     .from('products')
-    .select('*', { count: 'exact' })
-    .eq('is_active', true)
+    .select('*, product_images(*)', { count: 'exact' })
+    .eq('status', 'active')
     .order('created_at', { ascending: false })
     .range(from, to);
 
@@ -34,28 +77,7 @@ export async function getProducts(params?: {
 
   return {
     success: true,
-    data: data?.map((p) => ({
-      id: p.id,
-      categoryId: p.category_id,
-      name: p.name,
-      slug: p.slug,
-      description: p.description,
-      price: parseFloat(p.price),
-      comparePrice: p.compare_price ? parseFloat(p.compare_price) : undefined,
-      cost: p.cost ? parseFloat(p.cost) : undefined,
-      stock: p.stock,
-      sku: p.sku,
-      barcode: p.barcode,
-      images: p.images || [],
-      thumbnail: p.thumbnail,
-      isActive: p.is_active,
-      isFeatured: p.is_featured,
-      options: p.options,
-      variants: p.variants,
-      metadata: p.metadata,
-      createdAt: p.created_at,
-      updatedAt: p.updated_at,
-    })),
+    data: data?.map(mapProduct),
     pagination: {
       page,
       limit,
@@ -70,36 +92,15 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
 
   const { data, error } = await supabase
     .from('products')
-    .select('*')
+    .select('*, product_images(*)')
     .eq('slug', slug)
-    .eq('is_active', true)
+    .eq('status', 'active')
     .single();
 
   if (error) throw error;
   if (!data) return null;
 
-  return {
-    id: data.id,
-    categoryId: data.category_id,
-    name: data.name,
-    slug: data.slug,
-    description: data.description,
-    price: parseFloat(data.price),
-    comparePrice: data.compare_price ? parseFloat(data.compare_price) : undefined,
-    cost: data.cost ? parseFloat(data.cost) : undefined,
-    stock: data.stock,
-    sku: data.sku,
-    barcode: data.barcode,
-    images: data.images || [],
-    thumbnail: data.thumbnail,
-    isActive: data.is_active,
-    isFeatured: data.is_featured,
-    options: data.options,
-    variants: data.variants,
-    metadata: data.metadata,
-    createdAt: data.created_at,
-    updatedAt: data.updated_at,
-  };
+  return mapProduct(data);
 }
 
 export async function getFeaturedProducts(limit = 10): Promise<Product[]> {
@@ -107,35 +108,12 @@ export async function getFeaturedProducts(limit = 10): Promise<Product[]> {
 
   const { data, error } = await supabase
     .from('products')
-    .select('*')
-    .eq('is_active', true)
+    .select('*, product_images(*)')
+    .eq('status', 'active')
     .eq('is_featured', true)
     .limit(limit);
 
   if (error) throw error;
 
-  return (
-    data?.map((p) => ({
-      id: p.id,
-      categoryId: p.category_id,
-      name: p.name,
-      slug: p.slug,
-      description: p.description,
-      price: parseFloat(p.price),
-      comparePrice: p.compare_price ? parseFloat(p.compare_price) : undefined,
-      cost: p.cost ? parseFloat(p.cost) : undefined,
-      stock: p.stock,
-      sku: p.sku,
-      barcode: p.barcode,
-      images: p.images || [],
-      thumbnail: p.thumbnail,
-      isActive: p.is_active,
-      isFeatured: p.is_featured,
-      options: p.options,
-      variants: p.variants,
-      metadata: p.metadata,
-      createdAt: p.created_at,
-      updatedAt: p.updated_at,
-    })) || []
-  );
+  return data?.map(mapProduct) || [];
 }

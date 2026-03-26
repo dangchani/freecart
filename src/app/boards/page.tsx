@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { MessageSquare, Users } from 'lucide-react';
+import { createClient } from '@/lib/supabase/client';
 
 interface Board {
   id: string;
@@ -21,12 +22,35 @@ export default function BoardsPage() {
 
   async function loadBoards() {
     try {
-      const response = await fetch('/api/boards');
-      const data = await response.json();
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('boards')
+        .select('id, name, slug, description')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
 
-      if (data.success) {
-        setBoards(data.data || []);
-      }
+      if (error) throw error;
+
+      // Get post counts for each board
+      const boardsWithCounts = await Promise.all(
+        (data || []).map(async (board: any) => {
+          const { count } = await supabase
+            .from('posts')
+            .select('*', { count: 'exact', head: true })
+            .eq('board_id', board.id)
+            .eq('is_visible', true);
+
+          return {
+            id: board.id,
+            name: board.name,
+            slug: board.slug,
+            description: board.description || '',
+            postCount: count || 0,
+          };
+        })
+      );
+
+      setBoards(boardsWithCounts);
     } catch (error) {
       console.error('Failed to load boards:', error);
     } finally {

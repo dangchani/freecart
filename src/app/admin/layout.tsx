@@ -18,6 +18,7 @@ import {
   Settings,
   BarChart2,
   Repeat,
+  CreditCard,
 } from 'lucide-react';
 
 const navItems = [
@@ -28,6 +29,7 @@ const navItems = [
   { href: '/admin/orders', label: '주문 관리', icon: ShoppingCart },
   { href: '/admin/refunds', label: '환불/반품 관리', icon: RefreshCcw },
   { href: '/admin/coupons', label: '쿠폰 관리', icon: Ticket },
+  { href: '/admin/payment-gateways', label: 'PG사 설정', icon: CreditCard },
   { href: '/admin/reviews', label: '리뷰 관리', icon: Star },
   { href: '/admin/product-qna', label: '상품 Q&A', icon: HelpCircle },
   { href: '/admin/inquiries', label: '1:1 문의', icon: MessageSquare },
