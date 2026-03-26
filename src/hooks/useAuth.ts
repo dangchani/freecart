@@ -42,13 +42,37 @@ export function useAuth() {
 
     if (error) {
       console.error('[useAuth] Failed to load user profile:', error.message);
+      // 프로필 조회 실패해도 인증 정보로 fallback
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        setUser({
+          id: authUser.id,
+          email: authUser.email || '',
+          name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || '',
+          phone: null,
+          role: 'user',
+          createdAt: authUser.created_at,
+          updatedAt: authUser.created_at,
+        });
+      }
       setLoading(false);
       return;
     }
 
-    // 프로필이 없으면 (DB trigger가 아직 실행 안됐거나 기존 유저)
+    // 프로필이 없으면 auth 정보로 fallback
     if (!profile) {
-      console.warn('[useAuth] Profile not found. DB trigger may not be installed.');
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        setUser({
+          id: authUser.id,
+          email: authUser.email || '',
+          name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || '',
+          phone: null,
+          role: 'user',
+          createdAt: authUser.created_at,
+          updatedAt: authUser.created_at,
+        });
+      }
       setLoading(false);
       return;
     }

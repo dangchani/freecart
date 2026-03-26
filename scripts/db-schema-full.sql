@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS user_levels (
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_user_levels_updated_at ON user_levels;
 CREATE TRIGGER trg_user_levels_updated_at
   BEFORE UPDATE ON user_levels
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -76,6 +77,7 @@ CREATE INDEX IF NOT EXISTS idx_users_level_id    ON users(level_id);
 CREATE INDEX IF NOT EXISTS idx_users_phone       ON users(phone);
 CREATE INDEX IF NOT EXISTS idx_users_referrer_id ON users(referrer_id);
 
+DROP TRIGGER IF EXISTS trg_users_updated_at ON users;
 CREATE TRIGGER trg_users_updated_at
   BEFORE UPDATE ON users
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -110,6 +112,7 @@ CREATE TABLE IF NOT EXISTS user_addresses (
 
 CREATE INDEX IF NOT EXISTS idx_user_addresses_user_id ON user_addresses(user_id);
 
+DROP TRIGGER IF EXISTS trg_user_addresses_updated_at ON user_addresses;
 CREATE TRIGGER trg_user_addresses_updated_at
   BEFORE UPDATE ON user_addresses
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -189,6 +192,7 @@ CREATE TABLE IF NOT EXISTS notification_settings (
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_notification_settings_updated_at ON notification_settings;
 CREATE TRIGGER trg_notification_settings_updated_at
   BEFORE UPDATE ON notification_settings
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -215,6 +219,7 @@ CREATE TABLE IF NOT EXISTS product_categories (
 CREATE INDEX IF NOT EXISTS idx_categories_parent_id ON product_categories(parent_id);
 CREATE INDEX IF NOT EXISTS idx_categories_slug      ON product_categories(slug);
 
+DROP TRIGGER IF EXISTS trg_product_categories_updated_at ON product_categories;
 CREATE TRIGGER trg_product_categories_updated_at
   BEFORE UPDATE ON product_categories
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -231,6 +236,7 @@ CREATE TABLE IF NOT EXISTS product_brands (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_product_brands_updated_at ON product_brands;
 CREATE TRIGGER trg_product_brands_updated_at
   BEFORE UPDATE ON product_brands
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -293,6 +299,7 @@ CREATE INDEX IF NOT EXISTS idx_products_status       ON products(status);
 CREATE INDEX IF NOT EXISTS idx_products_external     ON products(external_source, external_id);
 CREATE INDEX IF NOT EXISTS idx_products_created_at   ON products(created_at DESC);
 
+DROP TRIGGER IF EXISTS trg_products_updated_at ON products;
 CREATE TRIGGER trg_products_updated_at
   BEFORE UPDATE ON products
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -337,6 +344,7 @@ CREATE TABLE IF NOT EXISTS product_variants (
 CREATE INDEX IF NOT EXISTS idx_product_variants_product_id ON product_variants(product_id);
 CREATE INDEX IF NOT EXISTS idx_product_variants_sku        ON product_variants(sku);
 
+DROP TRIGGER IF EXISTS trg_product_variants_updated_at ON product_variants;
 CREATE TRIGGER trg_product_variants_updated_at
   BEFORE UPDATE ON product_variants
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -472,6 +480,7 @@ CREATE TABLE IF NOT EXISTS product_qna (
 CREATE INDEX IF NOT EXISTS idx_product_qna_product_id ON product_qna(product_id);
 CREATE INDEX IF NOT EXISTS idx_product_qna_user_id    ON product_qna(user_id);
 
+DROP TRIGGER IF EXISTS trg_product_qna_updated_at ON product_qna;
 CREATE TRIGGER trg_product_qna_updated_at
   BEFORE UPDATE ON product_qna
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -538,6 +547,7 @@ CREATE TABLE IF NOT EXISTS coupons (
 CREATE INDEX IF NOT EXISTS idx_coupons_code       ON coupons(code);
 CREATE INDEX IF NOT EXISTS idx_coupons_auto_issue ON coupons(auto_issue_type, is_active);
 
+DROP TRIGGER IF EXISTS trg_coupons_updated_at ON coupons;
 CREATE TRIGGER trg_coupons_updated_at
   BEFORE UPDATE ON coupons
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -573,6 +583,7 @@ CREATE TABLE IF NOT EXISTS carts (
 CREATE INDEX IF NOT EXISTS idx_carts_user_id    ON carts(user_id);
 CREATE INDEX IF NOT EXISTS idx_carts_session_id ON carts(session_id);
 
+DROP TRIGGER IF EXISTS trg_carts_updated_at ON carts;
 CREATE TRIGGER trg_carts_updated_at
   BEFORE UPDATE ON carts
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -591,6 +602,7 @@ CREATE TABLE IF NOT EXISTS cart_items (
 
 CREATE INDEX IF NOT EXISTS idx_cart_items_cart_id ON cart_items(cart_id);
 
+DROP TRIGGER IF EXISTS trg_cart_items_updated_at ON cart_items;
 CREATE TRIGGER trg_cart_items_updated_at
   BEFORE UPDATE ON cart_items
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -639,6 +651,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_user_id      ON orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status       ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at   ON orders(created_at DESC);
 
+DROP TRIGGER IF EXISTS trg_orders_updated_at ON orders;
 CREATE TRIGGER trg_orders_updated_at
   BEFORE UPDATE ON orders
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -664,6 +677,7 @@ CREATE TABLE IF NOT EXISTS order_items (
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id   ON order_items(order_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_product_id ON order_items(product_id);
 
+DROP TRIGGER IF EXISTS trg_order_items_updated_at ON order_items;
 CREATE TRIGGER trg_order_items_updated_at
   BEFORE UPDATE ON order_items
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -722,6 +736,7 @@ CREATE TABLE IF NOT EXISTS payments (
 CREATE INDEX IF NOT EXISTS idx_payments_order_id ON payments(order_id);
 CREATE INDEX IF NOT EXISTS idx_payments_pg_tid   ON payments(pg_tid);
 
+DROP TRIGGER IF EXISTS trg_payments_updated_at ON payments;
 CREATE TRIGGER trg_payments_updated_at
   BEFORE UPDATE ON payments
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -754,6 +769,7 @@ CREATE TABLE IF NOT EXISTS shipping_settings (
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_shipping_settings_updated_at ON shipping_settings;
 CREATE TRIGGER trg_shipping_settings_updated_at
   BEFORE UPDATE ON shipping_settings
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -784,6 +800,7 @@ CREATE TABLE IF NOT EXISTS shipments (
 CREATE INDEX IF NOT EXISTS idx_shipments_order_id    ON shipments(order_id);
 CREATE INDEX IF NOT EXISTS idx_shipments_tracking    ON shipments(tracking_number);
 
+DROP TRIGGER IF EXISTS trg_shipments_updated_at ON shipments;
 CREATE TRIGGER trg_shipments_updated_at
   BEFORE UPDATE ON shipments
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -876,6 +893,7 @@ CREATE TABLE IF NOT EXISTS reviews (
 CREATE INDEX IF NOT EXISTS idx_reviews_product_id ON reviews(product_id, is_visible);
 CREATE INDEX IF NOT EXISTS idx_reviews_user_id    ON reviews(user_id);
 
+DROP TRIGGER IF EXISTS trg_reviews_updated_at ON reviews;
 CREATE TRIGGER trg_reviews_updated_at
   BEFORE UPDATE ON reviews
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -953,6 +971,7 @@ CREATE TABLE IF NOT EXISTS boards (
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_boards_updated_at ON boards;
 CREATE TRIGGER trg_boards_updated_at
   BEFORE UPDATE ON boards
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -990,6 +1009,7 @@ CREATE TABLE IF NOT EXISTS posts (
 CREATE INDEX IF NOT EXISTS idx_posts_board_id ON posts(board_id, is_visible, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_user_id  ON posts(user_id);
 
+DROP TRIGGER IF EXISTS trg_posts_updated_at ON posts;
 CREATE TRIGGER trg_posts_updated_at
   BEFORE UPDATE ON posts
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1035,6 +1055,7 @@ CREATE TABLE IF NOT EXISTS comments (
 CREATE INDEX IF NOT EXISTS idx_comments_post_id    ON comments(post_id, is_visible);
 CREATE INDEX IF NOT EXISTS idx_comments_parent_id  ON comments(parent_id);
 
+DROP TRIGGER IF EXISTS trg_comments_updated_at ON comments;
 CREATE TRIGGER trg_comments_updated_at
   BEFORE UPDATE ON comments
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1073,6 +1094,7 @@ CREATE TABLE IF NOT EXISTS inquiries (
 CREATE INDEX IF NOT EXISTS idx_inquiries_user_id ON inquiries(user_id);
 CREATE INDEX IF NOT EXISTS idx_inquiries_status  ON inquiries(status);
 
+DROP TRIGGER IF EXISTS trg_inquiries_updated_at ON inquiries;
 CREATE TRIGGER trg_inquiries_updated_at
   BEFORE UPDATE ON inquiries
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1102,6 +1124,7 @@ CREATE TABLE IF NOT EXISTS faqs (
 
 CREATE INDEX IF NOT EXISTS idx_faqs_category   ON faqs(category, is_visible);
 
+DROP TRIGGER IF EXISTS trg_faqs_updated_at ON faqs;
 CREATE TRIGGER trg_faqs_updated_at
   BEFORE UPDATE ON faqs
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1117,6 +1140,7 @@ CREATE TABLE IF NOT EXISTS notices (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_notices_updated_at ON notices;
 CREATE TRIGGER trg_notices_updated_at
   BEFORE UPDATE ON notices
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1146,6 +1170,7 @@ CREATE TABLE IF NOT EXISTS banners (
 
 CREATE INDEX IF NOT EXISTS idx_banners_position ON banners(position, is_active, sort_order);
 
+DROP TRIGGER IF EXISTS trg_banners_updated_at ON banners;
 CREATE TRIGGER trg_banners_updated_at
   BEFORE UPDATE ON banners
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1168,6 +1193,7 @@ CREATE TABLE IF NOT EXISTS popups (
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_popups_updated_at ON popups;
 CREATE TRIGGER trg_popups_updated_at
   BEFORE UPDATE ON popups
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1188,6 +1214,7 @@ CREATE TABLE IF NOT EXISTS events (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_events_updated_at ON events;
 CREATE TRIGGER trg_events_updated_at
   BEFORE UPDATE ON events
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1221,6 +1248,7 @@ CREATE TABLE IF NOT EXISTS menus (
 
 CREATE INDEX IF NOT EXISTS idx_menus_parent_id ON menus(parent_id);
 
+DROP TRIGGER IF EXISTS trg_menus_updated_at ON menus;
 CREATE TRIGGER trg_menus_updated_at
   BEFORE UPDATE ON menus
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1262,6 +1290,7 @@ CREATE TABLE IF NOT EXISTS content_pages (
 CREATE INDEX IF NOT EXISTS idx_content_pages_slug      ON content_pages(slug);
 CREATE INDEX IF NOT EXISTS idx_content_pages_parent_id ON content_pages(parent_id);
 
+DROP TRIGGER IF EXISTS trg_content_pages_updated_at ON content_pages;
 CREATE TRIGGER trg_content_pages_updated_at
   BEFORE UPDATE ON content_pages
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1279,6 +1308,7 @@ CREATE TABLE IF NOT EXISTS main_sections (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_main_sections_updated_at ON main_sections;
 CREATE TRIGGER trg_main_sections_updated_at
   BEFORE UPDATE ON main_sections
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1349,6 +1379,7 @@ CREATE TABLE IF NOT EXISTS skins (
 CREATE INDEX IF NOT EXISTS idx_skins_slug ON skins(slug);
 CREATE INDEX IF NOT EXISTS idx_skins_type ON skins(type, is_active);
 
+DROP TRIGGER IF EXISTS trg_skins_updated_at ON skins;
 CREATE TRIGGER trg_skins_updated_at
   BEFORE UPDATE ON skins
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1366,6 +1397,7 @@ CREATE TABLE IF NOT EXISTS board_skin_settings (
 
 CREATE INDEX IF NOT EXISTS idx_board_skin_settings_board_id ON board_skin_settings(board_id);
 
+DROP TRIGGER IF EXISTS trg_board_skin_settings_updated_at ON board_skin_settings;
 CREATE TRIGGER trg_board_skin_settings_updated_at
   BEFORE UPDATE ON board_skin_settings
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1383,6 +1415,7 @@ CREATE TABLE IF NOT EXISTS category_skin_settings (
 
 CREATE INDEX IF NOT EXISTS idx_category_skin_settings_category_id ON category_skin_settings(category_id);
 
+DROP TRIGGER IF EXISTS trg_category_skin_settings_updated_at ON category_skin_settings;
 CREATE TRIGGER trg_category_skin_settings_updated_at
   BEFORE UPDATE ON category_skin_settings
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1420,6 +1453,7 @@ CREATE INDEX IF NOT EXISTS idx_user_subscriptions_user_id       ON user_subscrip
 CREATE INDEX IF NOT EXISTS idx_user_subscriptions_product_id    ON user_subscriptions(product_id);
 CREATE INDEX IF NOT EXISTS idx_user_subscriptions_next_delivery ON user_subscriptions(next_delivery_date, status);
 
+DROP TRIGGER IF EXISTS trg_user_subscriptions_updated_at ON user_subscriptions;
 CREATE TRIGGER trg_user_subscriptions_updated_at
   BEFORE UPDATE ON user_subscriptions
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1442,6 +1476,7 @@ CREATE TABLE IF NOT EXISTS subscription_deliveries (
 CREATE INDEX IF NOT EXISTS idx_subscription_deliveries_subscription_id ON subscription_deliveries(subscription_id);
 CREATE INDEX IF NOT EXISTS idx_subscription_deliveries_scheduled_date  ON subscription_deliveries(scheduled_date);
 
+DROP TRIGGER IF EXISTS trg_subscription_deliveries_updated_at ON subscription_deliveries;
 CREATE TRIGGER trg_subscription_deliveries_updated_at
   BEFORE UPDATE ON subscription_deliveries
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1516,6 +1551,7 @@ CREATE TABLE IF NOT EXISTS external_connections (
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_external_connections_updated_at ON external_connections;
 CREATE TRIGGER trg_external_connections_updated_at
   BEFORE UPDATE ON external_connections
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1592,6 +1628,7 @@ CREATE TABLE IF NOT EXISTS installed_themes (
 
 CREATE INDEX IF NOT EXISTS idx_installed_themes_active ON installed_themes(is_active);
 
+DROP TRIGGER IF EXISTS trg_installed_themes_updated_at ON installed_themes;
 CREATE TRIGGER trg_installed_themes_updated_at
   BEFORE UPDATE ON installed_themes
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1617,6 +1654,7 @@ CREATE TABLE IF NOT EXISTS installed_skins (
 CREATE INDEX IF NOT EXISTS idx_installed_skins_slug ON installed_skins(skin_slug);
 CREATE INDEX IF NOT EXISTS idx_installed_skins_type ON installed_skins(type, is_active);
 
+DROP TRIGGER IF EXISTS trg_installed_skins_updated_at ON installed_skins;
 CREATE TRIGGER trg_installed_skins_updated_at
   BEFORE UPDATE ON installed_skins
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1637,6 +1675,7 @@ CREATE TABLE IF NOT EXISTS webhook_configs (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_webhook_configs_updated_at ON webhook_configs;
 CREATE TRIGGER trg_webhook_configs_updated_at
   BEFORE UPDATE ON webhook_configs
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1675,6 +1714,7 @@ CREATE TABLE IF NOT EXISTS search_keywords (
 CREATE INDEX IF NOT EXISTS idx_search_keywords_keyword ON search_keywords(keyword);
 CREATE INDEX IF NOT EXISTS idx_search_keywords_count   ON search_keywords(count DESC);
 
+DROP TRIGGER IF EXISTS trg_search_keywords_updated_at ON search_keywords;
 CREATE TRIGGER trg_search_keywords_updated_at
   BEFORE UPDATE ON search_keywords
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1760,6 +1800,7 @@ CREATE TABLE IF NOT EXISTS deployment_settings (
   updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+DROP TRIGGER IF EXISTS trg_deployment_settings_updated_at ON deployment_settings;
 CREATE TRIGGER trg_deployment_settings_updated_at
   BEFORE UPDATE ON deployment_settings
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -1872,40 +1913,50 @@ ALTER TABLE notifications          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_subscriptions     ENABLE ROW LEVEL SECURITY;
 
 -- users: users can read/update/insert their own record
+DROP POLICY IF EXISTS "users_select_own" ON users;
 CREATE POLICY "users_select_own" ON users
   FOR SELECT USING (auth.uid()::text = id::text);
 
+DROP POLICY IF EXISTS "users_insert_own" ON users;
 CREATE POLICY "users_insert_own" ON users
   FOR INSERT WITH CHECK (auth.uid()::text = id::text);
 
+DROP POLICY IF EXISTS "users_update_own" ON users;
 CREATE POLICY "users_update_own" ON users
   FOR UPDATE USING (auth.uid()::text = id::text);
 
 -- user_addresses: users manage their own addresses
+DROP POLICY IF EXISTS "user_addresses_own" ON user_addresses;
 CREATE POLICY "user_addresses_own" ON user_addresses
   FOR ALL USING (auth.uid()::text = user_id::text);
 
 -- user_points_history: read own history
+DROP POLICY IF EXISTS "user_points_history_read_own" ON user_points_history;
 CREATE POLICY "user_points_history_read_own" ON user_points_history
   FOR SELECT USING (auth.uid()::text = user_id::text);
 
 -- user_deposits_history: read own history
+DROP POLICY IF EXISTS "user_deposits_history_read_own" ON user_deposits_history;
 CREATE POLICY "user_deposits_history_read_own" ON user_deposits_history
   FOR SELECT USING (auth.uid()::text = user_id::text);
 
 -- user_wishlist: users manage their own wishlist
+DROP POLICY IF EXISTS "user_wishlist_own" ON user_wishlist;
 CREATE POLICY "user_wishlist_own" ON user_wishlist
   FOR ALL USING (auth.uid()::text = user_id::text);
 
 -- user_recently_viewed: users manage their own recently viewed
+DROP POLICY IF EXISTS "user_recently_viewed_own" ON user_recently_viewed;
 CREATE POLICY "user_recently_viewed_own" ON user_recently_viewed
   FOR ALL USING (auth.uid()::text = user_id::text);
 
 -- user_attendance: users read/insert their own attendance
+DROP POLICY IF EXISTS "user_attendance_own" ON user_attendance;
 CREATE POLICY "user_attendance_own" ON user_attendance
   FOR ALL USING (auth.uid()::text = user_id::text);
 
 -- user_messages: users can see messages they sent or received
+DROP POLICY IF EXISTS "user_messages_own" ON user_messages;
 CREATE POLICY "user_messages_own" ON user_messages
   FOR SELECT USING (
     auth.uid()::text = receiver_id::text OR
@@ -1913,18 +1964,22 @@ CREATE POLICY "user_messages_own" ON user_messages
   );
 
 -- notification_settings: users manage their own settings
+DROP POLICY IF EXISTS "notification_settings_own" ON notification_settings;
 CREATE POLICY "notification_settings_own" ON notification_settings
   FOR ALL USING (auth.uid()::text = user_id::text);
 
 -- user_coupons: users view their own coupons
+DROP POLICY IF EXISTS "user_coupons_read_own" ON user_coupons;
 CREATE POLICY "user_coupons_read_own" ON user_coupons
   FOR SELECT USING (auth.uid()::text = user_id::text);
 
 -- carts: users manage their own carts
+DROP POLICY IF EXISTS "carts_own" ON carts;
 CREATE POLICY "carts_own" ON carts
   FOR ALL USING (auth.uid()::text = user_id::text);
 
 -- cart_items: users manage items in their own carts
+DROP POLICY IF EXISTS "cart_items_own" ON cart_items;
 CREATE POLICY "cart_items_own" ON cart_items
   FOR ALL USING (
     cart_id IN (
@@ -1933,10 +1988,12 @@ CREATE POLICY "cart_items_own" ON cart_items
   );
 
 -- orders: users view their own orders
+DROP POLICY IF EXISTS "orders_read_own" ON orders;
 CREATE POLICY "orders_read_own" ON orders
   FOR SELECT USING (auth.uid()::text = user_id::text);
 
 -- order_items: users view items in their own orders
+DROP POLICY IF EXISTS "order_items_read_own" ON order_items;
 CREATE POLICY "order_items_read_own" ON order_items
   FOR SELECT USING (
     order_id IN (
@@ -1945,32 +2002,40 @@ CREATE POLICY "order_items_read_own" ON order_items
   );
 
 -- reviews: anyone can read visible reviews; users manage their own
+DROP POLICY IF EXISTS "reviews_read_public" ON reviews;
 CREATE POLICY "reviews_read_public" ON reviews
   FOR SELECT USING (is_visible = true);
 
+DROP POLICY IF EXISTS "reviews_manage_own" ON reviews;
 CREATE POLICY "reviews_manage_own" ON reviews
   FOR ALL USING (auth.uid()::text = user_id::text);
 
 -- review_likes: users manage their own likes
+DROP POLICY IF EXISTS "review_likes_own" ON review_likes;
 CREATE POLICY "review_likes_own" ON review_likes
   FOR ALL USING (auth.uid()::text = user_id::text);
 
 -- post_likes: users manage their own likes
+DROP POLICY IF EXISTS "post_likes_own" ON post_likes;
 CREATE POLICY "post_likes_own" ON post_likes
   FOR ALL USING (auth.uid()::text = user_id::text);
 
 -- inquiries: users manage their own inquiries
+DROP POLICY IF EXISTS "inquiries_own" ON inquiries;
 CREATE POLICY "inquiries_own" ON inquiries
   FOR ALL USING (auth.uid()::text = user_id::text);
 
 -- notifications: users read their own notifications
+DROP POLICY IF EXISTS "notifications_read_own" ON notifications;
 CREATE POLICY "notifications_read_own" ON notifications
   FOR SELECT USING (auth.uid()::text = user_id::text);
 
+DROP POLICY IF EXISTS "notifications_update_own" ON notifications;
 CREATE POLICY "notifications_update_own" ON notifications
   FOR UPDATE USING (auth.uid()::text = user_id::text);
 
 -- user_subscriptions: users manage their own subscriptions
+DROP POLICY IF EXISTS "user_subscriptions_own" ON user_subscriptions;
 CREATE POLICY "user_subscriptions_own" ON user_subscriptions
   FOR ALL USING (auth.uid()::text = user_id::text);
 
@@ -2017,9 +2082,31 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Trigger: auth.users에 새 유저 생성 시 실행
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- =============================================================================
+-- SEED DATA: 기본 데이터
+-- =============================================================================
+
+-- 기본 회원 등급
+INSERT INTO user_levels (level, name, is_default, description)
+VALUES (1, '일반회원', true, '기본 회원 등급')
+ON CONFLICT (level) DO NOTHING;
+
+-- 최고 관리자 프로필 (auth.users에 가입된 경우 자동 연결)
+INSERT INTO users (id, email, name, level_id, role)
+SELECT
+  au.id,
+  au.email,
+  '최고관리자',
+  (SELECT id FROM user_levels WHERE is_default = true LIMIT 1),
+  'admin'
+FROM auth.users au
+WHERE au.email = 'admin@admin.com'
+ON CONFLICT (id) DO UPDATE SET role = 'admin';
 
 -- =============================================================================
 -- END OF SCHEMA

@@ -1,12 +1,12 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
-import { ShoppingCart, User, Menu, Search, X } from 'lucide-react';
+import { ShoppingCart, User, Menu, Search, X, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/store/cart';
 import { useAuth } from '@/hooks/useAuth';
 
 export function Header() {
-  const { user } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
   const itemCount = useCartStore((state) => state.getItemCount());
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
@@ -81,17 +81,27 @@ export function Header() {
             </Button>
           </Link>
 
-          {user ? (
-            <Link to="/mypage">
-              <Button variant="ghost" size="icon">
-                <User className="h-5 w-5" />
-              </Button>
-            </Link>
+          {!loading && (user ? (
+            <>
+              {isAdmin && (
+                <Link to="/admin" className="hidden sm:block">
+                  <Button variant="outline" size="sm" className="gap-1.5">
+                    <Shield className="h-4 w-4" />
+                    관리자
+                  </Button>
+                </Link>
+              )}
+              <Link to="/mypage">
+                <Button variant="ghost" size="icon">
+                  <User className="h-5 w-5" />
+                </Button>
+              </Link>
+            </>
           ) : (
             <Link to="/auth/login" className="hidden sm:block">
               <Button>로그인</Button>
             </Link>
-          )}
+          ))}
 
           <Button
             variant="ghost"
@@ -138,6 +148,15 @@ export function Header() {
                 {item.label}
               </Link>
             ))}
+            {isAdmin && (
+              <Link
+                to="/admin"
+                className="px-3 py-2 text-sm font-medium text-red-600 rounded-md hover:bg-red-50"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                관리자
+              </Link>
+            )}
             {!user && (
               <Link
                 to="/auth/login"
