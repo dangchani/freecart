@@ -22,6 +22,10 @@ import {
   CreditCard,
   Palette,
   Layers,
+  ScrollText,
+  ShieldBan,
+  Eye,
+  ShieldCheck,
 } from 'lucide-react';
 
 const navItems = [
@@ -45,6 +49,10 @@ const navItems = [
   { href: '/admin/settings', label: '설정', icon: Settings },
   { href: '/admin/statistics', label: '통계', icon: BarChart2 },
   { href: '/admin/subscriptions', label: '정기배송', icon: Repeat },
+  { href: '/admin/logs', label: '활동 로그', icon: ScrollText },
+  { href: '/admin/ip-blocks', label: 'IP 차단', icon: ShieldBan },
+  { href: '/admin/visitors', label: '방문자 통계', icon: Eye },
+  { href: '/admin/admins', label: '관리자 계정', icon: ShieldCheck },
 ];
 
 export default function AdminLayout() {

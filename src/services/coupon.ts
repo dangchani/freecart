@@ -68,7 +68,7 @@ export async function validateCoupon(
   }
 
   // 전체 사용 횟수 확인
-  if (coupon.usage_limit && coupon.usage_count >= coupon.usage_limit) {
+  if (coupon.usage_limit && coupon.used_count >= coupon.usage_limit) {
     return { valid: false, error: '쿠폰 사용 한도가 초과되었습니다.' };
   }
 
@@ -79,19 +79,19 @@ export async function validateCoupon(
     .eq('coupon_id', coupon.id)
     .eq('user_id', userId);
 
-  if (coupon.per_user_limit && (userUsageCount || 0) >= coupon.per_user_limit) {
+  if (coupon.usage_limit_per_user && (userUsageCount || 0) >= coupon.usage_limit_per_user) {
     return { valid: false, error: '이미 사용하신 쿠폰입니다.' };
   }
 
   // 대상 확인
-  if (coupon.target === 'category' && coupon.target_ids) {
+  if (coupon.target_type === 'category' && coupon.target_ids) {
     const hasMatch = coupon.target_ids.some((id: string) => categoryIds.includes(id));
     if (!hasMatch) {
       return { valid: false, error: '해당 상품에 적용할 수 없는 쿠폰입니다.' };
     }
   }
 
-  if (coupon.target === 'product' && coupon.target_ids) {
+  if (coupon.target_type === 'product' && coupon.target_ids) {
     const hasMatch = coupon.target_ids.some((id: string) => productIds.includes(id));
     if (!hasMatch) {
       return { valid: false, error: '해당 상품에 적용할 수 없는 쿠폰입니다.' };
@@ -100,13 +100,13 @@ export async function validateCoupon(
 
   // 할인 금액 계산
   let discount = 0;
-  if (coupon.type === 'percent') {
-    discount = Math.floor(orderAmount * (coupon.value / 100));
+  if (coupon.discount_type === 'percent') {
+    discount = Math.floor(orderAmount * (coupon.discount_value / 100));
     if (coupon.max_discount_amount) {
       discount = Math.min(discount, coupon.max_discount_amount);
     }
-  } else if (coupon.type === 'fixed') {
-    discount = coupon.value;
+  } else if (coupon.discount_type === 'fixed') {
+    discount = coupon.discount_value;
   }
 
   return {
@@ -116,17 +116,17 @@ export async function validateCoupon(
       code: coupon.code,
       name: coupon.name,
       description: coupon.description,
-      type: coupon.type,
-      value: coupon.value,
+      type: coupon.discount_type as CouponType,
+      value: coupon.discount_value,
       minOrderAmount: coupon.min_order_amount,
       maxDiscountAmount: coupon.max_discount_amount,
-      target: coupon.target,
+      target: coupon.target_type,
       targetIds: coupon.target_ids,
       startsAt: coupon.starts_at,
       endsAt: coupon.ends_at,
       usageLimit: coupon.usage_limit,
-      usageCount: coupon.usage_count,
-      perUserLimit: coupon.per_user_limit,
+      usageCount: coupon.used_count,
+      perUserLimit: coupon.usage_limit_per_user,
       isActive: coupon.is_active,
       isPublic: coupon.is_public,
     },
@@ -207,17 +207,17 @@ export async function getMyCoupons(userId: string): Promise<UserCoupon[]> {
       code: uc.coupons.code,
       name: uc.coupons.name,
       description: uc.coupons.description,
-      type: uc.coupons.type,
-      value: uc.coupons.value,
+      type: uc.coupons.discount_type,
+      value: uc.coupons.discount_value,
       minOrderAmount: uc.coupons.min_order_amount,
       maxDiscountAmount: uc.coupons.max_discount_amount,
-      target: uc.coupons.target,
+      target: uc.coupons.target_type,
       targetIds: uc.coupons.target_ids,
       startsAt: uc.coupons.starts_at,
       endsAt: uc.coupons.ends_at,
       usageLimit: uc.coupons.usage_limit,
-      usageCount: uc.coupons.usage_count,
-      perUserLimit: uc.coupons.per_user_limit,
+      usageCount: uc.coupons.used_count,
+      perUserLimit: uc.coupons.usage_limit_per_user,
       isActive: uc.coupons.is_active,
       isPublic: uc.coupons.is_public,
     },
@@ -295,17 +295,17 @@ export async function getAvailableCoupons(userId: string): Promise<Coupon[]> {
       code: c.code,
       name: c.name,
       description: c.description,
-      type: c.type,
-      value: c.value,
+      type: c.discount_type,
+      value: c.discount_value,
       minOrderAmount: c.min_order_amount,
       maxDiscountAmount: c.max_discount_amount,
-      target: c.target,
+      target: c.target_type,
       targetIds: c.target_ids,
       startsAt: c.starts_at,
       endsAt: c.ends_at,
       usageLimit: c.usage_limit,
-      usageCount: c.usage_count,
-      perUserLimit: c.per_user_limit,
+      usageCount: c.used_count,
+      perUserLimit: c.usage_limit_per_user,
       isActive: c.is_active,
       isPublic: c.is_public,
     }));

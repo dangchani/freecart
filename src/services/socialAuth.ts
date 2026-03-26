@@ -49,8 +49,9 @@ export async function getSocialLoginUrl(provider: SocialProvider): Promise<strin
 }
 
 // 네이버 로그인 URL 생성
-function getNaverLoginUrl(): string {
-  const clientId = import.meta.env.VITE_NAVER_CLIENT_ID || '';
+async function getNaverLoginUrl(): Promise<string> {
+  const { getSetting } = await import('@/services/settings');
+  const clientId = await getSetting('naver_client_id', '');
   const redirectUri = encodeURIComponent(`${window.location.origin}/auth/naver/callback`);
   const state = generateState();
 

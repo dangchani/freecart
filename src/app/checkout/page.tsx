@@ -15,6 +15,7 @@ import { getUserPoints, validatePointsUsage, usePoints } from '@/services/points
 import { getUserAddresses, type UserAddress } from '@/services/addresses';
 import { useAuth } from '@/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
+import { getShippingSettings, getPointSettings } from '@/services/settings';
 import type { CartItem } from '@/types';
 import { Ticket, Coins, Check, X, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
 
@@ -163,6 +164,10 @@ export default function CheckoutPage() {
   const [savedAddresses, setSavedAddresses] = useState<UserAddress[]>([]);
   const [showAddressList, setShowAddressList] = useState(false);
 
+  // DB 설정값
+  const [shippingConfig, setShippingConfig] = useState({ shippingFee: 3000, freeShippingThreshold: 50000 });
+  const [pointConfig, setPointConfig] = useState({ minThreshold: 1000, unitAmount: 100, maxUsagePercent: 50 });
+
   const {
     register,
     handleSubmit,
@@ -187,6 +192,8 @@ export default function CheckoutPage() {
         loadCoupons(),
         loadPoints(),
         loadAddresses(),
+        getShippingSettings().then(setShippingConfig),
+        getPointSettings().then((p) => setPointConfig({ minThreshold: p.minThreshold, unitAmount: p.unitAmount, maxUsagePercent: p.maxUsagePercent })),
       ]);
     }
   }, [user, authLoading, navigate]);
@@ -258,7 +265,7 @@ export default function CheckoutPage() {
     (sum, item) => sum + (item.product?.salePrice || 0) * item.quantity,
     0
   );
-  const shippingCost = subtotal >= 50000 ? 0 : 3000;
+  const shippingCost = subtotal >= shippingConfig.freeShippingThreshold ? 0 : shippingConfig.shippingFee;
 
   // 쿠폰 할인 계산
   const couponDiscount = selectedCoupon
@@ -303,17 +310,17 @@ export default function CheckoutPage() {
   // 포인트 사용 핸들러
   function handlePointsChange(value: string) {
     const amount = parseInt(value) || 0;
+    const unit = pointConfig.unitAmount || 100;
+    const maxPct = (pointConfig.maxUsagePercent || 50) / 100;
 
-    // 100원 단위로 조정
-    const adjustedAmount = Math.floor(amount / 100) * 100;
+    const adjustedAmount = Math.floor(amount / unit) * unit;
 
-    const validation = validatePointsUsage(userPoints, adjustedAmount, subtotal + shippingCost - couponDiscount);
+    const validation = validatePointsUsage(userPoints, adjustedAmount, subtotal + shippingCost - couponDiscount, pointConfig);
     if (!validation.valid) {
       setPointsError(validation.message || null);
-      // 최대 사용 가능한 금액으로 자동 조정
       const maxUsable = Math.min(
         userPoints,
-        Math.floor((subtotal + shippingCost - couponDiscount) * 0.5 / 100) * 100
+        Math.floor((subtotal + shippingCost - couponDiscount) * maxPct / unit) * unit
       );
       setUsePointsAmount(Math.min(adjustedAmount, maxUsable));
     } else {
@@ -322,11 +329,12 @@ export default function CheckoutPage() {
     }
   }
 
-  // 전액 사용 핸들러
   function handleUseAllPoints() {
+    const unit = pointConfig.unitAmount || 100;
+    const maxPct = (pointConfig.maxUsagePercent || 50) / 100;
     const maxUsable = Math.min(
       userPoints,
-      Math.floor((subtotal + shippingCost - couponDiscount) * 0.5 / 100) * 100
+      Math.floor((subtotal + shippingCost - couponDiscount) * maxPct / unit) * unit
     );
     setUsePointsAmount(maxUsable);
     setPointsError(null);

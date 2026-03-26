@@ -59,30 +59,34 @@ export async function getPointsHistory(userId: string, limit = 20): Promise<Poin
 export function validatePointsUsage(
   currentPoints: number,
   useAmount: number,
-  orderAmount: number
+  orderAmount: number,
+  config?: { minThreshold?: number; unitAmount?: number; maxUsagePercent?: number }
 ): { valid: boolean; message?: string } {
+  const minThreshold = config?.minThreshold ?? 1000;
+  const unitAmount = config?.unitAmount ?? 100;
+  const maxUsagePercent = (config?.maxUsagePercent ?? 50) / 100;
+
   if (useAmount <= 0) {
     return { valid: true };
   }
 
-  if (currentPoints < 1000) {
-    return { valid: false, message: '1,000포인트 이상 보유 시 사용 가능합니다.' };
+  if (currentPoints < minThreshold) {
+    return { valid: false, message: `${minThreshold.toLocaleString()}포인트 이상 보유 시 사용 가능합니다.` };
   }
 
   if (useAmount > currentPoints) {
     return { valid: false, message: '보유 포인트를 초과하여 사용할 수 없습니다.' };
   }
 
-  if (useAmount % 100 !== 0) {
-    return { valid: false, message: '포인트는 100원 단위로 사용 가능합니다.' };
+  if (unitAmount > 0 && useAmount % unitAmount !== 0) {
+    return { valid: false, message: `포인트는 ${unitAmount.toLocaleString()}원 단위로 사용 가능합니다.` };
   }
 
-  // 결제 금액의 50% 이상 포인트로 결제할 수 없음 (최소 결제 금액 보장)
-  const maxPointsUsage = Math.floor(orderAmount * 0.5);
+  const maxPointsUsage = Math.floor(orderAmount * maxUsagePercent);
   if (useAmount > maxPointsUsage) {
     return {
       valid: false,
-      message: `최대 ${maxPointsUsage.toLocaleString()}포인트까지 사용 가능합니다. (결제금액의 50%)`
+      message: `최대 ${maxPointsUsage.toLocaleString()}포인트까지 사용 가능합니다. (결제금액의 ${Math.round(maxUsagePercent * 100)}%)`
     };
   }
 

@@ -52,7 +52,9 @@ const defaultConfig: ThemeConfig = {
   fontFamily: 'Pretendard, sans-serif',
 };
 
-const STORE_API_URL = import.meta.env.VITE_STORE_API_URL || 'http://localhost:3001';
+import { getSetting } from '@/services/settings';
+let STORE_API_URL = 'https://freecart.kr';
+getSetting('store_api_url', 'https://freecart.kr').then((v) => { STORE_API_URL = v; });
 
 export default function AdminThemesPage() {
   const [activeTab, setActiveTab] = useState<'installed' | 'available' | 'create'>('installed');
@@ -589,7 +591,7 @@ export default function AdminThemesPage() {
               <p className="text-xs">
                 freecart-web 서버가 실행 중인지 확인하세요.
                 <br />
-                환경변수 <code className="bg-gray-100 px-1 rounded">VITE_STORE_API_URL</code>을 설정하세요.
+                관리자 &gt; 설정에서 <code className="bg-gray-100 px-1 rounded">스토어 API URL</code>을 설정하세요.
               </p>
             </div>
           ) : (

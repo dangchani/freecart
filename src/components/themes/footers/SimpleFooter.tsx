@@ -17,15 +17,8 @@ interface Props {
   };
 }
 
-export default function SimpleFooter({ siteName = 'Freecart', companyInfo }: Props) {
-  const info = companyInfo || {
-    name: '프리카트',
-    ceo: '홍길동',
-    address: '서울특별시 강남구 테헤란로 123',
-    tel: '02-1234-5678',
-    email: 'support@freecart.com',
-    businessNumber: '123-45-67890',
-  };
+export default function SimpleFooter({ siteName = '', companyInfo }: Props) {
+  const info = companyInfo || {};
 
   return (
     <footer className="bg-gray-100 border-t">

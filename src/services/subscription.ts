@@ -104,7 +104,7 @@ export async function createSubscription(params: {
   startDate.setDate(startDate.getDate() + 3); // 3일 후 첫 배송
 
   const { data: subscription, error } = await supabase
-    .from('subscriptions')
+    .from('user_subscriptions')
     .insert({
       user_id: params.userId,
       product_id: params.productId,
@@ -135,7 +135,7 @@ export async function getMySubscriptions(userId: string): Promise<Subscription[]
   const supabase = createClient();
 
   const { data, error } = await supabase
-    .from('subscriptions')
+    .from('user_subscriptions')
     .select(`
       id, quantity, cycle, price, discount_rate, discounted_price, status,
       next_delivery_date, last_delivery_date, delivery_count,
@@ -180,7 +180,7 @@ export async function pauseSubscription(
   const supabase = createClient();
 
   const { error } = await supabase
-    .from('subscriptions')
+    .from('user_subscriptions')
     .update({ status: 'paused' })
     .eq('id', subscriptionId)
     .eq('user_id', userId)
@@ -202,7 +202,7 @@ export async function resumeSubscription(
 
   // 다음 배송일 재계산
   const { data: sub } = await supabase
-    .from('subscriptions')
+    .from('user_subscriptions')
     .select('cycle')
     .eq('id', subscriptionId)
     .single();
@@ -211,7 +211,7 @@ export async function resumeSubscription(
   nextDate.setDate(nextDate.getDate() + CYCLE_DAYS[sub?.cycle as SubscriptionCycle] || 30);
 
   const { error } = await supabase
-    .from('subscriptions')
+    .from('user_subscriptions')
     .update({
       status: 'active',
       next_delivery_date: nextDate.toISOString(),
@@ -236,7 +236,7 @@ export async function cancelSubscription(
   const supabase = createClient();
 
   const { error } = await supabase
-    .from('subscriptions')
+    .from('user_subscriptions')
     .update({
       status: 'cancelled',
       cancel_reason: reason,
@@ -275,7 +275,7 @@ export async function updateSubscription(
   // 수량이나 주기 변경 시 가격 재계산
   if (updates.quantity || updates.cycle) {
     const { data: sub } = await supabase
-      .from('subscriptions')
+      .from('user_subscriptions')
       .select('product_id, quantity, cycle, discount_rate')
       .eq('id', subscriptionId)
       .single();
@@ -298,7 +298,7 @@ export async function updateSubscription(
   }
 
   const { error } = await supabase
-    .from('subscriptions')
+    .from('user_subscriptions')
     .update(updateData)
     .eq('id', subscriptionId)
     .eq('user_id', userId);
@@ -318,7 +318,7 @@ export async function skipNextDelivery(
   const supabase = createClient();
 
   const { data: sub } = await supabase
-    .from('subscriptions')
+    .from('user_subscriptions')
     .select('cycle, next_delivery_date')
     .eq('id', subscriptionId)
     .eq('user_id', userId)
@@ -332,7 +332,7 @@ export async function skipNextDelivery(
   currentDate.setDate(currentDate.getDate() + CYCLE_DAYS[sub.cycle as SubscriptionCycle]);
 
   const { error } = await supabase
-    .from('subscriptions')
+    .from('user_subscriptions')
     .update({ next_delivery_date: currentDate.toISOString() })
     .eq('id', subscriptionId);
 

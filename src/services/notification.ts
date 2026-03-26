@@ -129,9 +129,8 @@ export async function sendNotification(
     user_id: userId,
     type,
     title,
-    message,
-    link: options?.link,
-    image_url: options?.imageUrl,
+    content: message,
+    link_url: options?.link,
     is_read: false,
   });
 
@@ -239,16 +238,16 @@ export async function getNotificationSettings(userId: string): Promise<{
   const supabase = createClient();
 
   const { data } = await supabase
-    .from('user_preferences')
-    .select('marketing_email, marketing_sms, order_notification')
+    .from('notification_settings')
+    .select('email_order, email_marketing, sms_marketing, push_enabled')
     .eq('user_id', userId)
     .single();
 
   return {
-    email: data?.order_notification ?? true,
-    sms: data?.marketing_sms ?? false,
-    push: true,
-    marketing: data?.marketing_email ?? false,
+    email: data?.email_order ?? true,
+    sms: data?.sms_marketing ?? false,
+    push: data?.push_enabled ?? true,
+    marketing: data?.email_marketing ?? false,
   };
 }
 
@@ -265,12 +264,13 @@ export async function updateNotificationSettings(
   const supabase = createClient();
 
   const { error } = await supabase
-    .from('user_preferences')
+    .from('notification_settings')
     .upsert({
       user_id: userId,
-      order_notification: settings.email,
-      marketing_sms: settings.sms,
-      marketing_email: settings.marketing,
+      email_order: settings.email,
+      sms_marketing: settings.sms,
+      email_marketing: settings.marketing,
+      push_enabled: settings.push,
     });
 
   return !error;

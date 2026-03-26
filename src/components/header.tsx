@@ -1,9 +1,10 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ShoppingCart, User, Menu, Search, X, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/store/cart';
 import { useAuth } from '@/hooks/useAuth';
+import { getSetting } from '@/services/settings';
 
 export function Header() {
   const { user, loading, isAdmin } = useAuth();
@@ -12,6 +13,11 @@ export function Header() {
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [siteName, setSiteName] = useState('Freecart');
+
+  useEffect(() => {
+    getSetting('site_name', 'Freecart').then(setSiteName);
+  }, []);
 
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -26,7 +32,7 @@ export function Header() {
       <div className="container flex h-16 items-center gap-4">
         {/* 로고 */}
         <Link to="/" className="flex items-center space-x-2 shrink-0">
-          <span className="text-xl font-bold">Freecart</span>
+          <span className="text-xl font-bold">{siteName}</span>
         </Link>
 
         {/* 검색바 (데스크탑) */}
@@ -39,135 +45,99 @@ export function Header() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="상품을 검색해보세요"
-              className="w-full rounded-full border border-gray-300 bg-gray-50 py-2 pl-4 pr-12 text-sm focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
+              placeholder="상품 검색..."
+              className="w-full rounded-lg border bg-gray-50 px-4 py-2 pr-10 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <button
-              type="submit"
-              className="absolute right-1 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-            >
-              <Search className="h-3.5 w-3.5" />
+            <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700">
+              <Search className="h-4 w-4" />
             </button>
           </div>
         </form>
 
-        {/* 네비게이션 (데스크탑) */}
-        <nav className="hidden md:flex items-center space-x-5 shrink-0">
-          <Link to="/products" className="text-sm font-medium hover:text-primary whitespace-nowrap">상품</Link>
-          <Link to="/notices" className="text-sm font-medium hover:text-primary whitespace-nowrap">공지사항</Link>
-          <Link to="/faqs" className="text-sm font-medium hover:text-primary whitespace-nowrap">FAQ</Link>
-          <Link to="/boards/free" className="text-sm font-medium hover:text-primary whitespace-nowrap">커뮤니티</Link>
-        </nav>
-
         {/* 우측 메뉴 */}
-        <div className="flex items-center space-x-2 ml-auto md:ml-0 shrink-0">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden"
-            onClick={() => setMobileSearchOpen((v) => !v)}
-          >
-            {mobileSearchOpen ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
+        <div className="flex items-center gap-2 ml-auto shrink-0">
+          {/* 모바일 검색 토글 */}
+          <Button variant="ghost" size="sm" className="md:hidden" onClick={() => setMobileSearchOpen(!mobileSearchOpen)} title="검색">
+            <Search className="h-5 w-5" />
           </Button>
 
-          <Link to="/cart">
-            <Button variant="ghost" size="icon" className="relative">
+          {/* 장바구니 */}
+          <Link to="/cart" className="relative">
+            <Button variant="ghost" size="sm">
               <ShoppingCart className="h-5 w-5" />
               {itemCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-                  {itemCount}
+                <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                  {itemCount > 99 ? '99+' : itemCount}
                 </span>
               )}
             </Button>
           </Link>
 
-          {!loading && (user ? (
-            <>
+          {/* 사용자 메뉴 */}
+          {loading ? null : user ? (
+            <div className="flex items-center gap-1">
               {isAdmin && (
-                <Link to="/admin" className="hidden sm:block">
-                  <Button variant="outline" size="sm" className="gap-1.5">
+                <Link to="/admin">
+                  <Button variant="ghost" size="sm" title="관리자">
                     <Shield className="h-4 w-4" />
-                    관리자
                   </Button>
                 </Link>
               )}
               <Link to="/mypage">
-                <Button variant="ghost" size="icon">
+                <Button variant="ghost" size="sm">
                   <User className="h-5 w-5" />
                 </Button>
               </Link>
-            </>
+            </div>
           ) : (
-            <Link to="/auth/login" className="hidden sm:block">
-              <Button>로그인</Button>
+            <Link to="/auth/login">
+              <Button size="sm">로그인</Button>
             </Link>
-          ))}
+          )}
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden"
-            onClick={() => setMobileMenuOpen((v) => !v)}
-          >
-            <Menu className="h-5 w-5" />
+          {/* 모바일 메뉴 토글 */}
+          <Button variant="ghost" size="sm" className="md:hidden" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+            {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </Button>
         </div>
       </div>
 
+      {/* 모바일 검색 */}
       {mobileSearchOpen && (
-        <div className="md:hidden border-t px-4 py-3 bg-background">
-          <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="상품을 검색해보세요"
-              autoFocus
-              className="flex-1 rounded-full border border-gray-300 bg-gray-50 py-2 px-4 text-sm focus:border-blue-500 focus:outline-none"
-            />
-            <Button type="submit" size="sm" className="rounded-full px-4">검색</Button>
+        <div className="border-t px-4 py-3 md:hidden">
+          <form onSubmit={handleSearchSubmit}>
+            <div className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="상품 검색..."
+                className="w-full rounded-lg border bg-gray-50 px-4 py-2 pr-10 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                autoFocus
+              />
+              <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700">
+                <Search className="h-4 w-4" />
+              </button>
+            </div>
           </form>
         </div>
       )}
 
+      {/* 모바일 메뉴 */}
       {mobileMenuOpen && (
-        <nav className="md:hidden border-t bg-background">
-          <div className="container py-3 flex flex-col space-y-1">
-            {[
-              { to: '/products', label: '상품' },
-              { to: '/notices', label: '공지사항' },
-              { to: '/faqs', label: 'FAQ' },
-              { to: '/boards/free', label: '커뮤니티' },
-            ].map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                className="px-3 py-2 text-sm font-medium rounded-md hover:bg-gray-100"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                {item.label}
-              </Link>
-            ))}
-            {isAdmin && (
-              <Link
-                to="/admin"
-                className="px-3 py-2 text-sm font-medium text-red-600 rounded-md hover:bg-red-50"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                관리자
-              </Link>
-            )}
-            {!user && (
-              <Link
-                to="/auth/login"
-                className="px-3 py-2 text-sm font-medium text-blue-600 rounded-md hover:bg-blue-50"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                로그인
-              </Link>
-            )}
-          </div>
-        </nav>
+        <div className="border-t md:hidden">
+          <nav className="container space-y-1 py-4">
+            <Link to="/products" className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" onClick={() => setMobileMenuOpen(false)}>
+              전체 상품
+            </Link>
+            <Link to="/boards" className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" onClick={() => setMobileMenuOpen(false)}>
+              커뮤니티
+            </Link>
+            <Link to="/notices" className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" onClick={() => setMobileMenuOpen(false)}>
+              공지사항
+            </Link>
+          </nav>
+        </div>
       )}
     </header>
   );

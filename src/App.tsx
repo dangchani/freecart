@@ -20,6 +20,7 @@ import ProductsPage from './app/products/page';
 import ProductDetailPage from './app/products/[slug]/page';
 import ProductSearchPage from './app/products/search/page';
 import ProductComparePage from './app/products/compare/page';
+import NewReviewPage from './app/products/[slug]/reviews/new/page';
 
 // Cart & Checkout
 import CartPage from './app/cart/page';
@@ -41,11 +42,14 @@ import MypageCouponsPage from './app/mypage/coupons/page';
 import MypageDepositsPage from './app/mypage/deposits/page';
 import MypageWishlistPage from './app/mypage/wishlist/page';
 import MypageReviewsPage from './app/mypage/reviews/page';
+import MypageEditReviewPage from './app/mypage/reviews/[id]/edit/page';
 import MypageSubscriptionsPage from './app/mypage/subscriptions/page';
 import MypageInquiriesPage from './app/mypage/inquiries/page';
 import MypageInquiryNewPage from './app/mypage/inquiries/new/page';
 import MypageNotificationsPage from './app/mypage/notifications/page';
 import MypageAttendancePage from './app/mypage/attendance/page';
+import MypageCashReceiptsPage from './app/mypage/cash-receipts/page';
+import MypageTaxInvoicesPage from './app/mypage/tax-invoices/page';
 
 // Boards
 import BoardsPage from './app/boards/page';
@@ -74,10 +78,13 @@ import AdminUsersPage from './app/admin/users/page';
 import AdminUserDetailPage from './app/admin/users/[userId]/page';
 import AdminReviewsPage from './app/admin/reviews/page';
 import AdminCouponsPage from './app/admin/coupons/page';
+import AdminNewCouponPage from './app/admin/coupons/new/page';
 import AdminBoardsPage from './app/admin/boards/page';
 import AdminNoticesPage from './app/admin/notices/page';
+import AdminNewNoticePage from './app/admin/notices/new/page';
 import AdminFAQsPage from './app/admin/faqs/page';
 import AdminBannersPage from './app/admin/banners/page';
+import AdminPopupsPage from './app/admin/popups/page';
 import AdminProductQnAPage from './app/admin/product-qna/page';
 import AdminInquiriesPage from './app/admin/inquiries/page';
 import AdminSubscriptionsPage from './app/admin/subscriptions/page';
@@ -93,6 +100,15 @@ import AdminUserLevelsPage from './app/admin/user-levels/page';
 import AdminExternalConnectionsPage from './app/admin/external-connections/page';
 import AdminPaymentGatewaysPage from './app/admin/payment-gateways/page';
 import AdminShippingSettingsPage from './app/admin/settings/shipping/page';
+import AdminProductsBulkPage from './app/admin/products/bulk/page';
+import AdminOrdersBulkShipmentPage from './app/admin/orders/bulk-shipment/page';
+import AdminLogsPage from './app/admin/logs/page';
+import AdminIpBlocksPage from './app/admin/ip-blocks/page';
+import AdminVisitorsPage from './app/admin/visitors/page';
+import AdminAccountsPage from './app/admin/admins/page';
+import AdminWebhooksPage from './app/admin/webhooks/page';
+import AdminPagesPage from './app/admin/pages/page';
+import ContentPage from './app/pages/[slug]/page';
 
 function MainLayout() {
   return (
@@ -144,6 +160,7 @@ export default function App() {
           <Route path="/products/search" element={<ProductSearchPage />} />
           <Route path="/products/compare" element={<ProductComparePage />} />
           <Route path="/products/:slug" element={<ProductDetailPage />} />
+          <Route path="/products/:slug/reviews/new" element={<NewReviewPage />} />
 
           {/* 장바구니 & 결제 */}
           <Route path="/cart" element={<CartPage />} />
@@ -165,6 +182,7 @@ export default function App() {
           <Route path="/brands" element={<BrandsPage />} />
           <Route path="/brands/:id" element={<BrandDetailPage />} />
           <Route path="/inquiries/new" element={<NewInquiryPage />} />
+          <Route path="/pages/:slug" element={<ContentPage />} />
 
           {/* 마이페이지 (인증 필요) */}
           <Route element={<RequireAuth />}>
@@ -181,11 +199,14 @@ export default function App() {
               <Route path="/mypage/deposits" element={<MypageDepositsPage />} />
               <Route path="/mypage/wishlist" element={<MypageWishlistPage />} />
               <Route path="/mypage/reviews" element={<MypageReviewsPage />} />
+              <Route path="/mypage/reviews/:id/edit" element={<MypageEditReviewPage />} />
               <Route path="/mypage/subscriptions" element={<MypageSubscriptionsPage />} />
               <Route path="/mypage/inquiries" element={<MypageInquiriesPage />} />
               <Route path="/mypage/inquiries/new" element={<MypageInquiryNewPage />} />
               <Route path="/mypage/notifications" element={<MypageNotificationsPage />} />
               <Route path="/mypage/attendance" element={<MypageAttendancePage />} />
+              <Route path="/mypage/cash-receipts" element={<MypageCashReceiptsPage />} />
+              <Route path="/mypage/tax-invoices" element={<MypageTaxInvoicesPage />} />
             </Route>
           </Route>
 
@@ -199,16 +220,21 @@ export default function App() {
             <Route path="/admin/products" element={<AdminProductsPage />} />
             <Route path="/admin/products/new" element={<AdminNewProductPage />} />
             <Route path="/admin/products/:slug/edit" element={<AdminEditProductPage />} />
+            <Route path="/admin/products/bulk" element={<AdminProductsBulkPage />} />
             <Route path="/admin/categories" element={<AdminCategoriesPage />} />
             <Route path="/admin/orders" element={<AdminOrdersPage />} />
+            <Route path="/admin/orders/bulk-shipment" element={<AdminOrdersBulkShipmentPage />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
             <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
             <Route path="/admin/reviews" element={<AdminReviewsPage />} />
             <Route path="/admin/coupons" element={<AdminCouponsPage />} />
+            <Route path="/admin/coupons/new" element={<AdminNewCouponPage />} />
             <Route path="/admin/boards" element={<AdminBoardsPage />} />
             <Route path="/admin/notices" element={<AdminNoticesPage />} />
+            <Route path="/admin/notices/new" element={<AdminNewNoticePage />} />
             <Route path="/admin/faqs" element={<AdminFAQsPage />} />
             <Route path="/admin/banners" element={<AdminBannersPage />} />
+            <Route path="/admin/popups" element={<AdminPopupsPage />} />
             <Route path="/admin/product-qna" element={<AdminProductQnAPage />} />
             <Route path="/admin/inquiries" element={<AdminInquiriesPage />} />
             <Route path="/admin/subscriptions" element={<AdminSubscriptionsPage />} />
@@ -224,6 +250,12 @@ export default function App() {
             <Route path="/admin/user-levels" element={<AdminUserLevelsPage />} />
             <Route path="/admin/external-connections" element={<AdminExternalConnectionsPage />} />
             <Route path="/admin/payment-gateways" element={<AdminPaymentGatewaysPage />} />
+            <Route path="/admin/logs" element={<AdminLogsPage />} />
+            <Route path="/admin/ip-blocks" element={<AdminIpBlocksPage />} />
+            <Route path="/admin/visitors" element={<AdminVisitorsPage />} />
+            <Route path="/admin/admins" element={<AdminAccountsPage />} />
+            <Route path="/admin/webhooks" element={<AdminWebhooksPage />} />
+            <Route path="/admin/pages" element={<AdminPagesPage />} />
           </Route>
         </Route>
       </Routes>

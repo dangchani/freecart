@@ -14,6 +14,8 @@ import {
   MessageCircle,
   Bell,
   User,
+  Receipt,
+  FileText,
 } from 'lucide-react';
 
 const navItems = [
@@ -27,6 +29,8 @@ const navItems = [
   { href: '/mypage/attendance', label: '출석 체크', icon: Calendar },
   { href: '/mypage/subscriptions', label: '정기배송', icon: RefreshCw },
   { href: '/mypage/inquiries', label: '1:1 문의', icon: MessageCircle },
+  { href: '/mypage/cash-receipts', label: '현금영수증', icon: Receipt },
+  { href: '/mypage/tax-invoices', label: '세금계산서', icon: FileText },
   { href: '/mypage/notifications', label: '알림 설정', icon: Bell },
   { href: '/mypage/profile', label: '프로필 수정', icon: User },
 ];

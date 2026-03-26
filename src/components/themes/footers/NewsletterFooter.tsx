@@ -22,13 +22,7 @@ export default function NewsletterFooter({ siteName = 'Freecart', companyInfo }:
   const [email, setEmail] = useState('');
   const [subscribed, setSubscribed] = useState(false);
 
-  const info = companyInfo || {
-    name: '프리카트',
-    address: '서울특별시 강남구 테헤란로 123',
-    tel: '02-1234-5678',
-    email: 'support@freecart.com',
-    businessNumber: '123-45-67890',
-  };
+  const info = companyInfo || {};
 
   const handleSubscribe = (e: React.FormEvent) => {
     e.preventDefault();

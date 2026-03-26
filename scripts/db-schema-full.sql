@@ -537,9 +537,10 @@ CREATE TABLE IF NOT EXISTS coupons (
   target_type           VARCHAR(20) NOT NULL DEFAULT 'all',
   target_ids            JSONB,
   auto_issue_type       VARCHAR(30),
-  starts_at             TIMESTAMPTZ,                      -- NULL = 즉시 적용
-  expires_at            TIMESTAMPTZ,                      -- NULL = 무기한
+  starts_at             TIMESTAMPTZ,
+  ends_at               TIMESTAMPTZ,
   is_active             BOOLEAN NOT NULL DEFAULT true,
+  is_public             BOOLEAN NOT NULL DEFAULT false,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -2131,6 +2132,112 @@ CREATE POLICY "payment_gateways_admin" ON payment_gateways
   );
 
 -- =============================================================================
+-- SECTION 20: MISSING TABLES (코드에서 참조하지만 스키마에 누락된 테이블)
+-- =============================================================================
+
+-- 20.1 order_payments (주문 결제 내역 - 부분결제/다중결제 지원)
+CREATE TABLE IF NOT EXISTS order_payments (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id         UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  payment_id       UUID REFERENCES payments(id),
+  method           VARCHAR(30) NOT NULL,
+  amount           INTEGER NOT NULL DEFAULT 0,
+  status           VARCHAR(20) NOT NULL DEFAULT 'pending',
+  pg_provider      VARCHAR(30),
+  pg_transaction_id VARCHAR(100),
+  paid_at          TIMESTAMPTZ,
+  cancelled_at     TIMESTAMPTZ,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_payments_order_id   ON order_payments(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_payments_payment_id ON order_payments(payment_id);
+
+DROP TRIGGER IF EXISTS trg_order_payments_updated_at ON order_payments;
+CREATE TRIGGER trg_order_payments_updated_at
+  BEFORE UPDATE ON order_payments
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- 20.2 order_virtual_accounts (가상계좌 정보)
+CREATE TABLE IF NOT EXISTS order_virtual_accounts (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id         UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  bank_code        VARCHAR(10) NOT NULL,
+  bank_name        VARCHAR(50) NOT NULL,
+  account_number   VARCHAR(50) NOT NULL,
+  holder_name      VARCHAR(100) NOT NULL,
+  amount           INTEGER NOT NULL,
+  expires_at       TIMESTAMPTZ NOT NULL,
+  status           VARCHAR(20) NOT NULL DEFAULT 'waiting',
+  deposited_at     TIMESTAMPTZ,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_virtual_accounts_order_id ON order_virtual_accounts(order_id);
+
+DROP TRIGGER IF EXISTS trg_order_virtual_accounts_updated_at ON order_virtual_accounts;
+CREATE TRIGGER trg_order_virtual_accounts_updated_at
+  BEFORE UPDATE ON order_virtual_accounts
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- 20.3 coupon_usages (쿠폰 사용 내역)
+CREATE TABLE IF NOT EXISTS coupon_usages (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  coupon_id        UUID NOT NULL REFERENCES coupons(id) ON DELETE CASCADE,
+  user_id          UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  order_id         UUID REFERENCES orders(id) ON DELETE SET NULL,
+  discount_amount  INTEGER NOT NULL DEFAULT 0,
+  used_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_coupon_usages_coupon_id ON coupon_usages(coupon_id);
+CREATE INDEX IF NOT EXISTS idx_coupon_usages_user_id   ON coupon_usages(user_id);
+CREATE INDEX IF NOT EXISTS idx_coupon_usages_order_id  ON coupon_usages(order_id);
+
+-- 20.4 shipping_notifications (배송 알림 설정)
+CREATE TABLE IF NOT EXISTS shipping_notifications (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id         UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  user_id          UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type             VARCHAR(20) NOT NULL DEFAULT 'all',
+  is_active        BOOLEAN NOT NULL DEFAULT true,
+  notify_shipped   BOOLEAN NOT NULL DEFAULT true,
+  notify_delivered BOOLEAN NOT NULL DEFAULT true,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(order_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_shipping_notifications_order_id ON shipping_notifications(order_id);
+
+DROP TRIGGER IF EXISTS trg_shipping_notifications_updated_at ON shipping_notifications;
+CREATE TRIGGER trg_shipping_notifications_updated_at
+  BEFORE UPDATE ON shipping_notifications
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- 20.5 user_preferences (사용자 환경설정)
+CREATE TABLE IF NOT EXISTS user_preferences (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+  language         VARCHAR(10) NOT NULL DEFAULT 'ko',
+  currency         VARCHAR(10) NOT NULL DEFAULT 'KRW',
+  theme            VARCHAR(20) NOT NULL DEFAULT 'light',
+  settings         JSONB NOT NULL DEFAULT '{}',
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_preferences_user_id ON user_preferences(user_id);
+
+DROP TRIGGER IF EXISTS trg_user_preferences_updated_at ON user_preferences;
+CREATE TRIGGER trg_user_preferences_updated_at
+  BEFORE UPDATE ON user_preferences
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- =============================================================================
 -- SEED DATA: 기본 데이터
 -- =============================================================================
 
@@ -2150,6 +2257,28 @@ SELECT
 FROM auth.users au
 WHERE au.email = 'admin@admin.com'
 ON CONFLICT (id) DO UPDATE SET role = 'admin';
+
+-- 기본 사이트 설정 (모든 설정은 settings 테이블에서 관리)
+INSERT INTO settings (key, value, description) VALUES
+  ('site_name', '"Freecart"', '사이트 이름'),
+  ('site_description', '"무료 오픈소스 쇼핑몰 솔루션"', '사이트 설명'),
+  ('company_name', '""', '상호 (회사명)'),
+  ('company_ceo', '""', '대표자명'),
+  ('company_address', '""', '사업장 주소'),
+  ('company_phone', '""', '대표전화'),
+  ('company_email', '""', '대표 이메일'),
+  ('company_business_number', '""', '사업자등록번호'),
+  ('github_url', '""', 'GitHub 저장소 URL'),
+  ('shipping_fee', '3000', '기본 배송비 (원)'),
+  ('free_shipping_threshold', '50000', '무료배송 기준금액 (원)'),
+  ('point_earn_rate', '1', '기본 포인트 적립률 (%)'),
+  ('signup_points', '1000', '회원가입 포인트 (P)'),
+  ('points_min_threshold', '1000', '포인트 사용 최소 보유량 (P)'),
+  ('points_unit_amount', '100', '포인트 사용 단위 (원)'),
+  ('points_max_usage_percent', '50', '포인트 최대 사용 비율 (%)'),
+  ('store_api_url', '"https://freecart.kr"', '테마/스킨 스토어 API URL'),
+  ('naver_client_id', '""', '네이버 소셜 로그인 Client ID')
+ON CONFLICT (key) DO NOTHING;
 
 -- =============================================================================
 -- END OF SCHEMA

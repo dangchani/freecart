@@ -3,7 +3,15 @@
  * freecart-web의 테마/스킨 스토어 API를 호출합니다.
  */
 
-const STORE_API_URL = import.meta.env.VITE_STORE_API_URL || 'http://localhost:3001';
+import { getSetting } from '@/services/settings';
+
+let _storeApiUrl: string | null = null;
+
+async function getStoreApiUrl(): Promise<string> {
+  if (_storeApiUrl) return _storeApiUrl;
+  _storeApiUrl = await getSetting('store_api_url', 'https://freecart.kr');
+  return _storeApiUrl;
+}
 
 interface Theme {
   id: string;
@@ -75,7 +83,7 @@ export async function getStoreThemes(params?: {
     if (params?.page) searchParams.set('page', String(params.page));
     if (params?.limit) searchParams.set('limit', String(params.limit));
 
-    const url = `${STORE_API_URL}/api/themes${searchParams.toString() ? '?' + searchParams.toString() : ''}`;
+    const url = `${await getStoreApiUrl()}/api/themes${searchParams.toString() ? '?' + searchParams.toString() : ''}`;
     const res = await fetch(url);
 
     if (!res.ok) {
@@ -91,7 +99,7 @@ export async function getStoreThemes(params?: {
 
 export async function getStoreTheme(themeId: string): Promise<StoreResponse<Theme>> {
   try {
-    const res = await fetch(`${STORE_API_URL}/api/themes/${themeId}`);
+    const res = await fetch(`${await getStoreApiUrl()}/api/themes/${themeId}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {
@@ -105,7 +113,7 @@ export async function purchaseTheme(
   accessToken: string
 ): Promise<StoreResponse<{ licenseKey: string }>> {
   try {
-    const res = await fetch(`${STORE_API_URL}/api/themes/${themeId}/purchase`, {
+    const res = await fetch(`${await getStoreApiUrl()}/api/themes/${themeId}/purchase`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -130,7 +138,7 @@ export async function verifyThemeLicense(
   domain: string
 ): Promise<StoreResponse<{ valid: boolean; theme?: Theme }>> {
   try {
-    const res = await fetch(`${STORE_API_URL}/api/internal/theme-licenses/verify`, {
+    const res = await fetch(`${await getStoreApiUrl()}/api/internal/theme-licenses/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ licenseKey, domain }),
@@ -167,7 +175,7 @@ export async function getStoreSkins(params?: {
     if (params?.page) searchParams.set('page', String(params.page));
     if (params?.limit) searchParams.set('limit', String(params.limit));
 
-    const url = `${STORE_API_URL}/api/skins${searchParams.toString() ? '?' + searchParams.toString() : ''}`;
+    const url = `${await getStoreApiUrl()}/api/skins${searchParams.toString() ? '?' + searchParams.toString() : ''}`;
     const res = await fetch(url);
 
     if (!res.ok) {
@@ -183,7 +191,7 @@ export async function getStoreSkins(params?: {
 
 export async function getStoreSkin(skinId: string): Promise<StoreResponse<Skin>> {
   try {
-    const res = await fetch(`${STORE_API_URL}/api/skins/${skinId}`);
+    const res = await fetch(`${await getStoreApiUrl()}/api/skins/${skinId}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (error) {
@@ -197,7 +205,7 @@ export async function purchaseSkin(
   accessToken: string
 ): Promise<StoreResponse<{ licenseKey: string }>> {
   try {
-    const res = await fetch(`${STORE_API_URL}/api/skins/${skinId}/purchase`, {
+    const res = await fetch(`${await getStoreApiUrl()}/api/skins/${skinId}/purchase`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -222,7 +230,7 @@ export async function verifySkinLicense(
   domain: string
 ): Promise<StoreResponse<{ valid: boolean; skin?: Skin }>> {
   try {
-    const res = await fetch(`${STORE_API_URL}/api/internal/skin-licenses/verify`, {
+    const res = await fetch(`${await getStoreApiUrl()}/api/internal/skin-licenses/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ licenseKey, domain }),

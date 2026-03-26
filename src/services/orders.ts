@@ -76,8 +76,11 @@ export async function createOrder(
 ): Promise<Order> {
   const supabase = createClient();
 
+  const { getShippingSettings } = await import('@/services/settings');
+  const { shippingFee: baseFee, freeShippingThreshold } = await getShippingSettings();
+
   const subtotal = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
-  const shippingFee = subtotal >= 50000 ? 0 : 3000;
+  const shippingFee = subtotal >= freeShippingThreshold ? 0 : baseFee;
   const couponDiscount = shippingInfo.couponDiscount || 0;
   const pointsUsed = shippingInfo.pointsUsed || 0;
   const totalAmount = subtotal + shippingFee - couponDiscount - pointsUsed;
