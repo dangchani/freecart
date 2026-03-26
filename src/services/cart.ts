@@ -2,13 +2,14 @@ import { createClient } from '@/lib/supabase/client';
 import type { CartItem } from '@/types';
 
 async function getOrCreateCart(supabase: any, userId: string): Promise<string> {
-  const { data: cart } = await supabase
+  // .single() 대신 .limit(1) 사용: 여러 cart가 존재해도 에러 없이 첫 번째 반환
+  const { data: carts } = await supabase
     .from('carts')
     .select('id')
     .eq('user_id', userId)
-    .single();
+    .limit(1);
 
-  if (cart) return cart.id;
+  if (carts && carts.length > 0) return carts[0].id;
 
   const { data: newCart, error } = await supabase
     .from('carts')

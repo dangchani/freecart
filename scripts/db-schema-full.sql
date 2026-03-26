@@ -574,7 +574,7 @@ CREATE INDEX IF NOT EXISTS idx_user_coupons_user_id ON user_coupons(user_id, is_
 -- 4.1 carts (장바구니)
 CREATE TABLE IF NOT EXISTS carts (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
+  user_id     UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
   session_id  VARCHAR(100),
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()

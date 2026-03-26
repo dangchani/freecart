@@ -38,7 +38,7 @@ export default function BoardDetailPage() {
   const navigate = useNavigate();
   const { slug } = useParams<{ slug: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [board, setBoard] = useState<Board | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [categories, setCategories] = useState<BoardCategory[]>([]);
@@ -148,8 +148,8 @@ export default function BoardDetailPage() {
     }
   }
 
-  // 글쓰기 권한 체크: write_level <= userLevel
-  const canWrite = board ? userLevel >= board.writeLevel : false;
+  // 글쓰기 권한 체크: admin은 항상 허용, 일반 유저는 write_level 비교
+  const canWrite = board ? (isAdmin || userLevel >= board.writeLevel) : false;
 
   if (loading) {
     return (
