@@ -164,9 +164,10 @@ export async function registerCouponByCode(userId: string, code: string): Promis
 /**
  * 쿠폰 사용 처리 (주문 완료 시 호출)
  */
-export async function useCoupon(userCouponId: string): Promise<void> {
+export async function useCoupon(userCouponId: string, orderId?: string): Promise<void> {
   const supabase = createClient();
 
+  // 사용 처리
   await supabase
     .from('user_coupons')
     .update({
@@ -175,4 +176,26 @@ export async function useCoupon(userCouponId: string): Promise<void> {
       status: 'used',
     })
     .eq('id', userCouponId);
+
+  // 사용 이력 기록
+  if (orderId) {
+    const { data: userCoupon } = await supabase
+      .from('user_coupons')
+      .select('user_id, coupon_id')
+      .eq('id', userCouponId)
+      .single();
+
+    if (userCoupon) {
+      await supabase.from('coupon_usages').insert({
+        user_coupon_id: userCouponId,
+        coupon_id: userCoupon.coupon_id,
+        user_id: userCoupon.user_id,
+        order_id: orderId,
+        used_at: new Date().toISOString(),
+      }).then(() => {
+        // 쿠폰 사용 횟수 증가
+        supabase.rpc('increment_coupon_used_count', { coupon_id_input: userCoupon.coupon_id });
+      });
+    }
+  }
 }

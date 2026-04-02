@@ -188,7 +188,7 @@ export async function getMyRefundRequests(userId: string): Promise<RefundRequest
       id, type, reason, reason_detail, amount, status, items, images,
       bank_name, bank_account, account_holder, tracking_number,
       created_at, approved_at, completed_at,
-      orders(id, order_number, orderer_name, orderer_email)
+      orders!inner(id, order_number, orderer_name, user_id)
     `)
     .eq('orders.user_id', userId)
     .order('created_at', { ascending: false });
@@ -207,7 +207,7 @@ export async function getMyRefundRequests(userId: string): Promise<RefundRequest
     items: r.items || [],
     images: r.images || [],
     customerName: r.orders.orderer_name,
-    customerEmail: r.orders.orderer_email,
+    customerEmail: r.orders.orderer_email || '',
     bankName: r.bank_name,
     bankAccount: r.bank_account,
     accountHolder: r.account_holder,
@@ -443,7 +443,7 @@ export async function canRequestRefund(orderId: string): Promise<{
   }
 
   // 상태 확인
-  const refundableStatuses = ['paid', 'preparing', 'shipping', 'delivered'];
+  const refundableStatuses = ['paid', 'processing', 'shipped', 'delivered'];
   if (!refundableStatuses.includes(order.status)) {
     return { canRefund: false, reason: '환불 가능한 주문 상태가 아닙니다.' };
   }

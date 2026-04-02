@@ -136,21 +136,7 @@ export async function earnPoints(
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + expiresInDays);
 
-  // 트랜잭션 처리
-  const { error: historyError } = await supabase.from('point_history').insert({
-    user_id: userId,
-    type: 'earn',
-    amount,
-    balance: newBalance,
-    description,
-    order_id: orderId,
-    expires_at: expiresAt.toISOString(),
-  });
-
-  if (historyError) {
-    return { success: false, error: '포인트 적립에 실패했습니다.' };
-  }
-
+  // 잔액 먼저 업데이트 (실패 시 이력 없이 종료)
   const { error: updateError } = await supabase
     .from('users')
     .update({ points: newBalance })
@@ -159,6 +145,17 @@ export async function earnPoints(
   if (updateError) {
     return { success: false, error: '포인트 업데이트에 실패했습니다.' };
   }
+
+  // 이력 기록 (잔액은 이미 반영됨)
+  await supabase.from('point_history').insert({
+    user_id: userId,
+    type: 'earn',
+    amount,
+    balance: newBalance,
+    description,
+    order_id: orderId,
+    expires_at: expiresAt.toISOString(),
+  });
 
   return { success: true };
 }

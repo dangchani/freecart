@@ -58,7 +58,11 @@ export async function requestKakaoPay(payment: EasyPayRequest): Promise<string> 
   });
 
   if (error) {
-    throw new Error(error.message);
+    throw new Error('카카오페이 결제 준비에 실패했습니다. 잠시 후 다시 시도해주세요.');
+  }
+
+  if (!data) {
+    throw new Error('카카오페이 응답이 없습니다.');
   }
 
   // 카카오페이 결제 준비 응답에서 redirect_url 반환

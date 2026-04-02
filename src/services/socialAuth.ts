@@ -27,8 +27,8 @@ export async function getSocialLoginUrl(provider: SocialProvider): Promise<strin
       oauthProvider = 'apple';
       break;
     case 'naver':
-      // 네이버는 Supabase에서 직접 지원하지 않으므로 커스텀 구현 필요
-      return getNaverLoginUrl();
+      // 네이버 로그인은 현재 준비 중 (naver-auth Edge Function 필요)
+      throw new Error('네이버 로그인은 현재 준비 중입니다.');
     default:
       throw new Error(`Unsupported provider: ${provider}`);
   }
@@ -60,9 +60,11 @@ async function getNaverLoginUrl(): Promise<string> {
   return `https://nid.naver.com/oauth2.0/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&state=${state}`;
 }
 
-// CSRF 방지용 state 생성
+// CSRF 방지용 state 생성 (crypto API 사용)
 function generateState(): string {
-  return Math.random().toString(36).substring(2) + Date.now().toString(36);
+  const array = new Uint8Array(24);
+  crypto.getRandomValues(array);
+  return Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 // 네이버 로그인 콜백 처리

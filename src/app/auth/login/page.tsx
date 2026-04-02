@@ -70,6 +70,12 @@ export default function LoginPage() {
             </Button>
 
             <div className="text-center text-sm">
+              <Link to="/auth/forgot-password" className="text-muted-foreground hover:underline">
+                비밀번호를 잊으셨나요?
+              </Link>
+            </div>
+
+            <div className="text-center text-sm">
               계정이 없으신가요?{' '}
               <Link to="/auth/signup" className="text-primary hover:underline">
                 회원가입

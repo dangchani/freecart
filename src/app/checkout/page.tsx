@@ -114,10 +114,7 @@ async function requestPayment(
     case 'kiwoom':
     case 'kcp':
     case 'nicepay': {
-      // 팝업/리다이렉트 방식 - 각 PG SDK 연동 필요
-      // 현재는 기본 구현 제공, 실제 SDK로 교체 필요
-      alert(`${pg.name} SDK가 아직 연동되지 않았습니다. PG사 개발 문서를 참고하세요.`);
-      break;
+      throw new Error(`${pg.name}은 현재 준비 중입니다. 다른 결제 수단을 선택해주세요.`);
     }
 
     default:

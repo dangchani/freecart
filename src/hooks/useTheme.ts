@@ -151,13 +151,13 @@ export function useTheme() {
       const supabase = createClient();
       const { data, error: dbError } = await supabase
         .from('installed_themes')
-        .select('id, slug, name, css_url, config')
+        .select('id, slug, name, config')
         .eq('is_active', true)
         .single();
 
       if (dbError) {
-        if (dbError.code === 'PGRST116') {
-          // 활성 테마 없음 - 정상
+        if (dbError.code === 'PGRST116' || dbError.code === '42703') {
+          // 활성 테마 없음 또는 컬럼 미존재 - 정상
           clearTheme();
           setActiveTheme(null);
           return;
@@ -170,7 +170,7 @@ export function useTheme() {
           id: data.id,
           slug: data.slug,
           name: data.name,
-          cssUrl: data.css_url,
+          cssUrl: (data as any).css_url || null,
           config: data.config,
         };
 

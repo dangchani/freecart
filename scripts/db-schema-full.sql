@@ -2091,7 +2091,6 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Trigger: auth.users에 새 유저 생성 시 실행
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();

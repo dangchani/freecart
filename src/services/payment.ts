@@ -51,6 +51,14 @@ export async function getActivePaymentGateway(): Promise<PaymentGatewayConfig | 
   };
 }
 
+// 클라이언트 SDK가 구현된 PG 목록
+const SUPPORTED_CLIENT_PG: PaymentProvider[] = ['toss', 'inicis'];
+
+// PG 클라이언트 SDK 지원 여부
+export function isPGClientSupported(provider: PaymentProvider): boolean {
+  return SUPPORTED_CLIENT_PG.includes(provider);
+}
+
 // 모든 PG 설정 가져오기
 export async function getAllPaymentGateways(): Promise<PaymentGatewayConfig[]> {
   const supabase = createClient();
@@ -227,7 +235,7 @@ export async function confirmPayment(
   });
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: '결제 확인 처리에 실패했습니다. 관리자에게 문의하세요.' };
   }
 
   return data as PaymentResult;
@@ -247,7 +255,7 @@ export async function cancelPayment(
   });
 
   if (error) {
-    return { success: false, error: error.message };
+    return { success: false, error: '결제 취소 처리에 실패했습니다. 관리자에게 문의하세요.' };
   }
 
   return data as PaymentResult;

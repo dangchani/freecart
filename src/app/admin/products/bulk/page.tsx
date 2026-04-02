@@ -295,6 +295,12 @@ export default function AdminProductsBulkPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // 파일 크기 제한 (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('파일 크기가 5MB를 초과합니다.');
+      return;
+    }
+
     setImportFileName(file.name);
 
     const reader = new FileReader();

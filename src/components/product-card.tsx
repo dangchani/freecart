@@ -24,6 +24,7 @@ export function ProductCard({ product }: ProductCardProps) {
             src={thumbnail}
             alt={product.name}
             className="h-full w-full object-cover transition-transform hover:scale-105"
+            onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }}
           />
           {hasDiscount && (
             <div className="absolute left-2 top-2 rounded-md bg-red-500 px-2 py-1 text-xs font-bold text-white">

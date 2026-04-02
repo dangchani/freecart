@@ -94,10 +94,32 @@ export async function createSubscription(params: {
     return { success: false, error: '상품을 찾을 수 없습니다.' };
   }
 
+  // variant 검증
+  let variantAdditionalPrice = 0;
+  if (params.variantId) {
+    const { data: variant } = await supabase
+      .from('product_variants')
+      .select('id, additional_price, stock_quantity, is_active')
+      .eq('id', params.variantId)
+      .single();
+
+    if (!variant) {
+      return { success: false, error: '선택한 옵션을 찾을 수 없습니다.' };
+    }
+    if (!variant.is_active) {
+      return { success: false, error: '선택한 옵션은 현재 판매 중지 상태입니다.' };
+    }
+    if (variant.stock_quantity < params.quantity) {
+      return { success: false, error: '선택한 옵션의 재고가 부족합니다.' };
+    }
+    variantAdditionalPrice = variant.additional_price || 0;
+  }
+
   // 정기구독 할인율 조회
   const subProduct = await getSubscriptionProduct(params.productId);
   const discountRate = subProduct?.discountRates[params.cycle] || 0;
-  const discountedPrice = Math.floor(product.sale_price * (1 - discountRate / 100)) * params.quantity;
+  const basePrice = (product.sale_price + variantAdditionalPrice) * params.quantity;
+  const discountedPrice = Math.floor(basePrice * (1 - discountRate / 100));
 
   // 첫 배송일 계산
   const startDate = params.startDate ? new Date(params.startDate) : new Date();
@@ -111,7 +133,7 @@ export async function createSubscription(params: {
       variant_id: params.variantId,
       quantity: params.quantity,
       cycle: params.cycle,
-      price: product.sale_price * params.quantity,
+      price: basePrice,
       discount_rate: discountRate,
       discounted_price: discountedPrice,
       status: 'active',

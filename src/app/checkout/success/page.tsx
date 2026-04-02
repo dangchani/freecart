@@ -43,7 +43,7 @@ function SuccessContent() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({ paymentKey, orderId, amount: parseInt(amount!) }),
+        body: JSON.stringify({ paymentKey, orderId, amount: parseInt(amount || '0', 10) }),
       });
 
       const result = await res.json();

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { createClient } from '@/lib/supabase/client';
 import type { Product } from '@/types';
 
 interface CartItem {
@@ -16,6 +17,7 @@ interface CartStore {
   clearCart: () => void;
   getTotal: () => number;
   getItemCount: () => number;
+  syncToServer: (userId: string) => Promise<void>;
 }
 
 export const useCartStore = create<CartStore>()(
@@ -74,6 +76,39 @@ export const useCartStore = create<CartStore>()(
 
       getItemCount: () => {
         return get().items.reduce((count, item) => count + item.quantity, 0);
+      },
+
+      syncToServer: async (userId: string) => {
+        const items = get().items;
+        if (items.length === 0) return;
+
+        const supabase = createClient();
+
+        for (const item of items) {
+          const { data: existing } = await supabase
+            .from('cart_items')
+            .select('id, quantity')
+            .eq('user_id', userId)
+            .eq('product_id', item.product.id)
+            .maybeSingle();
+
+          if (existing) {
+            await supabase
+              .from('cart_items')
+              .update({ quantity: existing.quantity + item.quantity })
+              .eq('id', existing.id);
+          } else {
+            await supabase.from('cart_items').insert({
+              user_id: userId,
+              product_id: item.product.id,
+              quantity: item.quantity,
+              options: item.options || null,
+            });
+          }
+        }
+
+        // 로컬 카트 비우기 (DB가 source of truth)
+        set({ items: [] });
       },
     }),
     {

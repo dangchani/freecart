@@ -5,30 +5,44 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/utils';
 import { getCart, updateCartItem, removeFromCart } from '@/services/cart';
+import { getShippingSettings } from '@/services/settings';
 import { useAuth } from '@/hooks/useAuth';
+import { useCartStore } from '@/store/cart';
 import type { CartItem } from '@/types';
 
 export default function CartPage() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
+  const localCart = useCartStore();
   const [items, setItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [shippingConfig, setShippingConfig] = useState({ shippingFee: 3000, freeShippingThreshold: 50000 });
+  const isGuest = !user;
 
   useEffect(() => {
     if (!authLoading) {
-      if (!user) {
-        navigate('/auth/login');
-        return;
-      }
       loadCart();
     }
-  }, [user, authLoading, navigate]);
+  }, [user, authLoading]);
 
   async function loadCart() {
     try {
-      if (!user) return;
-      const cartItems = await getCart(user.id);
-      setItems(cartItems);
+      const shipping = await getShippingSettings();
+      setShippingConfig(shipping);
+
+      if (user) {
+        // 로그인 사용자: DB에서 장바구니 로드
+        const cartItems = await getCart(user.id);
+        setItems(cartItems);
+      } else {
+        // 비로그인: Zustand 로컬 장바구니 사용
+        setItems(localCart.items.map((item, idx) => ({
+          id: `local-${idx}`,
+          productId: item.product.id,
+          quantity: item.quantity,
+          product: item.product,
+        } as any)));
+      }
     } catch (error) {
       console.error('Failed to load cart:', error);
     } finally {
@@ -38,8 +52,14 @@ export default function CartPage() {
 
   async function handleUpdateQuantity(itemId: string, quantity: number) {
     try {
-      await updateCartItem(itemId, quantity);
-      await loadCart();
+      if (isGuest) {
+        const item = items.find(i => i.id === itemId);
+        if (item) localCart.updateQuantity(item.productId, quantity);
+        await loadCart();
+      } else {
+        await updateCartItem(itemId, quantity);
+        await loadCart();
+      }
     } catch (error) {
       console.error('Failed to update quantity:', error);
     }
@@ -47,8 +67,14 @@ export default function CartPage() {
 
   async function handleRemove(itemId: string) {
     try {
-      await removeFromCart(itemId);
-      await loadCart();
+      if (isGuest) {
+        const item = items.find(i => i.id === itemId);
+        if (item) localCart.removeItem(item.productId);
+        await loadCart();
+      } else {
+        await removeFromCart(itemId);
+        await loadCart();
+      }
     } catch (error) {
       console.error('Failed to remove item:', error);
     }
@@ -62,7 +88,7 @@ export default function CartPage() {
     (sum, item) => sum + (item.product?.salePrice || 0) * item.quantity,
     0
   );
-  const shippingCost = subtotal >= 50000 ? 0 : 3000;
+  const shippingCost = subtotal >= shippingConfig.freeShippingThreshold ? 0 : shippingConfig.shippingFee;
   const total = subtotal + shippingCost;
 
   return (

@@ -104,18 +104,28 @@ export default function SetupPage() {
       setDbStatus('creating_admin');
       setDbMessage('관리자 계정 생성 중...');
 
+      // user_metadata에 role: admin을 넘기면 트리거가 자동으로 admin 계정 생성
       const { data: authData, error: authError } = await adminSupabase.auth.admin.createUser({
         email: ADMIN_EMAIL,
         password: ADMIN_PASSWORD,
         email_confirm: true,
+        user_metadata: { name: ADMIN_NAME, role: 'admin' },
       });
 
       if (authError) throw authError;
 
-      // profiles 트리거가 자동 생성하지만, role을 admin으로 업데이트
-      // 트리거 실행 대기
-      await new Promise((r) => setTimeout(r, 1000));
+      // 트리거가 users 테이블에 레코드를 생성할 때까지 대기
+      await new Promise((r) => setTimeout(r, 2000));
 
+      // 기본 회원 등급 조회
+      const { data: defaultLevel } = await adminSupabase
+        .from('user_levels')
+        .select('id')
+        .order('level', { ascending: true })
+        .limit(1)
+        .single();
+
+      // role이 admin으로 설정되었는지 확인하고, 안 되어 있으면 업데이트
       const { error: profileError } = await adminSupabase
         .from('users')
         .upsert({
@@ -123,6 +133,7 @@ export default function SetupPage() {
           email: ADMIN_EMAIL,
           name: ADMIN_NAME,
           role: 'admin',
+          level_id: defaultLevel?.id,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });

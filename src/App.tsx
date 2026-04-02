@@ -14,6 +14,7 @@ import LoginPage from './app/auth/login/page';
 import SignupPage from './app/auth/signup/page';
 import ForgotPasswordPage from './app/auth/forgot-password/page';
 import ResetPasswordPage from './app/auth/reset-password/page';
+import AuthCallbackPage from './app/auth/callback/page';
 
 // Products
 import ProductsPage from './app/products/page';
@@ -154,6 +155,7 @@ export default function App() {
           <Route path="/auth/signup" element={<SignupPage />} />
           <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
           {/* 상품 */}
           <Route path="/products" element={<ProductsPage />} />

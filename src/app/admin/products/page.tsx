@@ -414,6 +414,12 @@ export default function AdminProductsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // 파일 크기 제한 (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      alert('파일 크기가 5MB를 초과합니다.');
+      return;
+    }
+
     try {
       setImporting(true);
       const text = await file.text();
@@ -421,6 +427,12 @@ export default function AdminProductsPage() {
 
       if (lines.length < 2) {
         alert('유효한 데이터가 없습니다.');
+        return;
+      }
+
+      // 최대 행 수 제한 (1000행)
+      if (lines.length > 1001) {
+        alert('한 번에 최대 1,000개 상품만 가져올 수 있습니다.');
         return;
       }
 

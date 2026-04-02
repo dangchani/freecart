@@ -27,7 +27,7 @@ export interface UserAddress {
   name: string;
   recipientName: string;
   phone: string;
-  zipcode: string;
+  postalCode: string;
   address1: string;
   address2?: string;
   isDefault: boolean;
@@ -60,7 +60,7 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
   // 배송지 목록
   const { data: addresses } = await supabase
     .from('user_addresses')
-    .select('id, name, recipient_name, phone, zipcode, address1, address2, is_default')
+    .select('id, name, recipient_name, phone, postal_code, address1, address2, is_default')
     .eq('user_id', userId)
     .order('is_default', { ascending: false });
 
@@ -103,7 +103,7 @@ export async function getUserProfile(userId: string): Promise<UserProfile | null
       name: a.name,
       recipientName: a.recipient_name,
       phone: a.phone,
-      zipcode: a.zipcode,
+      postalCode: a.postal_code,
       address1: a.address1,
       address2: a.address2,
       isDefault: a.is_default,
@@ -201,7 +201,7 @@ export async function addAddress(
       name: address.name,
       recipient_name: address.recipientName,
       phone: address.phone,
-      zipcode: address.zipcode,
+      postal_code: address.postalCode,
       address1: address.address1,
       address2: address.address2,
       is_default: address.isDefault,
@@ -237,7 +237,7 @@ export async function updateAddress(
       name: address.name,
       recipient_name: address.recipientName,
       phone: address.phone,
-      zipcode: address.zipcode,
+      postal_code: address.postalCode,
       address1: address.address1,
       address2: address.address2,
       is_default: address.isDefault,

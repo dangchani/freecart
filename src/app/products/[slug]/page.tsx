@@ -9,6 +9,7 @@ import {
   type ProductVariant,
 } from '@/services/products';
 import { addToCart } from '@/services/cart';
+import { useCartStore } from '@/store/cart';
 import {
   getUserLevel,
   getProductLevelPrices,
@@ -280,7 +281,6 @@ export default function ProductDetailPage() {
 
   async function handleAddToCart() {
     if (!product) return;
-    if (!user) { navigate('/auth/login'); return; }
 
     // 옵션 상품인 경우 variant 선택 필수
     if (product.hasOptions && options.length > 0 && !selectedVariant) {
@@ -290,7 +290,13 @@ export default function ProductDetailPage() {
 
     setCartLoading(true);
     try {
-      await addToCart(user.id, product.id, quantity, selectedVariant?.id);
+      if (user) {
+        // 로그인 사용자: DB 장바구니
+        await addToCart(user.id, product.id, quantity, selectedVariant?.id);
+      } else {
+        // 비로그인: 로컬 장바구니 (Zustand)
+        useCartStore.getState().addItem(product as any, quantity);
+      }
       showToast('장바구니에 담겼습니다!', 'success');
     } catch {
       showToast('장바구니 담기 중 오류가 발생했습니다.', 'error');
@@ -340,7 +346,6 @@ export default function ProductDetailPage() {
 
   async function handleBuyNow() {
     if (!product) return;
-    if (!user) { navigate('/auth/login'); return; }
 
     // 옵션 상품인 경우 variant 선택 필수
     if (product.hasOptions && options.length > 0 && !selectedVariant) {
@@ -350,7 +355,13 @@ export default function ProductDetailPage() {
 
     setBuyLoading(true);
     try {
-      await addToCart(user.id, product.id, quantity, selectedVariant?.id);
+      if (user) {
+        await addToCart(user.id, product.id, quantity, selectedVariant?.id);
+      } else {
+        useCartStore.getState().addItem(product as any, quantity);
+      }
+      // 바로 구매는 로그인 필요 (결제를 위해)
+      if (!user) { navigate('/auth/login'); return; }
       navigate('/checkout');
     } catch {
       showToast('오류가 발생했습니다.', 'error');
@@ -478,7 +489,7 @@ export default function ProductDetailPage() {
 
       <div className="grid gap-8 md:grid-cols-2">
         <div className="relative aspect-square overflow-hidden rounded-lg bg-gray-100">
-          <img src={imageUrl} alt={product.name} className="h-full w-full object-cover" />
+          <img src={imageUrl} alt={product.name} className="h-full w-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }} />
           {isSoldOut && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/40">
               <span className="rounded-lg bg-black/70 px-6 py-2 text-lg font-bold text-white">품절</span>
