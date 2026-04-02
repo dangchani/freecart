@@ -75,7 +75,7 @@ export async function requestNaverPay(payment: EasyPayRequest): Promise<void> {
   }
 
   const oPay = naverPay.create({
-    mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
+    mode: import.meta.env.PROD ? 'production' : 'development',
     clientId: await getNaverPayClientId(),
     chainId: await getNaverPayChainId(),
   });
