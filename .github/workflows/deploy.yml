@@ -9,13 +9,15 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     name: Build & Deploy
+    # 시크릿이 설정되지 않은 초기 커밋은 건너뜀
+    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
