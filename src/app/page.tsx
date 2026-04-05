@@ -239,7 +239,7 @@ export default function HomePage() {
               🎉 신규 회원 가입 시 10% 할인 쿠폰 증정
             </span>
             <h1 className="text-4xl md:text-6xl font-extrabold mb-6 leading-tight">
-              더 나은 쇼핑 경험,
+              대신 더 나은 쇼핑 경험!
               <br />
               <span className="text-yellow-300">Freecart</span>
             </h1>
