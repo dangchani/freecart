@@ -52,7 +52,7 @@ async function loadActivePG(): Promise<ActivePG | null> {
       .from('payment_gateways')
       .select('provider, name, client_key')
       .eq('is_active', true)
-      .single();
+      .maybeSingle();
 
     if (!data) return null;
     return { provider: data.provider, name: data.name, clientKey: data.client_key || '' };
@@ -194,12 +194,16 @@ export default function CheckoutPage() {
       }
       Promise.all([
         loadCart(),
-        loadActivePG().then((pg) => {
-          if (!pg) setPgError(true);
-          else { setActivePG(pg); setPaymentMethod('pg'); }
-        }),
-        getBankTransferSettings().then((bt) => {
-          if (bt.enabled) setBankTransfer(bt);
+        Promise.all([
+          loadActivePG(),
+          getBankTransferSettings(),
+        ]).then(([pg, bt]) => {
+          if (pg) { setActivePG(pg); setPaymentMethod('pg'); }
+          if (bt.enabled) {
+            setBankTransfer(bt);
+            if (!pg) setPaymentMethod('bank_transfer');
+          }
+          if (!pg && !bt.enabled) setPgError(true);
         }),
         loadCoupons(),
         loadPoints(),

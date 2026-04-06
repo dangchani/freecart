@@ -15,13 +15,11 @@ export interface PointsHistory {
 export async function getUserPoints(userId: string): Promise<number> {
   const supabase = createClient();
 
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from('users')
     .select('points')
     .eq('id', userId)
-    .single();
-
-  if (error) throw error;
+    .maybeSingle();
 
   return data?.points || 0;
 }

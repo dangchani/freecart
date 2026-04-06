@@ -2061,15 +2061,57 @@ CREATE POLICY "cart_items_own" ON cart_items
     cart_id IN (SELECT id FROM carts WHERE user_id::text = auth.uid()::text)
   );
 
--- orders: users view their own orders
+-- orders: users view/insert their own orders; admins manage all
 DROP POLICY IF EXISTS "orders_read_own" ON orders;
 CREATE POLICY "orders_read_own" ON orders
-  FOR SELECT USING (auth.uid()::text = user_id::text);
+  FOR SELECT USING (
+    auth.uid()::text = user_id::text
+    OR EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'super_admin'))
+  );
 
--- order_items: users view items in their own orders
+DROP POLICY IF EXISTS "orders_insert_own" ON orders;
+CREATE POLICY "orders_insert_own" ON orders
+  FOR INSERT WITH CHECK (auth.uid()::text = user_id::text);
+
+DROP POLICY IF EXISTS "orders_update_admin" ON orders;
+CREATE POLICY "orders_update_admin" ON orders
+  FOR UPDATE USING (
+    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'super_admin'))
+  );
+
+DROP POLICY IF EXISTS "orders_update_own" ON orders;
+CREATE POLICY "orders_update_own" ON orders
+  FOR UPDATE USING (auth.uid()::text = user_id::text)
+  WITH CHECK (auth.uid()::text = user_id::text);
+
+-- shipments: 관리자 전체 관리, 사용자는 자신 주문의 배송정보 조회
+DROP POLICY IF EXISTS "shipments_read_own" ON shipments;
+CREATE POLICY "shipments_read_own" ON shipments
+  FOR SELECT USING (
+    order_id IN (SELECT id FROM orders WHERE user_id::text = auth.uid()::text)
+    OR EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'super_admin'))
+  );
+
+DROP POLICY IF EXISTS "shipments_manage_admin" ON shipments;
+CREATE POLICY "shipments_manage_admin" ON shipments
+  FOR ALL USING (
+    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'super_admin'))
+  ) WITH CHECK (
+    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'super_admin'))
+  );
+
+-- order_items: users view/insert items in their own orders
 DROP POLICY IF EXISTS "order_items_read_own" ON order_items;
 CREATE POLICY "order_items_read_own" ON order_items
   FOR SELECT USING (
+    order_id IN (
+      SELECT id FROM orders WHERE user_id::text = auth.uid()::text
+    )
+  );
+
+DROP POLICY IF EXISTS "order_items_insert_own" ON order_items;
+CREATE POLICY "order_items_insert_own" ON order_items
+  FOR INSERT WITH CHECK (
     order_id IN (
       SELECT id FROM orders WHERE user_id::text = auth.uid()::text
     )
@@ -2305,6 +2347,20 @@ CREATE TRIGGER trg_user_preferences_updated_at
 -- SEED DATA: 기본 데이터
 -- =============================================================================
 
+-- 기본 택배사 목록
+INSERT INTO shipping_companies (name, code, tracking_url, is_active, sort_order) VALUES
+  ('CJ대한통운',   'cj',       'https://trace.cjlogistics.com/web/detail.jsp?slipno={tracking_number}',     true, 1),
+  ('한진택배',     'hanjin',   'https://www.hanjin.com/kor/CMS/DeliveryMgr/WaybillResult.do?mCode=MN038&schLang=KR&wblnumList={tracking_number}', true, 2),
+  ('롯데택배',     'lotte',    'https://www.lotteglogis.com/home/reservation/tracking/linkView?InvNo={tracking_number}', true, 3),
+  ('우체국택배',   'epost',    'https://service.epost.go.kr/trace.RetrieveEmsRiaList.retrieveEmsRiaList.comm?sid1={tracking_number}', true, 4),
+  ('로젠택배',     'logen',    'https://www.ilogen.com/web/personal/trace/{tracking_number}',                true, 5),
+  ('경동택배',     'kdexp',    'https://kdexp.com/newDeliverySearch.kd?barcode={tracking_number}',          true, 6),
+  ('대신택배',     'daeshin',  'https://www.ds3211.co.kr/freight/internalFreightSearch.ht?billno={tracking_number}', true, 7),
+  ('일양로지스',   'ilyang',   'https://www.ilyanglogis.com/functionality/tracking_result.asp?hawb_no={tracking_number}', true, 8),
+  ('GSPostbox',   'gspostbox', 'https://www.gspostbox.kr/contents/inquiry/search.do?delivery_no={tracking_number}', true, 9),
+  ('쿠팡로켓배송', 'coupang',  '',                                                                          true, 10)
+ON CONFLICT (code) DO NOTHING;
+
 -- 기본 회원 등급
 INSERT INTO user_levels (level, name, is_default, description)
 VALUES (1, '일반회원', true, '기본 회원 등급')
@@ -2333,6 +2389,8 @@ INSERT INTO settings (key, value, description) VALUES
   ('company_email', '""', '대표 이메일'),
   ('company_business_number', '""', '사업자등록번호'),
   ('github_url', '""', 'GitHub 저장소 URL'),
+  ('site_url', '""', '배포된 사이트 URL (Cloudflare Pages)'),
+  ('installed_at', '""', '최초 설치 일시'),
   ('shipping_fee', '3000', '기본 배송비 (원)'),
   ('free_shipping_threshold', '50000', '무료배송 기준금액 (원)'),
   ('point_earn_rate', '1', '기본 포인트 적립률 (%)'),
@@ -2409,6 +2467,26 @@ END;
 $$;
 
 -- =============================================================================
+-- AUTH USERS SYNC
+-- auth.users에 이미 존재하는 유저를 public.users에 동기화
+-- (DB 초기화 후 기존 계정 복구용 - on_auth_user_created 트리거 미실행 보완)
+-- =============================================================================
+
+INSERT INTO public.users (id, email, name, role, level_id, created_at, updated_at)
+SELECT
+  au.id,
+  au.email,
+  COALESCE(au.raw_user_meta_data->>'name', split_part(au.email, '@', 1)),
+  COALESCE(au.raw_user_meta_data->>'role', 'user'),
+  (SELECT id FROM public.user_levels ORDER BY level ASC LIMIT 1),
+  au.created_at,
+  NOW()
+FROM auth.users au
+LEFT JOIN public.users pu ON pu.id = au.id
+WHERE pu.id IS NULL
+ON CONFLICT (id) DO NOTHING;
+
+-- =============================================================================
 -- STORAGE BUCKETS
 -- =============================================================================
 
@@ -2433,6 +2511,154 @@ CREATE POLICY "products_storage_insert" ON storage.objects
 
 CREATE POLICY "products_storage_delete" ON storage.objects
   FOR DELETE USING (bucket_id = 'products' AND auth.role() = 'authenticated');
+
+-- =============================================================================
+-- SEED DATA: 기본 카테고리 / 브랜드 / 상품
+-- =============================================================================
+
+-- 상위 카테고리
+INSERT INTO product_categories (id, parent_id, name, slug, description, depth, sort_order, is_visible) VALUES
+  ('00000000-0000-0000-0000-000000000101', NULL, '의류',     'clothing',     '남성/여성 의류 전체',    0, 1, true),
+  ('00000000-0000-0000-0000-000000000102', NULL, '식품',     'food',          '신선식품·가공식품',     0, 2, true),
+  ('00000000-0000-0000-0000-000000000103', NULL, '전자제품', 'electronics',  '스마트폰·노트북·가전', 0, 3, true),
+  ('00000000-0000-0000-0000-000000000104', NULL, '생활용품', 'living',       '홈·주방·욕실 용품',    0, 4, true),
+  ('00000000-0000-0000-0000-000000000105', NULL, '스포츠',   'sports',       '운동·레저 용품',        0, 5, true)
+ON CONFLICT (id) DO NOTHING;
+
+-- 하위 카테고리
+INSERT INTO product_categories (id, parent_id, name, slug, description, depth, sort_order, is_visible) VALUES
+  -- 의류
+  ('00000000-0000-0000-0000-000000000111', '00000000-0000-0000-0000-000000000101', '남성 의류', 'clothing-men',      '남성 티셔츠·바지·아우터',    1, 1, true),
+  ('00000000-0000-0000-0000-000000000112', '00000000-0000-0000-0000-000000000101', '여성 의류', 'clothing-women',    '여성 원피스·블라우스·재킷', 1, 2, true),
+  -- 식품
+  ('00000000-0000-0000-0000-000000000121', '00000000-0000-0000-0000-000000000102', '신선식품', 'food-fresh',         '채소·과일·수산물',           1, 1, true),
+  ('00000000-0000-0000-0000-000000000122', '00000000-0000-0000-0000-000000000102', '건강식품', 'food-health',        '비타민·홍삼·프로틴',         1, 2, true),
+  -- 전자제품
+  ('00000000-0000-0000-0000-000000000131', '00000000-0000-0000-0000-000000000103', '스마트폰·태블릿', 'electronics-mobile', '최신 모바일 기기',     1, 1, true),
+  ('00000000-0000-0000-0000-000000000132', '00000000-0000-0000-0000-000000000103', '노트북·PC',       'electronics-laptop', '노트북·데스크탑',      1, 2, true),
+  ('00000000-0000-0000-0000-000000000133', '00000000-0000-0000-0000-000000000103', '음향·영상',       'electronics-av',     '이어폰·스피커·TV',     1, 3, true),
+  -- 생활용품
+  ('00000000-0000-0000-0000-000000000141', '00000000-0000-0000-0000-000000000104', '주방용품', 'living-kitchen',     '조리도구·식기',              1, 1, true),
+  ('00000000-0000-0000-0000-000000000142', '00000000-0000-0000-0000-000000000104', '청소·세탁', 'living-cleaning',   '세제·청소기·걸레',           1, 2, true),
+  -- 스포츠
+  ('00000000-0000-0000-0000-000000000151', '00000000-0000-0000-0000-000000000105', '헬스·요가', 'sports-fitness',    '운동기구·요가매트',          1, 1, true),
+  ('00000000-0000-0000-0000-000000000152', '00000000-0000-0000-0000-000000000105', '아웃도어',  'sports-outdoor',    '등산·캠핑 장비',             1, 2, true)
+ON CONFLICT (id) DO NOTHING;
+
+-- 브랜드
+INSERT INTO product_brands (id, name, slug, description, is_visible) VALUES
+  ('00000000-0000-0000-0000-000000000201', '프리카트 오리지널', 'freecart-original', '프리카트 자체 브랜드',       true),
+  ('00000000-0000-0000-0000-000000000202', '네이처핏',          'naturefit',         '친환경 라이프스타일 브랜드', true),
+  ('00000000-0000-0000-0000-000000000203', '테크스타',           'techstar',          '혁신적인 전자제품 브랜드',   true),
+  ('00000000-0000-0000-0000-000000000204', '홈앤라이프',         'homnlife',          '생활용품 전문 브랜드',       true)
+ON CONFLICT (id) DO NOTHING;
+
+-- 샘플 상품 (12개)
+INSERT INTO products (
+  id, category_id, brand_id, name, slug,
+  description, regular_price, sale_price,
+  stock_quantity, status,
+  is_featured, is_new, is_best, is_sale,
+  has_options, shipping_type
+) VALUES
+  -- 의류 > 남성
+  ('00000000-0000-0000-0000-000000000301',
+   '00000000-0000-0000-0000-000000000111', '00000000-0000-0000-0000-000000000201',
+   '베이직 크루넥 티셔츠', 'basic-crewneck-tshirt',
+   '사계절 활용 가능한 기본 크루넥 티셔츠입니다. 부드러운 면 소재로 편안한 착용감을 드립니다.',
+   29000, 19900, 100, 'active', true, true, false, true, true, 'standard'),
+
+  ('00000000-0000-0000-0000-000000000302',
+   '00000000-0000-0000-0000-000000000111', '00000000-0000-0000-0000-000000000201',
+   '슬림핏 치노 팬츠', 'slim-chino-pants',
+   '깔끔한 슬림핏 치노 팬츠. 오피스룩부터 캐주얼까지 다양하게 매칭 가능합니다.',
+   59000, 49000, 80, 'active', false, true, false, true, true, 'standard'),
+
+  -- 의류 > 여성
+  ('00000000-0000-0000-0000-000000000303',
+   '00000000-0000-0000-0000-000000000112', '00000000-0000-0000-0000-000000000201',
+   '플로럴 미디 원피스', 'floral-midi-dress',
+   '화사한 플로럴 패턴의 미디 원피스. 봄·여름 데이리룩으로 완벽합니다.',
+   79000, 65000, 60, 'active', true, true, true, true, true, 'standard'),
+
+  -- 식품 > 신선
+  ('00000000-0000-0000-0000-000000000304',
+   '00000000-0000-0000-0000-000000000121', '00000000-0000-0000-0000-000000000202',
+   '유기농 제주 감귤 2kg', 'organic-jeju-tangerine-2kg',
+   '제주도에서 직배송하는 달콤한 유기농 감귤입니다. 무농약 인증 제품.',
+   18000, 18000, 200, 'active', true, false, true, false, false, 'cold_chain'),
+
+  ('00000000-0000-0000-0000-000000000305',
+   '00000000-0000-0000-0000-000000000121', '00000000-0000-0000-0000-000000000202',
+   '국내산 한우 불고기용 500g', 'korean-beef-bulgogi-500g',
+   '1++ 등급 국내산 한우 불고기용. 냉장 상태 직배송.',
+   35000, 35000, 50, 'active', false, false, true, false, false, 'cold_chain'),
+
+  -- 식품 > 건강
+  ('00000000-0000-0000-0000-000000000306',
+   '00000000-0000-0000-0000-000000000122', '00000000-0000-0000-0000-000000000202',
+   '6년근 홍삼정 에브리데이 30포', 'red-ginseng-everyday-30p',
+   '6년근 홍삼만을 사용한 고농축 홍삼정. 하루 1포로 간편하게 섭취.',
+   89000, 69000, 300, 'active', true, false, true, true, false, 'standard'),
+
+  -- 전자제품 > 모바일
+  ('00000000-0000-0000-0000-000000000307',
+   '00000000-0000-0000-0000-000000000131', '00000000-0000-0000-0000-000000000203',
+   '스마트폰 무선충전 패드', 'wireless-charging-pad',
+   'Qi 규격 호환 고속 무선충전 패드. 최대 15W 고속충전 지원.',
+   35000, 25000, 150, 'active', false, true, false, true, false, 'standard'),
+
+  -- 전자제품 > 음향
+  ('00000000-0000-0000-0000-000000000308',
+   '00000000-0000-0000-0000-000000000133', '00000000-0000-0000-0000-000000000203',
+   '노이즈캔슬링 블루투스 이어폰', 'nc-bluetooth-earphones',
+   '능동형 노이즈캔슬링 탑재 무선 이어폰. 최대 30시간 재생 지원.',
+   129000, 99000, 75, 'active', true, true, true, true, true, 'standard'),
+
+  -- 전자제품 > 노트북
+  ('00000000-0000-0000-0000-000000000309',
+   '00000000-0000-0000-0000-000000000132', '00000000-0000-0000-0000-000000000203',
+   '울트라북 노트북 스탠드', 'ultrabook-laptop-stand',
+   '알루미늄 합금 노트북 스탠드. 높이 6단계 조절 가능, 방열 설계.',
+   45000, 38000, 120, 'active', false, true, false, true, false, 'standard'),
+
+  -- 생활용품 > 주방
+  ('00000000-0000-0000-0000-000000000310',
+   '00000000-0000-0000-0000-000000000141', '00000000-0000-0000-0000-000000000204',
+   '스테인리스 3중 바닥 냄비 세트', 'stainless-pot-set-3pcs',
+   '고급 스테인리스 3중 바닥 냄비 3종 세트. 인덕션 사용 가능.',
+   120000, 89000, 40, 'active', true, false, true, true, false, 'standard'),
+
+  -- 생활용품 > 청소
+  ('00000000-0000-0000-0000-000000000311',
+   '00000000-0000-0000-0000-000000000142', '00000000-0000-0000-0000-000000000204',
+   '천연 유래 주방 세제 1L', 'natural-dish-soap-1l',
+   '식물성 원료 100% 천연 유래 주방 세제. 안심하고 사용할 수 있는 친환경 제품.',
+   12000, 12000, 500, 'active', false, false, false, false, false, 'standard'),
+
+  -- 스포츠 > 헬스
+  ('00000000-0000-0000-0000-000000000312',
+   '00000000-0000-0000-0000-000000000151', '00000000-0000-0000-0000-000000000202',
+   '프리미엄 TPE 요가매트 6mm', 'premium-tpe-yoga-mat-6mm',
+   '미끄럼 방지 TPE 소재 요가매트. 두께 6mm, 183x61cm. 친환경 소재.',
+   45000, 35000, 90, 'active', false, true, false, true, false, 'standard')
+ON CONFLICT (id) DO NOTHING;
+
+-- 상품 이미지 (대표 이미지 - picsum.photos 플레이스홀더 사용)
+INSERT INTO product_images (id, product_id, url, alt, is_primary, sort_order) VALUES
+  ('00000000-0000-0000-0000-000000000401', '00000000-0000-0000-0000-000000000301', 'https://picsum.photos/seed/tshirt/600/600',     '베이직 크루넥 티셔츠',         true, 0),
+  ('00000000-0000-0000-0000-000000000402', '00000000-0000-0000-0000-000000000302', 'https://picsum.photos/seed/pants/600/600',      '슬림핏 치노 팬츠',             true, 0),
+  ('00000000-0000-0000-0000-000000000403', '00000000-0000-0000-0000-000000000303', 'https://picsum.photos/seed/dress/600/600',      '플로럴 미디 원피스',           true, 0),
+  ('00000000-0000-0000-0000-000000000404', '00000000-0000-0000-0000-000000000304', 'https://picsum.photos/seed/tangerine/600/600',  '유기농 제주 감귤',             true, 0),
+  ('00000000-0000-0000-0000-000000000405', '00000000-0000-0000-0000-000000000305', 'https://picsum.photos/seed/beef/600/600',       '국내산 한우 불고기용',         true, 0),
+  ('00000000-0000-0000-0000-000000000406', '00000000-0000-0000-0000-000000000306', 'https://picsum.photos/seed/ginseng/600/600',    '6년근 홍삼정',                 true, 0),
+  ('00000000-0000-0000-0000-000000000407', '00000000-0000-0000-0000-000000000307', 'https://picsum.photos/seed/charger/600/600',    '스마트폰 무선충전 패드',       true, 0),
+  ('00000000-0000-0000-0000-000000000408', '00000000-0000-0000-0000-000000000308', 'https://picsum.photos/seed/earphones/600/600',  '노이즈캔슬링 블루투스 이어폰', true, 0),
+  ('00000000-0000-0000-0000-000000000409', '00000000-0000-0000-0000-000000000309', 'https://picsum.photos/seed/laptop/600/600',     '울트라북 노트북 스탠드',       true, 0),
+  ('00000000-0000-0000-0000-000000000410', '00000000-0000-0000-0000-000000000310', 'https://picsum.photos/seed/potset/600/600',     '스테인리스 냄비 세트',         true, 0),
+  ('00000000-0000-0000-0000-000000000411', '00000000-0000-0000-0000-000000000311', 'https://picsum.photos/seed/dishsoap/600/600',   '천연 주방 세제',               true, 0),
+  ('00000000-0000-0000-0000-000000000412', '00000000-0000-0000-0000-000000000312', 'https://picsum.photos/seed/yogamat/600/600',    '프리미엄 TPE 요가매트',        true, 0)
+ON CONFLICT (id) DO NOTHING;
 
 -- =============================================================================
 -- END OF SCHEMA
