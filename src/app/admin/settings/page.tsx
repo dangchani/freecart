@@ -31,6 +31,12 @@ interface Settings {
   // 외부 연동
   storeApiUrl: string;
   naverClientId: string;
+  // 무통장입금
+  bankTransferEnabled: string;
+  bankTransferBankName: string;
+  bankTransferAccountNumber: string;
+  bankTransferAccountHolder: string;
+  bankTransferDeadlineHours: string;
   // 이메일 / SMTP 설정
   supabaseAccessToken: string;
   emailConfirmRequired: string; // 'true' | 'false'
@@ -61,6 +67,11 @@ const defaultSettings: Settings = {
   pointsMaxUsagePercent: '',
   storeApiUrl: '',
   naverClientId: '',
+  bankTransferEnabled: 'false',
+  bankTransferBankName: '',
+  bankTransferAccountNumber: '',
+  bankTransferAccountHolder: '',
+  bankTransferDeadlineHours: '24',
   supabaseAccessToken: '',
   emailConfirmRequired: 'false',
   smtpHost: '',
@@ -91,6 +102,11 @@ const keyMap: Record<keyof Settings, string> = {
   pointsMaxUsagePercent: 'points_max_usage_percent',
   storeApiUrl: 'store_api_url',
   naverClientId: 'naver_client_id',
+  bankTransferEnabled: 'bank_transfer_enabled',
+  bankTransferBankName: 'bank_transfer_bank_name',
+  bankTransferAccountNumber: 'bank_transfer_account_number',
+  bankTransferAccountHolder: 'bank_transfer_account_holder',
+  bankTransferDeadlineHours: 'bank_transfer_deadline_hours',
   supabaseAccessToken: 'supabase_access_token',
   emailConfirmRequired: 'email_confirm_required',
   smtpHost: 'smtp_host',
@@ -388,6 +404,89 @@ export default function AdminSettingsPage() {
               <input type="text" name="naverClientId" value={settings.naverClientId} onChange={handleChange} placeholder="네이버 개발자센터에서 발급" className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               <p className="mt-1 text-xs text-gray-500">네이버 소셜 로그인용 클라이언트 ID</p>
             </div>
+          </div>
+        </Card>
+
+        {/* 무통장입금 설정 */}
+        <Card className="p-6">
+          <h2 className="mb-4 text-lg font-bold">무통장입금 설정</h2>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-md border p-4">
+              <div>
+                <p className="font-medium text-gray-800">무통장입금 사용</p>
+                <p className="mt-0.5 text-xs text-gray-500">PG사 없이 계좌이체로 주문 받기</p>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    bankTransferEnabled: prev.bankTransferEnabled === 'true' ? 'false' : 'true',
+                  }))
+                }
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+                  settings.bankTransferEnabled === 'true' ? 'bg-blue-600' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    settings.bankTransferEnabled === 'true' ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {settings.bankTransferEnabled === 'true' && (
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">은행명 *</label>
+                  <input
+                    type="text"
+                    name="bankTransferBankName"
+                    value={settings.bankTransferBankName}
+                    onChange={handleChange}
+                    className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="국민은행"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">계좌번호 *</label>
+                  <input
+                    type="text"
+                    name="bankTransferAccountNumber"
+                    value={settings.bankTransferAccountNumber}
+                    onChange={handleChange}
+                    className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="123-456-789012"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">예금주 *</label>
+                  <input
+                    type="text"
+                    name="bankTransferAccountHolder"
+                    value={settings.bankTransferAccountHolder}
+                    onChange={handleChange}
+                    className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="홍길동"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">입금 기한 (시간)</label>
+                  <input
+                    type="number"
+                    name="bankTransferDeadlineHours"
+                    value={settings.bankTransferDeadlineHours}
+                    onChange={handleChange}
+                    min="1"
+                    max="72"
+                    className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="24"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">주문 후 이 시간 안에 입금하지 않으면 자동 취소</p>
+                </div>
+              </div>
+            )}
           </div>
         </Card>
 

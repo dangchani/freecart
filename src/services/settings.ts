@@ -116,6 +116,23 @@ export async function getPointSettings(): Promise<{
 }
 
 /** 사이트 기본 정보 */
+export async function getBankTransferSettings(): Promise<{
+  enabled: boolean;
+  bankName: string;
+  accountNumber: string;
+  accountHolder: string;
+  depositDeadlineHours: number;
+}> {
+  await ensureLoaded();
+  return {
+    enabled: parseValue(cache['bank_transfer_enabled']) === 'true',
+    bankName: parseValue(cache['bank_transfer_bank_name']) || '',
+    accountNumber: parseValue(cache['bank_transfer_account_number']) || '',
+    accountHolder: parseValue(cache['bank_transfer_account_holder']) || '',
+    depositDeadlineHours: Number(parseValue(cache['bank_transfer_deadline_hours'])) || 24,
+  };
+}
+
 export async function getSiteInfo(): Promise<{
   siteName: string;
   siteDescription: string;

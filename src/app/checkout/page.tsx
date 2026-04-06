@@ -15,7 +15,7 @@ import { getUserPoints, validatePointsUsage, usePoints } from '@/services/points
 import { getUserAddresses, type UserAddress } from '@/services/addresses';
 import { useAuth } from '@/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
-import { getShippingSettings, getPointSettings } from '@/services/settings';
+import { getShippingSettings, getPointSettings, getBankTransferSettings } from '@/services/settings';
 import type { CartItem } from '@/types';
 import { Ticket, Coins, Check, X, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
 
@@ -24,6 +24,16 @@ interface ActivePG {
   name: string;
   clientKey: string;
 }
+
+interface BankTransferSettings {
+  enabled: boolean;
+  bankName: string;
+  accountNumber: string;
+  accountHolder: string;
+  depositDeadlineHours: number;
+}
+
+type PaymentMethod = 'pg' | 'bank_transfer';
 
 const checkoutSchema = z.object({
   recipientName: z.string().min(1, '수령인 이름을 입력해주세요'),
@@ -144,6 +154,8 @@ export default function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [activePG, setActivePG] = useState<ActivePG | null>(null);
   const [pgError, setPgError] = useState(false);
+  const [bankTransfer, setBankTransfer] = useState<BankTransferSettings | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('bank_transfer');
 
   // 쿠폰 관련 state
   const [userCoupons, setUserCoupons] = useState<UserCoupon[]>([]);
@@ -184,7 +196,10 @@ export default function CheckoutPage() {
         loadCart(),
         loadActivePG().then((pg) => {
           if (!pg) setPgError(true);
-          else setActivePG(pg);
+          else { setActivePG(pg); setPaymentMethod('pg'); }
+        }),
+        getBankTransferSettings().then((bt) => {
+          if (bt.enabled) setBankTransfer(bt);
         }),
         loadCoupons(),
         loadPoints(),
@@ -338,46 +353,48 @@ export default function CheckoutPage() {
   }
 
   async function onSubmit(data: CheckoutForm) {
-    if (!user || !activePG) return;
+    if (!user) return;
+    if (paymentMethod === 'pg' && !activePG) return;
+    if (paymentMethod === 'bank_transfer' && !bankTransfer) return;
 
     try {
       setSubmitting(true);
 
-      const order = await createOrder(
-        user.id,
-        items.map((item) => ({
-          productId: item.productId,
-          productName: item.product?.name || '',
-          quantity: item.quantity,
-          unitPrice: item.product?.salePrice || 0,
-        })),
-        {
-          ordererName: user.name,
-          ordererPhone: data.recipientPhone,
-          recipientName: data.recipientName,
-          recipientPhone: data.recipientPhone,
-          postalCode: data.postalCode,
-          address1: data.address,
-          shippingMessage: data.deliveryRequest,
-          // 쿠폰/포인트 정보 추가
-          couponId: selectedCoupon?.id,
-          couponDiscount,
-          pointsUsed: usePointsAmount,
-        },
-        activePG.name
-      );
+      const orderItems = items.map((item) => ({
+        productId: item.productId,
+        productName: item.product?.name || '',
+        quantity: item.quantity,
+        unitPrice: item.product?.salePrice || 0,
+      }));
 
-      // 쿠폰 사용 처리
-      if (selectedCoupon) {
-        await useCoupon(selectedCoupon.id);
+      const orderInfo = {
+        ordererName: user.name,
+        ordererPhone: data.recipientPhone,
+        recipientName: data.recipientName,
+        recipientPhone: data.recipientPhone,
+        postalCode: data.postalCode,
+        address1: data.address,
+        shippingMessage: data.deliveryRequest,
+        couponId: selectedCoupon?.id,
+        couponDiscount,
+        pointsUsed: usePointsAmount,
+      };
+
+      if (paymentMethod === 'bank_transfer') {
+        // 무통장: 즉시 주문 생성 → 입금 대기 페이지로 이동
+        const order = await createOrder(user.id, orderItems, orderInfo, '무통장입금');
+        if (selectedCoupon) await useCoupon(selectedCoupon.id);
+        if (usePointsAmount > 0) await usePoints(user.id, usePointsAmount, order.id, `주문 ${order.orderNumber} 포인트 사용`);
+        navigate(`/checkout/bank-transfer?orderId=${order.id}&orderNumber=${order.orderNumber}&amount=${total}`);
+        return;
       }
 
-      // 포인트 사용 처리
-      if (usePointsAmount > 0) {
-        await usePoints(user.id, usePointsAmount, order.id, `주문 ${order.orderNumber} 포인트 사용`);
-      }
+      // PG 결제
+      const order = await createOrder(user.id, orderItems, orderInfo, activePG!.name);
+      if (selectedCoupon) await useCoupon(selectedCoupon.id);
+      if (usePointsAmount > 0) await usePoints(user.id, usePointsAmount, order.id, `주문 ${order.orderNumber} 포인트 사용`);
 
-      await requestPayment(activePG, {
+      await requestPayment(activePG!, {
         amount: total,
         orderId: order.orderNumber,
         orderName: `${items[0].product?.name || '상품'}${items.length > 1 ? ` 외 ${items.length - 1}건` : ''}`,
@@ -704,7 +721,7 @@ export default function CheckoutPage() {
             </Card>
           </div>
 
-          {/* 결제 금액 */}
+          {/* 결제 금액 + 결제 수단 */}
           <div>
             <Card className="p-6 sticky top-4">
               <h2 className="mb-4 text-xl font-bold">결제 금액</h2>
@@ -743,13 +760,60 @@ export default function CheckoutPage() {
                 </p>
               )}
 
+              {/* 결제 수단 선택 */}
+              {(activePG || bankTransfer) && (
+                <div className="mt-6">
+                  <p className="mb-2 text-sm font-medium text-gray-700">결제 수단</p>
+                  <div className="grid gap-2">
+                    {activePG && (
+                      <label className={`flex cursor-pointer items-center gap-3 rounded-md border-2 p-3 transition-colors ${paymentMethod === 'pg' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
+                        <input type="radio" className="sr-only" checked={paymentMethod === 'pg'} onChange={() => setPaymentMethod('pg')} />
+                        <span className={`h-4 w-4 rounded-full border-2 flex-shrink-0 ${paymentMethod === 'pg' ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`} />
+                        <div>
+                          <p className="text-sm font-medium">{activePG.name}</p>
+                          <p className="text-xs text-gray-500">카드, 간편결제 등</p>
+                        </div>
+                      </label>
+                    )}
+                    {bankTransfer && (
+                      <label className={`flex cursor-pointer items-center gap-3 rounded-md border-2 p-3 transition-colors ${paymentMethod === 'bank_transfer' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}>
+                        <input type="radio" className="sr-only" checked={paymentMethod === 'bank_transfer'} onChange={() => setPaymentMethod('bank_transfer')} />
+                        <span className={`h-4 w-4 rounded-full border-2 flex-shrink-0 ${paymentMethod === 'bank_transfer' ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`} />
+                        <div>
+                          <p className="text-sm font-medium">무통장입금</p>
+                          <p className="text-xs text-gray-500">{bankTransfer.bankName} · {bankTransfer.accountHolder}</p>
+                        </div>
+                      </label>
+                    )}
+                  </div>
+
+                  {/* 무통장 선택 시 계좌 안내 */}
+                  {paymentMethod === 'bank_transfer' && bankTransfer && (
+                    <div className="mt-3 rounded-md bg-gray-50 p-3 text-sm">
+                      <p className="font-medium text-gray-700 mb-1">입금 계좌 정보</p>
+                      <p className="text-gray-600">{bankTransfer.bankName} {bankTransfer.accountNumber}</p>
+                      <p className="text-gray-600">예금주: {bankTransfer.accountHolder}</p>
+                      <p className="mt-1 text-xs text-orange-600">주문 후 {bankTransfer.depositDeadlineHours}시간 이내 입금 필요 (미입금 시 자동 취소)</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!activePG && !bankTransfer && (
+                <p className="mt-4 text-sm text-red-500">활성화된 결제 수단이 없습니다. 관리자에게 문의해주세요.</p>
+              )}
+
               <Button
                 type="submit"
                 className="mt-6 w-full"
                 size="lg"
-                disabled={submitting || pgError || !activePG}
+                disabled={submitting || (!activePG && !bankTransfer)}
               >
-                {submitting ? '처리 중...' : `${activePG?.name || 'PG'} 결제하기`}
+                {submitting
+                  ? '처리 중...'
+                  : paymentMethod === 'bank_transfer'
+                  ? '무통장입금 주문하기'
+                  : `${activePG?.name || 'PG'} 결제하기`}
               </Button>
 
               <p className="mt-4 text-center text-xs text-gray-500">

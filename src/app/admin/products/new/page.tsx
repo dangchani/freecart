@@ -72,7 +72,7 @@ const productSchema = z.object({
   weight: z.number().min(0).optional(),
 
   // 표시 설정
-  status: z.enum(['draft', 'active', 'inactive']).default('draft'),
+  status: z.enum(['draft', 'active', 'inactive']).default('active'),
   isFeatured: z.boolean().default(false),
   isNew: z.boolean().default(false),
   isBest: z.boolean().default(false),
@@ -140,7 +140,7 @@ export default function NewProductPage() {
   } = useForm<ProductForm>({
     resolver: zodResolver(productSchema),
     defaultValues: {
-      status: 'draft',
+      status: 'active',
       hasOptions: false,
       shippingType: 'default',
       stockAlertQuantity: 10,

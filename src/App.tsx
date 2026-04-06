@@ -18,6 +18,7 @@ import AuthCallbackPage from './app/auth/callback/page';
 
 // Products
 import ProductsPage from './app/products/page';
+import CategoryPage from './app/categories/[slug]/page';
 import ProductDetailPage from './app/products/[slug]/page';
 import ProductSearchPage from './app/products/search/page';
 import ProductComparePage from './app/products/compare/page';
@@ -28,6 +29,7 @@ import CartPage from './app/cart/page';
 import CheckoutPage from './app/checkout/page';
 import CheckoutSuccessPage from './app/checkout/success/page';
 import CheckoutFailPage from './app/checkout/fail/page';
+import BankTransferPage from './app/checkout/bank-transfer/page';
 
 // Mypage
 import MypageLayout from './app/mypage/layout';
@@ -140,7 +142,7 @@ function RequireAdmin() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ThemeProvider>
       <Routes>
         {/* 설정 페이지 */}
@@ -157,6 +159,9 @@ export default function App() {
           <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
+          {/* 카테고리 */}
+          <Route path="/categories/:slug" element={<CategoryPage />} />
+
           {/* 상품 */}
           <Route path="/products" element={<ProductsPage />} />
           <Route path="/products/search" element={<ProductSearchPage />} />
@@ -169,6 +174,7 @@ export default function App() {
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/checkout/success" element={<CheckoutSuccessPage />} />
           <Route path="/checkout/fail" element={<CheckoutFailPage />} />
+          <Route path="/checkout/bank-transfer" element={<BankTransferPage />} />
 
           {/* 게시판 */}
           <Route path="/boards" element={<BoardsPage />} />

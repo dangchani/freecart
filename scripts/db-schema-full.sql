@@ -362,16 +362,39 @@ CREATE TABLE IF NOT EXISTS product_images (
 
 CREATE INDEX IF NOT EXISTS idx_product_images_product_id ON product_images(product_id, sort_order);
 
--- 2.8 product_tags (상품 태그 - 별도 테이블 방식)
+-- 2.8 product_tags (태그 마스터)
 CREATE TABLE IF NOT EXISTS product_tags (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  product_id  UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  tag         VARCHAR(50) NOT NULL,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name       VARCHAR(50) NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_product_tags_product_id ON product_tags(product_id);
-CREATE INDEX IF NOT EXISTS idx_product_tags_tag        ON product_tags(tag);
+CREATE INDEX IF NOT EXISTS idx_product_tags_name ON product_tags(name);
+
+-- 2.8-1 product_tag_map (상품↔태그 매핑)
+CREATE TABLE IF NOT EXISTS product_tag_map (
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  tag_id     UUID NOT NULL REFERENCES product_tags(id) ON DELETE CASCADE,
+  PRIMARY KEY (product_id, tag_id)
+);
+
+-- 2.8-2 product_attributes (속성 마스터 - 예: 색상, 사이즈)
+CREATE TABLE IF NOT EXISTS product_attributes (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name       VARCHAR(100) NOT NULL UNIQUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 2.8-3 product_attribute_values (속성값 - 예: 빨강, L)
+CREATE TABLE IF NOT EXISTS product_attribute_values (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  attribute_id UUID NOT NULL REFERENCES product_attributes(id) ON DELETE CASCADE,
+  value        VARCHAR(100) NOT NULL,
+  sort_order   INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_attr_values_attr ON product_attribute_values(attribute_id);
 
 -- 2.9 product_related (관련 상품)
 CREATE TABLE IF NOT EXISTS product_related (
@@ -1985,15 +2008,19 @@ CREATE POLICY "user_coupons_read_own" ON user_coupons
 -- carts: users manage their own carts
 DROP POLICY IF EXISTS "carts_own" ON carts;
 CREATE POLICY "carts_own" ON carts
-  FOR ALL USING (auth.uid()::text = user_id::text);
+  FOR ALL
+  USING (auth.uid()::text = user_id::text)
+  WITH CHECK (auth.uid()::text = user_id::text);
 
 -- cart_items: users manage items in their own carts
 DROP POLICY IF EXISTS "cart_items_own" ON cart_items;
 CREATE POLICY "cart_items_own" ON cart_items
-  FOR ALL USING (
-    cart_id IN (
-      SELECT id FROM carts WHERE user_id::text = auth.uid()::text
-    )
+  FOR ALL
+  USING (
+    cart_id IN (SELECT id FROM carts WHERE user_id::text = auth.uid()::text)
+  )
+  WITH CHECK (
+    cart_id IN (SELECT id FROM carts WHERE user_id::text = auth.uid()::text)
   );
 
 -- orders: users view their own orders
@@ -2285,7 +2312,13 @@ INSERT INTO settings (key, value, description) VALUES
   ('smtp_user', '""', 'SMTP 사용자명'),
   ('smtp_pass', '""', 'SMTP 비밀번호 또는 API Key'),
   ('smtp_sender_name', '""', '발신자 이름'),
-  ('smtp_sender_email', '""', '발신자 이메일')
+  ('smtp_sender_email', '""', '발신자 이메일'),
+  -- 무통장입금 설정
+  ('bank_transfer_enabled', '"false"', '무통장입금 사용 여부'),
+  ('bank_transfer_bank_name', '""', '은행명'),
+  ('bank_transfer_account_number', '""', '계좌번호'),
+  ('bank_transfer_account_holder', '""', '예금주'),
+  ('bank_transfer_deadline_hours', '"24"', '입금 기한 (시간)')
 ON CONFLICT (key) DO NOTHING;
 
 -- =============================================================================
@@ -2336,6 +2369,32 @@ BEGIN
   RETURN new_id;
 END;
 $$;
+
+-- =============================================================================
+-- STORAGE BUCKETS
+-- =============================================================================
+
+-- 상품 이미지 버킷 (공개)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'products',
+  'products',
+  true,
+  10485760,  -- 10MB
+  ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- 상품 이미지 버킷 RLS: 누구나 조회 가능
+CREATE POLICY "products_storage_select" ON storage.objects
+  FOR SELECT USING (bucket_id = 'products');
+
+-- 상품 이미지 버킷 RLS: 인증된 사용자만 업로드/삭제
+CREATE POLICY "products_storage_insert" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'products' AND auth.role() = 'authenticated');
+
+CREATE POLICY "products_storage_delete" ON storage.objects
+  FOR DELETE USING (bucket_id = 'products' AND auth.role() = 'authenticated');
 
 -- =============================================================================
 -- END OF SCHEMA
