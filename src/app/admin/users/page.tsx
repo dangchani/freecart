@@ -8,6 +8,15 @@ import { Label } from '@/components/ui/label';
 import { format } from 'date-fns';
 import { Search, Plus, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+
+function createAdminClient() {
+  return createSupabaseClient(
+    import.meta.env.VITE_SUPABASE_URL,
+    import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  );
+}
 
 interface User {
   id: string;
@@ -54,7 +63,7 @@ export default function AdminUsersPage() {
   async function loadUsers() {
     try {
       setLoading(true);
-      const supabase = createClient();
+      const supabase = createAdminClient();
 
       let query = supabase
         .from('users')
@@ -95,7 +104,7 @@ export default function AdminUsersPage() {
     const action = currentlyBlocked ? '차단 해제' : '차단';
     if (!confirm(`해당 회원을 ${action}하시겠습니까?`)) return;
     try {
-      const supabase = createClient();
+      const supabase = createAdminClient();
       await supabase.from('users').update({ is_blocked: !currentlyBlocked }).eq('id', userId);
       await loadUsers();
     } catch (err) {
@@ -112,16 +121,15 @@ export default function AdminUsersPage() {
     setAddSubmitting(true);
     setAddError('');
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signUp({
-        email: addForm.email,
-        password: addForm.password,
-        options: {
-          data: { name: addForm.name, phone: addForm.phone },
-        },
+      const adminSupabase = createAdminClient();
+      const { error } = await adminSupabase.rpc('admin_create_user', {
+        p_email: addForm.email,
+        p_password: addForm.password,
+        p_name: addForm.name,
+        p_phone: addForm.phone || null,
       });
       if (error) throw error;
-      alert(`${addForm.name}(${addForm.email}) 회원이 생성되었습니다.\n이메일 인증 후 로그인이 가능합니다.`);
+      alert(`${addForm.name}(${addForm.email}) 회원이 생성되었습니다.`);
       setAddForm({ name: '', email: '', password: '', phone: '' });
       setShowAddModal(false);
       await loadUsers();
@@ -303,7 +311,7 @@ export default function AdminUsersPage() {
               )}
 
               <p className="text-xs text-gray-400">
-                * 생성 후 해당 이메일로 인증 메일이 발송됩니다. 이메일 인증 완료 시 로그인 가능합니다.
+                * 회원이 즉시 생성되며 별도 이메일 인증 없이 바로 로그인 가능합니다.
               </p>
 
               <div className="flex gap-2 pt-2">

@@ -2276,8 +2276,66 @@ INSERT INTO settings (key, value, description) VALUES
   ('points_unit_amount', '100', '포인트 사용 단위 (원)'),
   ('points_max_usage_percent', '50', '포인트 최대 사용 비율 (%)'),
   ('store_api_url', '"https://freecart.kr"', '테마/스킨 스토어 API URL'),
-  ('naver_client_id', '""', '네이버 소셜 로그인 Client ID')
+  ('naver_client_id', '""', '네이버 소셜 로그인 Client ID'),
+  -- 이메일 인증 / SMTP 설정
+  ('supabase_access_token', '""', 'Supabase Personal Access Token (Management API 용)'),
+  ('email_confirm_required', '"false"', '이메일 인증 필수 여부 (true/false)'),
+  ('smtp_host', '""', 'SMTP 호스트 (비어있으면 Supabase 기본 메일 사용)'),
+  ('smtp_port', '"587"', 'SMTP 포트'),
+  ('smtp_user', '""', 'SMTP 사용자명'),
+  ('smtp_pass', '""', 'SMTP 비밀번호 또는 API Key'),
+  ('smtp_sender_name', '""', '발신자 이름'),
+  ('smtp_sender_email', '""', '발신자 이메일')
 ON CONFLICT (key) DO NOTHING;
+
+-- =============================================================================
+-- ADMIN UTILITY FUNCTIONS
+-- =============================================================================
+
+-- 관리자 회원 직접 생성 (이메일 발송 없이 auth.users에 직접 삽입)
+-- 사용 이유: Supabase 무료 플랜 이메일 rate limit 우회
+-- on_auth_user_created 트리거가 public.users 레코드를 자동 생성함
+CREATE OR REPLACE FUNCTION public.admin_create_user(
+  p_email       TEXT,
+  p_password    TEXT,
+  p_name        TEXT,
+  p_phone       TEXT DEFAULT NULL
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  new_id uuid;
+BEGIN
+  new_id := gen_random_uuid();
+
+  INSERT INTO auth.users (
+    id,
+    email,
+    encrypted_password,
+    email_confirmed_at,
+    raw_user_meta_data,
+    aud,
+    role,
+    created_at,
+    updated_at
+  ) VALUES (
+    new_id,
+    p_email,
+    crypt(p_password, gen_salt('bf')),
+    now(),
+    jsonb_build_object('name', p_name, 'phone', COALESCE(p_phone, '')),
+    'authenticated',
+    'authenticated',
+    now(),
+    now()
+  );
+
+  RETURN new_id;
+END;
+$$;
 
 -- =============================================================================
 -- END OF SCHEMA
