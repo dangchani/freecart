@@ -23,9 +23,11 @@ export interface User {
   nickname?: string;
   phone?: string | null;
   profileImage?: string;
-  role: 'admin' | 'user';
+  role: 'super_admin' | 'admin' | 'user';
   points?: number;
   deposit?: number;
+  isApproved?: boolean;
+  permissions?: string[];
   createdAt: string;
   updatedAt: string;
 }

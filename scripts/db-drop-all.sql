@@ -15,8 +15,28 @@ DROP FUNCTION IF EXISTS public.admin_create_user CASCADE;
 DROP FUNCTION IF EXISTS public.handle_new_user CASCADE;
 DROP FUNCTION IF EXISTS public.update_updated_at_column CASCADE;
 
+-- 2026.04.07 윌리엄 추가 (joy) — 권한/담당자/동적 필드 관련 함수/트리거
+DROP TRIGGER IF EXISTS trg_users_super_admin_check ON public.users;
+DROP FUNCTION IF EXISTS public.enforce_super_admin_constraints() CASCADE;
+DROP FUNCTION IF EXISTS public.can_manage_user(UUID, UUID) CASCADE;
+DROP FUNCTION IF EXISTS public.user_assignment_enabled() CASCADE;
+DROP FUNCTION IF EXISTS public.has_permission(UUID, VARCHAR) CASCADE;
+DROP FUNCTION IF EXISTS public.is_admin(UUID) CASCADE;
+DROP FUNCTION IF EXISTS public.is_super_admin(UUID) CASCADE;
+-- main의 인자 없는 버전 (주석 처리되어 있지만 혹시 과거 실행분이 있을 수 있어 함께 정리)
+DROP FUNCTION IF EXISTS public.is_admin() CASCADE;
+
 -- 외래키 의존성 역순으로 테이블 삭제 (CASCADE로 한번에)
 DROP TABLE IF EXISTS
+  -- 2026.04.07 윌리엄 추가 (joy) — 권한/담당자/동적 필드 테이블 (users 앞에 배치)
+  user_field_values,
+  signup_field_definitions,
+  user_managers,
+  admin_user_roles,
+  admin_role_permissions,
+  admin_roles,
+  permissions,
+  system_settings,
   user_preferences,
   shipping_notifications,
   coupon_usages,

@@ -1982,19 +1982,22 @@ ALTER TABLE inquiries              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_subscriptions     ENABLE ROW LEVEL SECURITY;
 
--- admin 여부 확인 함수 (SECURITY DEFINER로 RLS 재귀 방지)
-CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS boolean
-LANGUAGE sql
-SECURITY DEFINER
-STABLE
-AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.users
-    WHERE id::text = auth.uid()::text
-    AND role = 'admin'
-  );
-$$;
+-- main 충돌
+-- admin 여부 확인 함수 (main, 인자 없음)
+-- 이 함수는 role = 'admin'만 인식하고 super_admin을 누락.
+-- joy 블록의 is_admin(uid UUID) 함수가 admin/super_admin 모두 처리하므로 해당 버전만 사용.
+-- CREATE OR REPLACE FUNCTION public.is_admin()
+-- RETURNS boolean
+-- LANGUAGE sql
+-- SECURITY DEFINER
+-- STABLE
+-- AS $$
+--   SELECT EXISTS (
+--     SELECT 1 FROM public.users
+--     WHERE id::text = auth.uid()::text
+--     AND role = 'admin'
+--   );
+-- $$;
 
 -- users: users can read/update/insert their own record
 DROP POLICY IF EXISTS "users_select_own" ON users;
@@ -2009,14 +2012,22 @@ DROP POLICY IF EXISTS "users_update_own" ON users;
 CREATE POLICY "users_update_own" ON users
   FOR UPDATE USING (auth.uid()::text = id::text);
 
--- 관리자: 전체 회원 조회/수정 허용
-DROP POLICY IF EXISTS "admin_select_all_users" ON users;
-CREATE POLICY "admin_select_all_users" ON users
-  FOR SELECT USING (public.is_admin());
+-- main 충돌
+-- 관리자: 전체 회원 조회/수정 허용 (main)
+-- public.is_admin() (인자 없음, 'admin'만 true)에 의존하여 super_admin을 누락.
+-- 담당자 토글(enable_user_assignment) ON 상태에서 admin이 담당 외 사용자까지 조회 가능해져
+-- 아래 users_select_admin / users_update_admin (can_manage_user 기반) 정책과 충돌.
+-- joy 블록만 사용하도록 주석 처리.
+-- DROP POLICY IF EXISTS "admin_select_all_users" ON users;
+-- CREATE POLICY "admin_select_all_users" ON users
+--   FOR SELECT USING (public.is_admin());
+--
+-- DROP POLICY IF EXISTS "admin_update_any_user" ON users;
+-- CREATE POLICY "admin_update_any_user" ON users
+--   FOR UPDATE USING (public.is_admin());
 
-DROP POLICY IF EXISTS "admin_update_any_user" ON users;
-CREATE POLICY "admin_update_any_user" ON users
-  FOR UPDATE USING (public.is_admin());
+-- joy: users_select_admin / users_update_admin 정책은 can_manage_user() 함수가
+-- 정의된 이후(joy 블록 하단)에 생성됩니다. 참조 순서 문제로 여기서는 생성하지 않음.
 
 -- user_addresses: users manage their own addresses
 DROP POLICY IF EXISTS "user_addresses_own" ON user_addresses;
@@ -2509,6 +2520,25 @@ LEFT JOIN public.users pu ON pu.id = au.id
 WHERE pu.id IS NULL
 ON CONFLICT (id) DO NOTHING;
 
+-- joy: 자동 super_admin 승격 블록은 is_approved 컬럼이 추가된 뒤 실행되어야 하므로
+-- 스키마 끝부분(joy 권한 블록 뒤)으로 이동했습니다.
+
+-- joy: 전체 회원을 user로 강등한 뒤 원하는 계정만 super_admin으로 재지정하고 싶을 때 사용.
+-- 운영 중 자동 실행되지 않도록 주석 상태로 유지. 필요 시 아래 블록의 주석을 풀고 이메일만 변경해 실행.
+-- /*
+-- UPDATE public.users SET role = 'user';
+-- UPDATE auth.users
+-- SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || '{"role":"user"}'::jsonb;
+--
+-- UPDATE public.users
+-- SET role = 'super_admin', is_approved = true
+-- WHERE email = 'joy@lob.kr';
+--
+-- UPDATE auth.users
+-- SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || '{"role":"super_admin"}'::jsonb
+-- WHERE email = 'joy@lob.kr';
+-- */
+
 -- =============================================================================
 -- STORAGE BUCKETS
 -- =============================================================================
@@ -2682,6 +2712,438 @@ INSERT INTO product_images (id, product_id, url, alt, is_primary, sort_order) VA
   ('00000000-0000-0000-0000-000000000411', '00000000-0000-0000-0000-000000000311', 'https://picsum.photos/seed/dishsoap/600/600',   '천연 주방 세제',               true, 0),
   ('00000000-0000-0000-0000-000000000412', '00000000-0000-0000-0000-000000000312', 'https://picsum.photos/seed/yogamat/600/600',    '프리미엄 TPE 요가매트',        true, 0)
 ON CONFLICT (id) DO NOTHING;
+
+-- =============================================================================
+-- 권한 체계 / 동적 회원가입 필드 / 담당자 매핑 -- joy 작성
+--   1) system_settings           : 전역 설정 (담당자 기능 토글 등)
+--   2) permissions               : 시스템에서 정의된 권한 카탈로그
+--   3) admin_roles               : super_admin이 만드는 권한 묶음(역할)
+--   4) admin_role_permissions    : 역할 ↔ 권한 매핑
+--   5) admin_user_roles          : admin 사용자 ↔ 역할 매핑
+--   6) user_managers             : 사용자 ↔ 담당 admin 매핑 (N:N)
+--   7) users 컬럼 보강            : 가입 승인 플로우 (is_approved 등)
+--   8) orders.created_by 추가     : 담당자 대리 등록 추적
+--   9) signup_field_definitions  : 회원가입 동적 필드 정의
+--  10) user_field_values         : 회원가입 동적 필드 값
+--  11) 헬퍼 함수 + RLS 정책
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- 0) users / orders 컬럼 보강 -- joy 작성
+-- ---------------------------------------------------------------------------
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS is_approved   BOOLEAN     NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS approved_at   TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS approved_by   UUID REFERENCES users(id) ON DELETE SET NULL;
+
+-- role 값 표준화: super_admin / admin / user
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users
+  ADD CONSTRAINT users_role_check
+  CHECK (role IN ('super_admin', 'admin', 'user'));
+
+ALTER TABLE orders
+  ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES users(id) ON DELETE SET NULL;
+
+-- ---------------------------------------------------------------------------
+-- 1) system_settings : 전역 설정 (담당자 기능 토글 등) -- joy 작성
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS system_settings (
+  key         VARCHAR(100) PRIMARY KEY,
+  value       JSONB        NOT NULL,
+  description TEXT,
+  updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_by  UUID REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE TRIGGER trg_system_settings_updated_at
+  BEFORE UPDATE ON system_settings
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+INSERT INTO system_settings (key, value, description) VALUES
+  ('enable_user_assignment', 'false'::jsonb,
+   '담당자 기능 활성화 여부. true이면 admin은 본인 담당 사용자만 접근 가능, false이면 모든 admin이 모든 사용자 접근 가능'),
+  -- joy: 회원가입 시 관리자 승인이 필요한 사이트와 그렇지 않은 사이트를 토글로 전환하기 위한 설정.
+  -- true이면 가입 후 is_approved=true가 되기 전까지 일반 사용자 로그인 차단.
+  ('require_signup_approval', 'false'::jsonb,
+   '회원가입 시 관리자 승인 필요 여부. true이면 is_approved=false 상태의 일반 사용자는 로그인 불가')
+ON CONFLICT (key) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- 2) permissions : 시스템 권한 카탈로그 (코드에서 사용) -- joy 작성
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS permissions (
+  permission_key       VARCHAR(100) PRIMARY KEY,    -- 예: orders.cancel
+  module               VARCHAR(50)  NOT NULL,        -- 예: orders
+  action               VARCHAR(50)  NOT NULL,        -- 예: cancel
+  description          TEXT,
+  is_super_admin_only  BOOLEAN NOT NULL DEFAULT false,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO permissions (permission_key, module, action, description, is_super_admin_only) VALUES
+  ('users.read',            'users',         'read',    '사용자 조회',                  false),
+  ('users.write',           'users',         'write',   '사용자 수정',                  false),
+  ('users.approve',         'users',         'approve', '가입 승인',                    false),
+  ('users.assign_manager',  'users',         'assign',  '담당자 배정',                  true),
+  ('orders.read',           'orders',        'read',    '주문 조회',                    false),
+  ('orders.write',          'orders',        'write',   '주문 등록/수정',               false),
+  ('orders.cancel',         'orders',        'cancel',  '주문 취소/환불',               false),
+  ('orders.export',         'orders',        'export',  '주문 내보내기',                false),
+  ('products.read',         'products',      'read',    '상품 조회',                    false),
+  ('products.write',        'products',      'write',   '상품 등록/수정',               false),
+  ('products.delete',       'products',      'delete',  '상품 삭제',                    false),
+  ('inventory.write',       'inventory',     'write',   '재고 조정',                    false),
+  ('coupons.write',         'coupons',       'write',   '쿠폰 관리',                    false),
+  ('points.adjust',         'points',        'adjust',  '포인트 수동 지급/차감',        false),
+  ('boards.write',          'boards',        'write',   '게시판 관리',                  false),
+  ('settings.read',         'settings',      'read',    '시스템 설정 조회',             false),
+  ('settings.write',        'settings',      'write',   '시스템 설정 변경',             true),
+  ('signup_fields.manage',  'signup_fields', 'manage',  '회원가입 필드 빌더',           false),
+  ('admins.manage',         'admins',        'manage',  '관리자 계정/권한/역할 관리',   true)
+ON CONFLICT (permission_key) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- 3) admin_roles : super_admin이 만드는 역할(권한 묶음) -- joy 작성
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS admin_roles (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        VARCHAR(100) NOT NULL UNIQUE,
+  description TEXT,
+  is_system   BOOLEAN NOT NULL DEFAULT false,        -- 시스템 기본 역할(삭제 불가)
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TRIGGER trg_admin_roles_updated_at
+  BEFORE UPDATE ON admin_roles
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- 4) admin_role_permissions : 역할 ↔ 권한 매핑 -- joy 작성
+CREATE TABLE IF NOT EXISTS admin_role_permissions (
+  role_id        UUID NOT NULL REFERENCES admin_roles(id) ON DELETE CASCADE,
+  permission_key VARCHAR(100) NOT NULL REFERENCES permissions(permission_key) ON DELETE CASCADE,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (role_id, permission_key)
+);
+
+-- 5) admin_user_roles : admin 사용자 ↔ 역할 매핑 -- joy 작성
+CREATE TABLE IF NOT EXISTS admin_user_roles (
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role_id     UUID NOT NULL REFERENCES admin_roles(id) ON DELETE CASCADE,
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  assigned_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  PRIMARY KEY (user_id, role_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_user_roles_user ON admin_user_roles(user_id);
+
+-- (역할 시드는 제거: super_admin이 관리자 화면에서 직접 생성)
+
+-- ---------------------------------------------------------------------------
+-- 6) user_managers : 사용자 ↔ 담당 admin (N:N) -- joy 작성
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_managers (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,        -- 담당받는 사용자
+  manager_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,        -- 담당 admin
+  assigned_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  assigned_by     UUID REFERENCES users(id) ON DELETE SET NULL,
+  UNIQUE(user_id, manager_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_managers_manager ON user_managers(manager_user_id);
+CREATE INDEX IF NOT EXISTS idx_user_managers_user    ON user_managers(user_id);
+
+-- ---------------------------------------------------------------------------
+-- 9) signup_field_definitions : 회원가입 동적 필드 정의 -- joy 작성
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS signup_field_definitions (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  field_key       VARCHAR(100) NOT NULL UNIQUE,                  -- 내부 식별자 (예: company_name)
+  label           VARCHAR(200) NOT NULL,                         -- 화면 표시 라벨 (예: 상호명)
+  field_type      VARCHAR(30)  NOT NULL CHECK (field_type IN (
+                    'text', 'textarea',
+                    'select', 'radio', 'checkbox',
+                    'url', 'phone',
+                    'date', 'time', 'datetime',
+                    'address', 'file', 'number', 'email'
+                  )),
+  is_required     BOOLEAN NOT NULL DEFAULT false,
+  is_active       BOOLEAN NOT NULL DEFAULT true,                 -- 삭제 대신 비활성화
+  sort_order      INTEGER NOT NULL DEFAULT 0,
+  placeholder     VARCHAR(255),
+  help_text       TEXT,
+  validation_rule JSONB,                                         -- 정규식/min/max
+  default_value   TEXT,
+  options         JSONB,                                         -- select/radio/checkbox 선택지
+  target_role     VARCHAR(30) DEFAULT 'all',
+  is_system       BOOLEAN NOT NULL DEFAULT false,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_signup_field_definitions_active
+  ON signup_field_definitions(is_active, sort_order);
+CREATE INDEX IF NOT EXISTS idx_signup_field_definitions_target_role
+  ON signup_field_definitions(target_role);
+
+CREATE TRIGGER trg_signup_field_definitions_updated_at
+  BEFORE UPDATE ON signup_field_definitions
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- joy: 기본(시스템) 필드와 커스텀 필드가 값을 어디에 저장하는지 구분하기 위한 컬럼 추가.
+--   storage_target: 'auth'(Supabase Auth), 'users'(users 테이블 컬럼), 'custom'(user_field_values)
+--   storage_column: storage_target='users'일 때 대응되는 users 컬럼명
+ALTER TABLE signup_field_definitions
+  ADD COLUMN IF NOT EXISTS storage_target VARCHAR(20) NOT NULL DEFAULT 'custom',
+  ADD COLUMN IF NOT EXISTS storage_column VARCHAR(50);
+
+-- joy: 회원가입 기본 필드 시드. is_system=true로 삭제 방지.
+--   이메일/비밀번호는 field_key로 UI에서 비활성화 토글 차단 (항상 필수)
+INSERT INTO signup_field_definitions
+  (field_key, label, field_type, is_required, is_active, sort_order,
+   placeholder, help_text, target_role, is_system, storage_target, storage_column)
+VALUES
+  ('email',             '이메일',                 'email',    true, true, 10,
+   'example@domain.com', null, 'all', true, 'auth',  null),
+  ('password',          '비밀번호',               'text',     true, true, 20,
+   '비밀번호를 입력하세요', '영문/숫자/특수문자 조합 권장', 'all', true, 'auth', null),
+  ('name',              '이름',                   'text',     true, true, 30,
+   '홍길동', null, 'all', true, 'users', 'name'),
+  ('phone',             '휴대폰 번호',             'phone',    true, true, 40,
+   '010-0000-0000', null, 'all', true, 'users', 'phone'),
+  ('address',           '주소',                   'address',  false, true, 50,
+   null, '다음 우편번호 검색으로 입력됩니다', 'all', true, 'users', null),
+  ('privacy_agreement', '개인정보 처리 방침 동의', 'checkbox', true, true, 60,
+   null, '개인정보 수집·이용에 동의합니다', 'all', true, 'users', 'privacy_agreed_at')
+ON CONFLICT (field_key) DO NOTHING;
+
+-- 10) user_field_values : 회원이 입력한 동적 필드 값 -- joy 작성
+CREATE TABLE IF NOT EXISTS user_field_values (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id              UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  field_definition_id  UUID NOT NULL REFERENCES signup_field_definitions(id) ON DELETE CASCADE,
+  value_text           TEXT,
+  value_number         NUMERIC,
+  value_date           TIMESTAMPTZ,
+  value_json           JSONB,
+  value_file_url       TEXT,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, field_definition_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_field_values_user
+  ON user_field_values(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_field_values_field
+  ON user_field_values(field_definition_id);
+
+CREATE TRIGGER trg_user_field_values_updated_at
+  BEFORE UPDATE ON user_field_values
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ---------------------------------------------------------------------------
+-- 11) 헬퍼 함수 (SECURITY DEFINER로 RLS 재귀 회피) -- joy 작성
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION is_super_admin(uid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM users WHERE id = uid AND role = 'super_admin'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION is_admin(uid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM users WHERE id = uid AND role IN ('admin', 'super_admin')
+  );
+$$;
+
+-- 권한 보유 여부 (super_admin은 모든 권한)
+CREATE OR REPLACE FUNCTION has_permission(uid UUID, perm_key VARCHAR)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT
+    is_super_admin(uid)
+    OR EXISTS (
+      SELECT 1
+      FROM admin_user_roles aur
+      JOIN admin_role_permissions arp ON arp.role_id = aur.role_id
+      WHERE aur.user_id = uid
+        AND arp.permission_key = perm_key
+    );
+$$;
+
+-- 담당자 기능 토글 조회
+CREATE OR REPLACE FUNCTION user_assignment_enabled()
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT COALESCE(
+    (SELECT (value)::text::boolean FROM system_settings WHERE key = 'enable_user_assignment'),
+    false
+  );
+$$;
+
+-- 특정 사용자 관리 권한
+--   1) super_admin → 항상 true
+--   2) 토글 OFF + admin → true
+--   3) 토글 ON + admin이 user_managers 매핑 보유 → true
+CREATE OR REPLACE FUNCTION can_manage_user(uid UUID, target_user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT
+    is_super_admin(uid)
+    OR (
+      is_admin(uid)
+      AND (
+        NOT user_assignment_enabled()
+        OR EXISTS (
+          SELECT 1 FROM user_managers
+          WHERE manager_user_id = uid
+            AND user_id = target_user_id
+        )
+      )
+    );
+$$;
+
+-- ---------------------------------------------------------------------------
+-- 12) RLS 활성화 + 정책 -- joy 작성
+-- ---------------------------------------------------------------------------
+ALTER TABLE system_settings          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE permissions              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_roles              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_role_permissions   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_user_roles         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_managers            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE signup_field_definitions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_field_values        ENABLE ROW LEVEL SECURITY;
+
+-- system_settings: 관리자 조회, super_admin만 수정
+CREATE POLICY "system_settings_select_admin" ON system_settings
+  FOR SELECT USING (is_admin(auth.uid()));
+CREATE POLICY "system_settings_modify_super" ON system_settings
+  FOR ALL USING (is_super_admin(auth.uid()))
+  WITH CHECK (is_super_admin(auth.uid()));
+
+-- permissions: 관리자 조회 가능, 수정 불가 (시드)
+CREATE POLICY "permissions_select_admin" ON permissions
+  FOR SELECT USING (is_admin(auth.uid()));
+
+-- admin_roles / admin_role_permissions / admin_user_roles: super_admin 전용 관리, admin 조회만
+CREATE POLICY "admin_roles_select_admin" ON admin_roles
+  FOR SELECT USING (is_admin(auth.uid()));
+CREATE POLICY "admin_roles_modify_super" ON admin_roles
+  FOR ALL USING (is_super_admin(auth.uid()))
+  WITH CHECK (is_super_admin(auth.uid()));
+
+CREATE POLICY "admin_role_permissions_select_admin" ON admin_role_permissions
+  FOR SELECT USING (is_admin(auth.uid()));
+CREATE POLICY "admin_role_permissions_modify_super" ON admin_role_permissions
+  FOR ALL USING (is_super_admin(auth.uid()))
+  WITH CHECK (is_super_admin(auth.uid()));
+
+CREATE POLICY "admin_user_roles_select_admin" ON admin_user_roles
+  FOR SELECT USING (is_admin(auth.uid()));
+CREATE POLICY "admin_user_roles_modify_super" ON admin_user_roles
+  FOR ALL USING (is_super_admin(auth.uid()))
+  WITH CHECK (is_super_admin(auth.uid()));
+
+-- user_managers: super_admin 전체, admin은 본인 매핑만 조회
+CREATE POLICY "user_managers_select_self_or_super" ON user_managers
+  FOR SELECT USING (
+    is_super_admin(auth.uid()) OR manager_user_id = auth.uid()
+  );
+CREATE POLICY "user_managers_modify_super" ON user_managers
+  FOR ALL USING (is_super_admin(auth.uid()))
+  WITH CHECK (is_super_admin(auth.uid()));
+
+-- signup_field_definitions: 활성 필드 공개 조회 (회원가입 폼), 관리는 권한 보유자
+CREATE POLICY "signup_field_definitions_select_active" ON signup_field_definitions
+  FOR SELECT USING (is_active = true OR is_admin(auth.uid()));
+CREATE POLICY "signup_field_definitions_modify_perm" ON signup_field_definitions
+  FOR ALL USING (has_permission(auth.uid(), 'signup_fields.manage'))
+  WITH CHECK (has_permission(auth.uid(), 'signup_fields.manage'));
+
+-- joy: users 테이블 admin 조회/수정 정책 (can_manage_user 함수가 정의된 이 시점에 생성)
+DROP POLICY IF EXISTS "users_select_admin" ON users;
+CREATE POLICY "users_select_admin" ON users
+  FOR SELECT USING (can_manage_user(auth.uid(), id));
+
+DROP POLICY IF EXISTS "users_update_admin" ON users;
+CREATE POLICY "users_update_admin" ON users
+  FOR UPDATE USING (can_manage_user(auth.uid(), id));
+
+-- user_field_values: 본인 또는 담당 admin / super_admin
+CREATE POLICY "user_field_values_select" ON user_field_values
+  FOR SELECT USING (
+    user_id = auth.uid() OR can_manage_user(auth.uid(), user_id)
+  );
+CREATE POLICY "user_field_values_insert" ON user_field_values
+  FOR INSERT WITH CHECK (
+    user_id = auth.uid() OR can_manage_user(auth.uid(), user_id)
+  );
+CREATE POLICY "user_field_values_update" ON user_field_values
+  FOR UPDATE USING (
+    user_id = auth.uid() OR can_manage_user(auth.uid(), user_id)
+  );
+CREATE POLICY "user_field_values_delete" ON user_field_values
+  FOR DELETE USING (
+    user_id = auth.uid() OR can_manage_user(auth.uid(), user_id)
+  );
+
+-- =============================================================================
+-- super_admin 제약 트리거 -- joy 작성
+--   super_admin은 최대 2명까지만 허용. 강등/삭제는 자유.
+--   2/2 상태에서 새 super_admin을 만들려면 기존 1명을 먼저 강등해야 한다.
+-- =============================================================================
+CREATE OR REPLACE FUNCTION enforce_super_admin_constraints()
+RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+DECLARE
+  current_count INT;
+BEGIN
+  IF TG_OP = 'INSERT' AND NEW.role = 'super_admin' THEN
+    SELECT COUNT(*) INTO current_count FROM users WHERE role = 'super_admin';
+    IF current_count >= 2 THEN
+      RAISE EXCEPTION 'super_admin 계정은 최대 2개까지만 생성할 수 있습니다.';
+    END IF;
+  ELSIF TG_OP = 'UPDATE' AND NEW.role = 'super_admin' AND OLD.role <> 'super_admin' THEN
+    SELECT COUNT(*) INTO current_count FROM users WHERE role = 'super_admin';
+    IF current_count >= 2 THEN
+      RAISE EXCEPTION 'super_admin 계정은 최대 2개까지만 생성할 수 있습니다.';
+    END IF;
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_users_super_admin_check ON users;
+CREATE TRIGGER trg_users_super_admin_check
+  BEFORE INSERT OR UPDATE ON users
+  FOR EACH ROW EXECUTE FUNCTION enforce_super_admin_constraints();
+
+-- joy: super_admin이 한 명도 없으면 최초 가입 계정을 자동 승격
+-- (is_approved 컬럼이 추가된 이후 시점에 실행)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.users WHERE role = 'super_admin') THEN
+    UPDATE public.users
+    SET role = 'super_admin', is_approved = true
+    WHERE id = (SELECT id FROM public.users ORDER BY created_at ASC LIMIT 1);
+
+    -- auth.users의 메타데이터에도 반영해서 다음 초기화 때도 유지
+    UPDATE auth.users
+    SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || '{"role":"super_admin"}'::jsonb
+    WHERE id = (SELECT id FROM public.users WHERE role = 'super_admin' LIMIT 1);
+  END IF;
+END $$;
 
 -- =============================================================================
 -- END OF SCHEMA
