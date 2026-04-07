@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { format } from 'date-fns';
 import { Search, Plus, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { getSystemSetting } from '@/lib/permissions';
 
 interface User {
   id: string;
@@ -20,19 +21,15 @@ interface User {
   isBlocked: boolean;
 }
 
-interface UserLevel {
-  id: string;
-  name: string;
-}
-
 export default function AdminUsersPage() {
   const navigate = useNavigate();
   const [users, setUsers] = useState<User[]>([]);
-  const [userLevels, setUserLevels] = useState<UserLevel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
-  const [levelFilter, setLevelFilter] = useState('');
+  const [useLevels, setUseLevels] = useState(true);
+  const [usePoints, setUsePoints] = useState(true);
+  const [pointLabel, setPointLabel] = useState('포인트');
 
   // 회원 추가 모달
   const [showAddModal, setShowAddModal] = useState(false);
@@ -41,15 +38,18 @@ export default function AdminUsersPage() {
   const [addError, setAddError] = useState('');
 
   useEffect(() => {
-    loadUserLevels();
+    (async () => {
+      const [ul, up, pl] = await Promise.all([
+        getSystemSetting<boolean>('use_user_levels'),
+        getSystemSetting<boolean>('use_points'),
+        getSystemSetting<string>('point_label'),
+      ]);
+      setUseLevels(ul !== false);
+      setUsePoints(up !== false);
+      if (typeof pl === 'string' && pl) setPointLabel(pl);
+    })();
     loadUsers();
   }, []);
-
-  async function loadUserLevels() {
-    const supabase = createClient();
-    const { data } = await supabase.from('user_levels').select('id, name').order('level');
-    setUserLevels(data?.map((l: any) => ({ id: l.id, name: l.name })) || []);
-  }
 
   async function loadUsers() {
     try {
@@ -63,10 +63,6 @@ export default function AdminUsersPage() {
 
       if (search) {
         query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
-      }
-
-      if (levelFilter) {
-        query = query.eq('level_id', levelFilter);
       }
 
       const { data, error: fetchError } = await query;
@@ -162,16 +158,6 @@ export default function AdminUsersPage() {
               className="w-full rounded-md border px-4 py-2 pl-9 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <select
-            value={levelFilter}
-            onChange={(e) => setLevelFilter(e.target.value)}
-            className="rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">전체 등급</option>
-            {userLevels.map((l) => (
-              <option key={l.id} value={l.id}>{l.name}</option>
-            ))}
-          </select>
           <Button type="submit">검색</Button>
         </form>
       </Card>
@@ -196,8 +182,8 @@ export default function AdminUsersPage() {
                   <th className="px-4 py-3 text-left font-medium text-gray-600">이름</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">이메일</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">전화번호</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">등급</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-600">포인트</th>
+                  {useLevels && <th className="px-4 py-3 text-left font-medium text-gray-600">등급</th>}
+                  {usePoints && <th className="px-4 py-3 text-right font-medium text-gray-600">{pointLabel}</th>}
                   <th className="px-4 py-3 text-left font-medium text-gray-600">가입일</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">상태</th>
                   <th className="px-4 py-3 text-center font-medium text-gray-600">관리</th>
@@ -213,10 +199,14 @@ export default function AdminUsersPage() {
                     <td className="px-4 py-3 font-medium">{u.name}</td>
                     <td className="px-4 py-3 text-gray-600">{u.email}</td>
                     <td className="px-4 py-3 text-gray-600">{u.phone || '-'}</td>
-                    <td className="px-4 py-3">
-                      <Badge variant="outline">{u.level || '-'}</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-right">{(u.points || 0).toLocaleString()}P</td>
+                    {useLevels && (
+                      <td className="px-4 py-3">
+                        <Badge variant="outline">{u.level || '-'}</Badge>
+                      </td>
+                    )}
+                    {usePoints && (
+                      <td className="px-4 py-3 text-right">{(u.points || 0).toLocaleString()}P</td>
+                    )}
                     <td className="px-4 py-3 text-gray-600">
                       {u.createdAt ? format(new Date(u.createdAt), 'yyyy.MM.dd') : '-'}
                     </td>

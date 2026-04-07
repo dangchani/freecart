@@ -104,7 +104,7 @@ function SortableRow({
         onClick={onToggleActive}
         disabled={core}
         className="p-1 text-gray-500 hover:text-gray-900 disabled:opacity-30"
-        title={core ? '이메일/비밀번호는 항상 필수입니다' : field.is_active ? '비활성화' : '활성화'}
+        title={core ? '기본 필드는 항상 활성화 상태입니다' : field.is_active ? '비활성화' : '활성화'}
       >
         {field.is_active ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
       </button>
@@ -206,6 +206,8 @@ function Inner() {
       }
       const { error: e } = await supabase.from('signup_field_definitions').update(update).eq('id', draft.id);
       if (e) return setError(e.message);
+      alert('수정되었습니다.');
+      setDraft(emptyDraft());
     } else {
       // 신규
       const nextOrder = (fields[fields.length - 1]?.sort_order ?? 0) + 10;
@@ -222,6 +224,7 @@ function Inner() {
         storage_target: 'custom',
       });
       if (e) return setError(e.message);
+      alert('추가되었습니다.');
       setDraft(emptyDraft());
     }
     await load();
@@ -248,7 +251,6 @@ function Inner() {
         <Card className="p-4 lg:col-span-1">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-bold">필드 목록</h2>
-            <Button size="sm" variant="outline" onClick={() => setDraft(emptyDraft())}>+ 새 필드</Button>
           </div>
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={fields.map((f) => f.id)} strategy={verticalListSortingStrategy}>

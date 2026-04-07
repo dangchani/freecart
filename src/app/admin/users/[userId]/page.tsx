@@ -9,8 +9,9 @@ import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ArrowLeft } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { getSystemSetting } from '@/lib/permissions';
 import { UserManagersSection } from '@/components/admin/user-managers-section';
-import { UserCustomFieldsSection } from '@/components/admin/user-custom-fields-section';
+import { UserSignupFieldsSection } from '@/components/admin/user-signup-fields-section';
 import { UserPermissionSection } from '@/components/admin/user-permission-section';
 
 interface UserDetail {
@@ -67,6 +68,23 @@ export default function AdminUserDetailPage() {
   const [pointAction, setPointAction] = useState<'add' | 'subtract'>('add');
   const [pointAmount, setPointAmount] = useState('');
   const [pointReason, setPointReason] = useState('');
+
+  const [useLevels, setUseLevels] = useState(true);
+  const [usePoints, setUsePoints] = useState(true);
+  const [pointLabel, setPointLabel] = useState('포인트');
+
+  useEffect(() => {
+    (async () => {
+      const [ul, up, pl] = await Promise.all([
+        getSystemSetting<boolean>('use_user_levels'),
+        getSystemSetting<boolean>('use_points'),
+        getSystemSetting<string>('point_label'),
+      ]);
+      setUseLevels(ul !== false);
+      setUsePoints(up !== false);
+      if (typeof pl === 'string' && pl) setPointLabel(pl);
+    })();
+  }, []);
 
   useEffect(() => {
     if (!authLoading) {
@@ -283,7 +301,6 @@ export default function AdminUserDetailPage() {
         <div className="mb-6 space-y-4">
           <UserPermissionSection userId={userId} />
           <UserManagersSection userId={userId} />
-          <UserCustomFieldsSection userId={userId} />
         </div>
       )}
 
@@ -301,12 +318,8 @@ export default function AdminUserDetailPage() {
               <dd>{userDetail.email}</dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-gray-500">전화번호</dt>
+              <dt className="text-gray-500">휴대폰번호</dt>
               <dd>{userDetail.phone || '-'}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-gray-500">주소</dt>
-              <dd>{userDetail.address || '-'}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-gray-500">가입일</dt>
@@ -320,17 +333,30 @@ export default function AdminUserDetailPage() {
                 </Badge>
               </dd>
             </div>
+
+            {/* joy: 회원가입 필드 동적 표시 (기본 4개 제외한 활성 필드) */}
+            {userId && (
+              <div className="border-t pt-3 space-y-3">
+                <UserSignupFieldsSection userId={userId} />
+              </div>
+            )}
           </dl>
         </Card>
 
         {/* 등급 및 포인트 */}
+        {(useLevels || usePoints) && (
         <Card className="p-6">
-          <h2 className="mb-4 text-lg font-bold">등급 및 포인트</h2>
+          <h2 className="mb-4 text-lg font-bold">
+            {useLevels && usePoints ? `등급 및 ${pointLabel}` : useLevels ? '등급' : pointLabel}
+          </h2>
+          {usePoints && (
           <div className="mb-4">
-            <p className="mb-1 text-sm text-gray-500">현재 포인트</p>
+            <p className="mb-1 text-sm text-gray-500">현재 {pointLabel}</p>
             <p className="text-2xl font-bold">{(userDetail.points || 0).toLocaleString()}P</p>
           </div>
+          )}
 
+          {useLevels && (
           <div className="mb-4">
             <label className="mb-1 block text-sm font-medium text-gray-700">등급 변경</label>
             <div className="flex gap-2">
@@ -348,9 +374,11 @@ export default function AdminUserDetailPage() {
               <Button onClick={handleChangeLevel} size="sm">변경</Button>
             </div>
           </div>
+          )}
 
+          {usePoints && (
           <form onSubmit={handlePointSubmit}>
-            <label className="mb-1 block text-sm font-medium text-gray-700">포인트 조정</label>
+            <label className="mb-1 block text-sm font-medium text-gray-700">{pointLabel} 조정</label>
             <div className="mb-2 flex gap-2">
               <button
                 type="button"
@@ -373,7 +401,7 @@ export default function AdminUserDetailPage() {
             </div>
             <input
               type="number"
-              placeholder="포인트 금액"
+              placeholder={`${pointLabel} 금액`}
               value={pointAmount}
               onChange={(e) => setPointAmount(e.target.value)}
               min="1"
@@ -386,9 +414,11 @@ export default function AdminUserDetailPage() {
               onChange={(e) => setPointReason(e.target.value)}
               className="mb-2 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <Button type="submit" className="w-full">포인트 처리</Button>
+            <Button type="submit" className="w-full">{pointLabel} 처리</Button>
           </form>
+          )}
         </Card>
+        )}
 
         {/* 메모 */}
         <Card className="p-6">

@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { createClient } from '@/lib/supabase/client';
 import { RequirePermission } from '@/components/permission-gate';
 
@@ -11,12 +13,21 @@ interface SettingRow {
   description: string | null;
 }
 
-const TOGGLE_KEYS = ['enable_user_assignment', 'require_signup_approval'] as const;
+const TOGGLE_KEYS = [
+  'enable_user_assignment',
+  'require_signup_approval',
+  'use_user_levels',
+  'use_points',
+] as const;
 type ToggleKey = (typeof TOGGLE_KEYS)[number];
+
+const ALL_KEYS = [...TOGGLE_KEYS, 'point_label'] as const;
 
 const LABELS: Record<ToggleKey, string> = {
   enable_user_assignment: '담당자 기능 사용',
   require_signup_approval: '회원가입 시 관리자 승인 필요',
+  use_user_levels: '회원 등급 기능 사용',
+  use_points: '포인트 기능 사용',
 };
 
 function SystemSettingsInner() {
@@ -25,6 +36,7 @@ function SystemSettingsInner() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [pointLabel, setPointLabel] = useState('포인트');
 
   useEffect(() => {
     load();
@@ -36,10 +48,24 @@ function SystemSettingsInner() {
     const { data, error: e } = await supabase
       .from('system_settings')
       .select('key, value, description')
-      .in('key', TOGGLE_KEYS as unknown as string[]);
+      .in('key', ALL_KEYS as unknown as string[]);
     if (e) setError(e.message);
     setRows(data ?? []);
+    const labelRow = (data ?? []).find((r) => r.key === 'point_label');
+    if (labelRow && typeof labelRow.value === 'string') setPointLabel(labelRow.value);
     setLoading(false);
+  }
+
+  async function savePointLabel() {
+    setSaving('point_label');
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    const { error: e } = await supabase
+      .from('system_settings')
+      .update({ value: pointLabel, updated_by: authUser?.id ?? null })
+      .eq('key', 'point_label');
+    if (e) setError(e.message);
+    await load();
+    setSaving(null);
   }
 
   async function toggle(key: ToggleKey, current: boolean) {
@@ -96,6 +122,22 @@ function SystemSettingsInner() {
             </div>
           );
         })}
+
+        <div className="border-t pt-4">
+          <Label htmlFor="point-label" className="font-medium text-gray-900">포인트 명칭</Label>
+          <div className="mt-1 text-sm text-gray-500">UI에 표시되는 포인트의 명칭 (예: 포인트, 적립금, 마일리지)</div>
+          <div className="mt-2 flex gap-2">
+            <Input
+              id="point-label"
+              value={pointLabel}
+              onChange={(e) => setPointLabel(e.target.value)}
+              className="max-w-xs"
+            />
+            <Button disabled={saving === 'point_label'} onClick={savePointLabel}>
+              {saving === 'point_label' ? '저장 중...' : '저장'}
+            </Button>
+          </div>
+        </div>
       </Card>
     </div>
   );

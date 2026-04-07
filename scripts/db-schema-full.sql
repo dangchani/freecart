@@ -2766,7 +2766,15 @@ INSERT INTO system_settings (key, value, description) VALUES
   -- joy: 회원가입 시 관리자 승인이 필요한 사이트와 그렇지 않은 사이트를 토글로 전환하기 위한 설정.
   -- true이면 가입 후 is_approved=true가 되기 전까지 일반 사용자 로그인 차단.
   ('require_signup_approval', 'false'::jsonb,
-   '회원가입 시 관리자 승인 필요 여부. true이면 is_approved=false 상태의 일반 사용자는 로그인 불가')
+   '회원가입 시 관리자 승인 필요 여부. true이면 is_approved=false 상태의 일반 사용자는 로그인 불가'),
+  -- joy: 회원 등급 기능 사용 여부. false면 관리자 회원 목록/상세에서 등급 UI 숨김
+  ('use_user_levels', 'true'::jsonb,
+   '회원 등급 기능 사용 여부. false이면 관리자 회원 관리 화면에서 등급 컬럼/변경 UI를 숨김'),
+  -- joy: 포인트 기능 사용 여부 + 명칭. false면 회원 목록/상세에서 포인트 UI 숨김
+  ('use_points', 'true'::jsonb,
+   '포인트 기능 사용 여부. false이면 관리자 회원 관리 화면에서 포인트 컬럼/조정 UI를 숨김'),
+  ('point_label', '"포인트"'::jsonb,
+   '포인트 명칭(예: 포인트, 적립금, 마일리지). UI 라벨에 사용됨')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------------------------------------------------------------------

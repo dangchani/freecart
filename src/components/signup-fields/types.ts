@@ -48,7 +48,7 @@ export interface AddressValue {
 
 export type FieldValueMap = Record<string, FieldValue>;
 
-// email/password는 비활성화/삭제 모두 불가
+// email/password/name/phone은 비활성화/삭제 모두 불가 (회원가입 기본 필드)
 export function isCoreField(fieldKey: string): boolean {
-  return fieldKey === 'email' || fieldKey === 'password';
+  return fieldKey === 'email' || fieldKey === 'password' || fieldKey === 'name' || fieldKey === 'phone';
 }
