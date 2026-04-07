@@ -114,7 +114,6 @@ import AdminOrdersBulkShipmentPage from './app/admin/orders/bulk-shipment/page';
 import AdminLogsPage from './app/admin/logs/page';
 import AdminIpBlocksPage from './app/admin/ip-blocks/page';
 import AdminVisitorsPage from './app/admin/visitors/page';
-import AdminAccountsPage from './app/admin/admins/page';
 import AdminWebhooksPage from './app/admin/webhooks/page';
 import AdminPagesPage from './app/admin/pages/page';
 import ContentPage from './app/pages/[slug]/page';
@@ -272,7 +271,6 @@ export default function App() {
             <Route path="/admin/logs" element={<AdminLogsPage />} />
             <Route path="/admin/ip-blocks" element={<AdminIpBlocksPage />} />
             <Route path="/admin/visitors" element={<AdminVisitorsPage />} />
-            <Route path="/admin/admins" element={<AdminAccountsPage />} />
             <Route path="/admin/webhooks" element={<AdminWebhooksPage />} />
             <Route path="/admin/pages" element={<AdminPagesPage />} />
           </Route>

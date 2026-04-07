@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { hasPermissionInList } from '@/lib/permissions';
+import { hasPermissionInList, getSystemSetting } from '@/lib/permissions';
 import {
   LayoutDashboard,
   Users,
@@ -29,7 +29,6 @@ import {
   ScrollText,
   ShieldBan,
   Eye,
-  ShieldCheck,
   KeyRound,
   ToggleRight,
   FormInput,
@@ -46,6 +45,8 @@ type NavItem = {
   superAdminOnly?: boolean;
   exact?: boolean;       // 정확 일치 매칭 (예: /admin/users)
   children?: NavItem[];
+  // joy: system_settings 토글 키. 해당 설정이 true일 때만 메뉴 노출
+  featureFlag?: 'require_signup_approval' | 'enable_user_assignment';
 };
 
 // joy: 업무 흐름 기준 그룹화 (기존 아이콘 재사용)
@@ -58,7 +59,7 @@ const navItems: NavItem[] = [
     permission: 'users.read',
     children: [
       { href: '/admin/users', label: '전체 회원', icon: Users, permission: 'users.read', exact: true },
-      { href: '/admin/users/pending', label: '가입 승인', icon: UserPlus, permission: 'users.approve' },
+      { href: '/admin/users/pending', label: '가입 승인', icon: UserPlus, permission: 'users.approve', featureFlag: 'require_signup_approval' },
     ],
   },
 
@@ -143,29 +144,35 @@ const navItems: NavItem[] = [
     ],
   },
 
-  { href: '/admin/admins', label: '관리자 계정', icon: ShieldCheck, superAdminOnly: true },
 ];
 
 function isItemAllowed(
   item: NavItem,
   isSuperAdmin: boolean,
-  permissions: string[]
+  permissions: string[],
+  flags: Record<string, boolean>
 ): boolean {
+  if (item.featureFlag && !flags[item.featureFlag]) return false;
   if (isSuperAdmin) return true;
   if (item.superAdminOnly) return false;
   if (!item.permission) return true;
   return hasPermissionInList(permissions, item.permission);
 }
 
-function filterTree(items: NavItem[], isSuperAdmin: boolean, permissions: string[]): NavItem[] {
+function filterTree(
+  items: NavItem[],
+  isSuperAdmin: boolean,
+  permissions: string[],
+  flags: Record<string, boolean>
+): NavItem[] {
   const result: NavItem[] = [];
   for (const item of items) {
     if (item.children) {
-      const kids = filterTree(item.children, isSuperAdmin, permissions);
+      const kids = filterTree(item.children, isSuperAdmin, permissions, flags);
       if (kids.length === 0) continue;
-      if (!isItemAllowed(item, isSuperAdmin, permissions)) continue;
+      if (!isItemAllowed(item, isSuperAdmin, permissions, flags)) continue;
       result.push({ ...item, children: kids });
-    } else if (isItemAllowed(item, isSuperAdmin, permissions)) {
+    } else if (isItemAllowed(item, isSuperAdmin, permissions, flags)) {
       result.push(item);
     }
   }
@@ -198,7 +205,22 @@ export default function AdminLayout() {
   // joy: 수동으로 토글한 그룹 펼침 상태. 경로 변경 시 현재 그룹은 자동 펼침.
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
 
-  const visibleItems = filterTree(navItems, isSuperAdmin, permissions);
+  // joy: system_settings 토글 값 로드 (가입 승인 메뉴 등 조건부 노출용)
+  const [flags, setFlags] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    (async () => {
+      const [approval, assignment] = await Promise.all([
+        getSystemSetting<boolean>('require_signup_approval'),
+        getSystemSetting<boolean>('enable_user_assignment'),
+      ]);
+      setFlags({
+        require_signup_approval: approval === true,
+        enable_user_assignment: assignment === true,
+      });
+    })();
+  }, []);
+
+  const visibleItems = filterTree(navItems, isSuperAdmin, permissions, flags);
 
   useEffect(() => {
     if (!authLoading && !user) {

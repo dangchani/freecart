@@ -11,6 +11,7 @@ import { ArrowLeft } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { UserManagersSection } from '@/components/admin/user-managers-section';
 import { UserCustomFieldsSection } from '@/components/admin/user-custom-fields-section';
+import { UserPermissionSection } from '@/components/admin/user-permission-section';
 
 interface UserDetail {
   id: string;
@@ -277,9 +278,10 @@ export default function AdminUserDetailPage() {
         </Button>
       </div>
 
-      {/* joy: 담당자 + 커스텀 필드 섹션 */}
+      {/* joy: 권한 + 담당자 + 커스텀 필드 섹션 */}
       {userId && (
         <div className="mb-6 space-y-4">
+          <UserPermissionSection userId={userId} />
           <UserManagersSection userId={userId} />
           <UserCustomFieldsSection userId={userId} />
         </div>
