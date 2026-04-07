@@ -1982,19 +1982,22 @@ ALTER TABLE inquiries              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_subscriptions     ENABLE ROW LEVEL SECURITY;
 
--- admin 여부 확인 함수 (SECURITY DEFINER로 RLS 재귀 방지)
-CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS boolean
-LANGUAGE sql
-SECURITY DEFINER
-STABLE
-AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.users
-    WHERE id::text = auth.uid()::text
-    AND role = 'admin'
-  );
-$$;
+-- main 충돌
+-- admin 여부 확인 함수 (main, 인자 없음)
+-- 이 함수는 role = 'admin'만 인식하고 super_admin을 누락.
+-- joy 블록의 is_admin(uid UUID) 함수가 admin/super_admin 모두 처리하므로 해당 버전만 사용.
+-- CREATE OR REPLACE FUNCTION public.is_admin()
+-- RETURNS boolean
+-- LANGUAGE sql
+-- SECURITY DEFINER
+-- STABLE
+-- AS $$
+--   SELECT EXISTS (
+--     SELECT 1 FROM public.users
+--     WHERE id::text = auth.uid()::text
+--     AND role = 'admin'
+--   );
+-- $$;
 
 -- users: users can read/update/insert their own record
 DROP POLICY IF EXISTS "users_select_own" ON users;
@@ -2009,24 +2012,22 @@ DROP POLICY IF EXISTS "users_update_own" ON users;
 CREATE POLICY "users_update_own" ON users
   FOR UPDATE USING (auth.uid()::text = id::text);
 
--- 관리자: 전체 회원 조회/수정 허용 윌리엄 추가 충돌로 인해 두가지 모두 반영
-DROP POLICY IF EXISTS "admin_select_all_users" ON users;
-CREATE POLICY "admin_select_all_users" ON users
-  FOR SELECT USING (public.is_admin());
+-- main 충돌
+-- 관리자: 전체 회원 조회/수정 허용 (main)
+-- public.is_admin() (인자 없음, 'admin'만 true)에 의존하여 super_admin을 누락.
+-- 담당자 토글(enable_user_assignment) ON 상태에서 admin이 담당 외 사용자까지 조회 가능해져
+-- 아래 users_select_admin / users_update_admin (can_manage_user 기반) 정책과 충돌.
+-- joy 블록만 사용하도록 주석 처리.
+-- DROP POLICY IF EXISTS "admin_select_all_users" ON users;
+-- CREATE POLICY "admin_select_all_users" ON users
+--   FOR SELECT USING (public.is_admin());
+--
+-- DROP POLICY IF EXISTS "admin_update_any_user" ON users;
+-- CREATE POLICY "admin_update_any_user" ON users
+--   FOR UPDATE USING (public.is_admin());
 
-DROP POLICY IF EXISTS "admin_update_any_user" ON users;
-CREATE POLICY "admin_update_any_user" ON users
-  FOR UPDATE USING (public.is_admin());
-
--- joy: admin/super_admin이 다른 사용자 조회/수정할 수 있도록.
--- can_manage_user() 가 담당자 토글까지 자동 반영 (super_admin 전체, admin은 담당 사용자만 또는 토글 OFF일 때 전체)
-DROP POLICY IF EXISTS "users_select_admin" ON users;
-CREATE POLICY "users_select_admin" ON users
-  FOR SELECT USING (can_manage_user(auth.uid(), id));
-
-DROP POLICY IF EXISTS "users_update_admin" ON users;
-CREATE POLICY "users_update_admin" ON users
-  FOR UPDATE USING (can_manage_user(auth.uid(), id));
+-- joy: users_select_admin / users_update_admin 정책은 can_manage_user() 함수가
+-- 정의된 이후(joy 블록 하단)에 생성됩니다. 참조 순서 문제로 여기서는 생성하지 않음.
 
 -- user_addresses: users manage their own addresses
 DROP POLICY IF EXISTS "user_addresses_own" ON user_addresses;
@@ -2518,6 +2519,25 @@ FROM auth.users au
 LEFT JOIN public.users pu ON pu.id = au.id
 WHERE pu.id IS NULL
 ON CONFLICT (id) DO NOTHING;
+
+-- joy: 자동 super_admin 승격 블록은 is_approved 컬럼이 추가된 뒤 실행되어야 하므로
+-- 스키마 끝부분(joy 권한 블록 뒤)으로 이동했습니다.
+
+-- joy: 전체 회원을 user로 강등한 뒤 원하는 계정만 super_admin으로 재지정하고 싶을 때 사용.
+-- 운영 중 자동 실행되지 않도록 주석 상태로 유지. 필요 시 아래 블록의 주석을 풀고 이메일만 변경해 실행.
+-- /*
+-- UPDATE public.users SET role = 'user';
+-- UPDATE auth.users
+-- SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || '{"role":"user"}'::jsonb;
+--
+-- UPDATE public.users
+-- SET role = 'super_admin', is_approved = true
+-- WHERE email = 'joy@lob.kr';
+--
+-- UPDATE auth.users
+-- SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || '{"role":"super_admin"}'::jsonb
+-- WHERE email = 'joy@lob.kr';
+-- */
 
 -- =============================================================================
 -- STORAGE BUCKETS
@@ -3047,6 +3067,15 @@ CREATE POLICY "signup_field_definitions_modify_perm" ON signup_field_definitions
   FOR ALL USING (has_permission(auth.uid(), 'signup_fields.manage'))
   WITH CHECK (has_permission(auth.uid(), 'signup_fields.manage'));
 
+-- joy: users 테이블 admin 조회/수정 정책 (can_manage_user 함수가 정의된 이 시점에 생성)
+DROP POLICY IF EXISTS "users_select_admin" ON users;
+CREATE POLICY "users_select_admin" ON users
+  FOR SELECT USING (can_manage_user(auth.uid(), id));
+
+DROP POLICY IF EXISTS "users_update_admin" ON users;
+CREATE POLICY "users_update_admin" ON users
+  FOR UPDATE USING (can_manage_user(auth.uid(), id));
+
 -- user_field_values: 본인 또는 담당 admin / super_admin
 CREATE POLICY "user_field_values_select" ON user_field_values
   FOR SELECT USING (
@@ -3099,6 +3128,22 @@ DROP TRIGGER IF EXISTS trg_users_super_admin_check ON users;
 CREATE TRIGGER trg_users_super_admin_check
   BEFORE INSERT OR UPDATE ON users
   FOR EACH ROW EXECUTE FUNCTION enforce_super_admin_constraints();
+
+-- joy: super_admin이 한 명도 없으면 최초 가입 계정을 자동 승격
+-- (is_approved 컬럼이 추가된 이후 시점에 실행)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.users WHERE role = 'super_admin') THEN
+    UPDATE public.users
+    SET role = 'super_admin', is_approved = true
+    WHERE id = (SELECT id FROM public.users ORDER BY created_at ASC LIMIT 1);
+
+    -- auth.users의 메타데이터에도 반영해서 다음 초기화 때도 유지
+    UPDATE auth.users
+    SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || '{"role":"super_admin"}'::jsonb
+    WHERE id = (SELECT id FROM public.users WHERE role = 'super_admin' LIMIT 1);
+  END IF;
+END $$;
 
 -- =============================================================================
 -- END OF SCHEMA
