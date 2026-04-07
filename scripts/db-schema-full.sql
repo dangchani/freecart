@@ -1995,6 +1995,16 @@ DROP POLICY IF EXISTS "users_update_own" ON users;
 CREATE POLICY "users_update_own" ON users
   FOR UPDATE USING (auth.uid()::text = id::text);
 
+-- joy: admin/super_admin이 다른 사용자 조회/수정할 수 있도록.
+-- can_manage_user() 가 담당자 토글까지 자동 반영 (super_admin 전체, admin은 담당 사용자만 또는 토글 OFF일 때 전체)
+DROP POLICY IF EXISTS "users_select_admin" ON users;
+CREATE POLICY "users_select_admin" ON users
+  FOR SELECT USING (can_manage_user(auth.uid(), id));
+
+DROP POLICY IF EXISTS "users_update_admin" ON users;
+CREATE POLICY "users_update_admin" ON users
+  FOR UPDATE USING (can_manage_user(auth.uid(), id));
+
 -- user_addresses: users manage their own addresses
 DROP POLICY IF EXISTS "user_addresses_own" ON user_addresses;
 CREATE POLICY "user_addresses_own" ON user_addresses
