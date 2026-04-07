@@ -45,7 +45,7 @@ export default function AdminFAQsPage() {
   const { user, loading: authLoading } = useAuth();
   const [faqs, setFaqs] = useState<FAQ[]>([]);
   const [loading, setLoading] = useState(true);
-  const [categoryFilter, setCategoryFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
 
   // 모달 상태
   const [modalOpen, setModalOpen] = useState(false);
@@ -76,7 +76,7 @@ export default function AdminFAQsPage() {
         .select('id, question, answer, category, is_visible, sort_order')
         .order('sort_order', { ascending: true });
 
-      if (categoryFilter) {
+      if (categoryFilter && categoryFilter !== 'all') {
         query = query.eq('category', categoryFilter);
       }
 
@@ -256,7 +256,7 @@ export default function AdminFAQsPage() {
             <SelectValue placeholder="전체 카테고리" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">전체 카테고리</SelectItem>
+            <SelectItem value="all">전체 카테고리</SelectItem>
             {categoryOptions.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}

@@ -648,7 +648,7 @@ export default function NewProductPage() {
                   <Label htmlFor="categoryId">
                     카테고리 <span className="text-red-500">*</span>
                   </Label>
-                  <Select onValueChange={(value) => setValue('categoryId', value)}>
+                  <Select value={watch('categoryId') || ''} onValueChange={(value) => setValue('categoryId', value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="카테고리 선택" />
                     </SelectTrigger>
@@ -667,7 +667,7 @@ export default function NewProductPage() {
 
                 <div>
                   <Label htmlFor="brandId">브랜드</Label>
-                  <Select onValueChange={(value) => setValue('brandId', value)}>
+                  <Select value={watch('brandId') || ''} onValueChange={(value) => setValue('brandId', value)}>
                     <SelectTrigger>
                       <SelectValue placeholder="브랜드 선택 (선택사항)" />
                     </SelectTrigger>

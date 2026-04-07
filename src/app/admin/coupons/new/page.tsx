@@ -80,7 +80,7 @@ export default function AdminCouponNewPage() {
         max_discount_amount: form.maxDiscountAmount ? parseFloat(form.maxDiscountAmount) : null,
         total_quantity: form.totalQuantity ? parseInt(form.totalQuantity) : null,
         starts_at: form.startsAt || new Date().toISOString(),
-        expires_at: form.expiresAt || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+        ends_at: form.expiresAt || null,
         is_active: form.isActive,
       });
 
