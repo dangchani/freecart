@@ -1982,6 +1982,20 @@ ALTER TABLE inquiries              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_subscriptions     ENABLE ROW LEVEL SECURITY;
 
+-- admin 여부 확인 함수 (SECURITY DEFINER로 RLS 재귀 방지)
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.users
+    WHERE id::text = auth.uid()::text
+    AND role = 'admin'
+  );
+$$;
+
 -- users: users can read/update/insert their own record
 DROP POLICY IF EXISTS "users_select_own" ON users;
 CREATE POLICY "users_select_own" ON users
@@ -1994,6 +2008,15 @@ CREATE POLICY "users_insert_own" ON users
 DROP POLICY IF EXISTS "users_update_own" ON users;
 CREATE POLICY "users_update_own" ON users
   FOR UPDATE USING (auth.uid()::text = id::text);
+
+-- 관리자: 전체 회원 조회/수정 허용 윌리엄 추가 충돌로 인해 두가지 모두 반영
+DROP POLICY IF EXISTS "admin_select_all_users" ON users;
+CREATE POLICY "admin_select_all_users" ON users
+  FOR SELECT USING (public.is_admin());
+
+DROP POLICY IF EXISTS "admin_update_any_user" ON users;
+CREATE POLICY "admin_update_any_user" ON users
+  FOR UPDATE USING (public.is_admin());
 
 -- joy: admin/super_admin이 다른 사용자 조회/수정할 수 있도록.
 -- can_manage_user() 가 담당자 토글까지 자동 반영 (super_admin 전체, admin은 담당 사용자만 또는 토글 OFF일 때 전체)

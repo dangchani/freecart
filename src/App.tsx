@@ -85,6 +85,7 @@ import AdminNewCouponPage from './app/admin/coupons/new/page';
 import AdminBoardsPage from './app/admin/boards/page';
 import AdminNoticesPage from './app/admin/notices/page';
 import AdminNewNoticePage from './app/admin/notices/new/page';
+import AdminEditNoticePage from './app/admin/notices/[id]/edit/page';
 import AdminFAQsPage from './app/admin/faqs/page';
 import AdminBannersPage from './app/admin/banners/page';
 import AdminPopupsPage from './app/admin/popups/page';
@@ -246,6 +247,7 @@ export default function App() {
             <Route path="/admin/boards" element={<AdminBoardsPage />} />
             <Route path="/admin/notices" element={<AdminNoticesPage />} />
             <Route path="/admin/notices/new" element={<AdminNewNoticePage />} />
+            <Route path="/admin/notices/:id/edit" element={<AdminEditNoticePage />} />
             <Route path="/admin/faqs" element={<AdminFAQsPage />} />
             <Route path="/admin/banners" element={<AdminBannersPage />} />
             <Route path="/admin/popups" element={<AdminPopupsPage />} />

@@ -8,15 +8,6 @@ import { Label } from '@/components/ui/label';
 import { format } from 'date-fns';
 import { Search, Plus, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-
-function createAdminClient() {
-  return createSupabaseClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  );
-}
 
 interface User {
   id: string;
@@ -63,7 +54,7 @@ export default function AdminUsersPage() {
   async function loadUsers() {
     try {
       setLoading(true);
-      const supabase = createAdminClient();
+      const supabase = createClient();
 
       let query = supabase
         .from('users')
@@ -104,7 +95,7 @@ export default function AdminUsersPage() {
     const action = currentlyBlocked ? '차단 해제' : '차단';
     if (!confirm(`해당 회원을 ${action}하시겠습니까?`)) return;
     try {
-      const supabase = createAdminClient();
+      const supabase = createClient();
       await supabase.from('users').update({ is_blocked: !currentlyBlocked }).eq('id', userId);
       await loadUsers();
     } catch (err) {
@@ -121,7 +112,7 @@ export default function AdminUsersPage() {
     setAddSubmitting(true);
     setAddError('');
     try {
-      const adminSupabase = createAdminClient();
+      const adminSupabase = createClient();
       const { error } = await adminSupabase.rpc('admin_create_user', {
         p_email: addForm.email,
         p_password: addForm.password,

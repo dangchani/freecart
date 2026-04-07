@@ -53,7 +53,7 @@ export default function AdminCouponsPage() {
       const supabase = createClient();
       const { data, error: fetchError } = await supabase
         .from('coupons')
-        .select('id, name, code, discount_type, discount_value, min_order_amount, max_discount_amount, used_count, total_quantity, starts_at, expires_at, is_active')
+        .select('id, name, code, discount_type, discount_value, min_order_amount, max_discount_amount, used_count, total_quantity, starts_at, ends_at, is_active')
         .order('created_at', { ascending: false });
       if (fetchError) throw fetchError;
       setCoupons((data || []).map((c: any) => ({
@@ -65,7 +65,7 @@ export default function AdminCouponsPage() {
         usedCount: c.used_count || 0,
         totalQuantity: c.total_quantity,
         startsAt: c.starts_at,
-        expiresAt: c.expires_at,
+        expiresAt: c.ends_at,
         isActive: c.is_active,
       })));
     } catch {
@@ -117,7 +117,7 @@ export default function AdminCouponsPage() {
         max_discount_amount: form.maxDiscountAmount ? parseInt(form.maxDiscountAmount) : null,
         total_quantity: form.totalQuantity ? parseInt(form.totalQuantity) : null,
         starts_at: form.startsAt || null,
-        expires_at: form.expiresAt || null,
+        ends_at: form.expiresAt || null,
         is_active: form.isActive,
       };
       if (editingId) {
