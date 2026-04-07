@@ -124,6 +124,8 @@ export interface CartItem {
   cartId: string;
   productId: string;
   variantId?: string;
+  optionText?: string;
+  variantAdditionalPrice?: number;
   quantity: number;
   selected: boolean;
   product?: Product;

@@ -366,9 +366,12 @@ export default function CheckoutPage() {
 
       const orderItems = items.map((item) => ({
         productId: item.productId,
+        variantId: item.variantId || null,
+        optionText: item.optionText || '',
         productName: item.product?.name || '',
         quantity: item.quantity,
-        unitPrice: item.product?.salePrice || 0,
+        unitPrice: (item.product?.salePrice || 0) + (item.variantAdditionalPrice ?? 0),
+        productImage: item.product?.images?.[0]?.url || '',
       }));
 
       const orderInfo = {

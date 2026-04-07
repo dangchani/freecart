@@ -29,6 +29,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { generateVariantCombinations, type VariantRow } from '@/utils/variants';
 
 // =============================================================================
 // Schema
@@ -55,7 +56,7 @@ const productSchema = z.object({
   salePrice: z.number().min(0, '판매가를 입력해주세요'),
   costPrice: z.number().min(0).optional(),
   pointRate: z.number().min(0).max(100).optional(),
-  stockQuantity: z.number().int().min(0, '재고를 입력해주세요'),
+  stockQuantity: z.number().int().min(0).default(0),
   stockAlertQuantity: z.number().int().min(0).default(10),
   minPurchaseQuantity: z.number().int().min(1).default(1),
   maxPurchaseQuantity: z.number().int().min(1).optional().nullable(),
@@ -105,6 +106,7 @@ export default function EditProductPage() {
   const [images, setImages] = useState<UploadedImage[]>([]);
   const [uploadingImages, setUploadingImages] = useState(false);
   const [tagInput, setTagInput] = useState('');
+  const [variants, setVariants] = useState<VariantRow[]>([]);
   const [expandedSections, setExpandedSections] = useState({
     basic: true,
     price: true,
@@ -137,6 +139,7 @@ export default function EditProductPage() {
   const categoryId = watch('categoryId');
   const brandId = watch('brandId');
   const status = watch('status');
+  const watchedOptions = watch('options') || [];
 
   // =============================================================================
   // Effects
@@ -150,14 +153,19 @@ export default function EditProductPage() {
       }
       loadCategories();
       loadBrands();
+      loadProduct();
     }
   }, [user, authLoading, navigate]);
 
+  // 옵션 변경 시 variant 조합 자동 재생성 (초기 로딩 후에만 적용)
   useEffect(() => {
-    if (!authLoading && user && categories.length > 0) {
-      loadProduct();
+    if (loading) return; // 상품 로딩 중엔 실행 안 함
+    if (hasOptions && watchedOptions.length > 0) {
+      setVariants((prev) => generateVariantCombinations(watchedOptions, prev));
+    } else {
+      setVariants([]);
     }
-  }, [authLoading, user, categories]);
+  }, [JSON.stringify(watchedOptions), hasOptions]);
 
   // =============================================================================
   // Data Loading
@@ -206,7 +214,8 @@ export default function EditProductPage() {
           seo_title, seo_description, seo_keywords,
           has_options, tags,
           product_images(id, url, is_primary, sort_order),
-          product_options(id, name, sort_order, product_option_values(id, value, additional_price, sort_order))
+          product_options(id, name, sort_order, product_option_values(id, value, additional_price, sort_order)),
+          product_variants(id, sku, option_values, additional_price, stock_quantity, is_active)
         `)
         .eq('slug', slug!)
         .single();
@@ -233,8 +242,38 @@ export default function EditProductPage() {
           name: opt.name,
           values: (opt.product_option_values || [])
             .sort((a: any, b: any) => a.sort_order - b.sort_order)
-            .map((v: any) => ({ value: v.value, additionalPrice: v.additional_price })),
+            .map((v: any) => ({ value: v.value, additionalPrice: v.additional_price ?? 0 })),
         }));
+
+      // valueId → 텍스트값 맵 구성 (variant label 복원에 사용)
+      const valueIdToText: Record<string, string> = {};
+      ((product.product_options as any[]) || []).forEach((opt: any) => {
+        (opt.product_option_values || []).forEach((v: any) => {
+          valueIdToText[v.id] = v.value;
+        });
+      });
+
+      // 기존 variant를 VariantRow 형태로 변환
+      if (product.has_options && (product.product_variants as any[])?.length > 0) {
+        const dbVariants: VariantRow[] = ((product.product_variants as any[]) || []).map((v: any) => {
+          // option_values: [{ optionId: UUID, valueId: UUID }] → 텍스트 레이블
+          const label = ((v.option_values as any[]) || [])
+            .map((o: any) => valueIdToText[o.valueId] || '')
+            .filter(Boolean)
+            .join(' / ');
+          return {
+            label,
+            combination: [],
+            sku: v.sku || '',
+            stockQuantity: v.stock_quantity,
+            additionalPrice: v.additional_price ?? 0,
+            isActive: v.is_active,
+          };
+        });
+        // label 매칭으로 기존 값 보존하면서 combination 재생성
+        const regenerated = generateVariantCombinations(existingOptions, dbVariants);
+        setVariants(regenerated);
+      }
 
       reset({
         name: product.name,
@@ -260,7 +299,7 @@ export default function EditProductPage() {
         isNew: product.is_new,
         isBest: product.is_best,
         isSale: product.is_sale,
-        shippingType: (product.shipping_type as 'default' | 'free' | 'custom') || 'default',
+        shippingType: (['default', 'free', 'custom'].includes(product.shipping_type) ? product.shipping_type : 'default') as 'default' | 'free' | 'custom',
         shippingFee: product.shipping_fee || undefined,
         seoTitle: product.seo_title || '',
         seoDescription: product.seo_description || '',
@@ -374,6 +413,10 @@ export default function EditProductPage() {
     }
   }
 
+  function updateVariant(index: number, field: keyof VariantRow, value: any) {
+    setVariants((prev) => prev.map((v, i) => (i === index ? { ...v, [field]: value } : v)));
+  }
+
   // =============================================================================
   // Tags Handling
   // =============================================================================
@@ -412,6 +455,10 @@ export default function EditProductPage() {
       setSubmitting(true);
       const supabase = createClient();
 
+      const totalStock = data.hasOptions
+        ? variants.filter((v) => v.isActive).reduce((sum, v) => sum + v.stockQuantity, 0)
+        : data.stockQuantity;
+
       // 1. 상품 기본 정보 업데이트
       const { error: productError } = await supabase
         .from('products')
@@ -426,7 +473,7 @@ export default function EditProductPage() {
           sale_price: data.salePrice,
           cost_price: data.costPrice || null,
           point_rate: data.pointRate || null,
-          stock_quantity: data.stockQuantity,
+          stock_quantity: totalStock,
           stock_alert_quantity: data.stockAlertQuantity,
           min_purchase_quantity: data.minPurchaseQuantity,
           max_purchase_quantity: data.maxPurchaseQuantity || null,
@@ -464,20 +511,13 @@ export default function EditProductPage() {
       );
       if (imageError) throw imageError;
 
-      // 3. 옵션 업데이트
-      const { data: existingOptions } = await supabase
-        .from('product_options')
-        .select('id')
-        .eq('product_id', productId!);
-
-      if (existingOptions && existingOptions.length > 0) {
-        await supabase
-          .from('product_options')
-          .delete()
-          .in('id', existingOptions.map((o: any) => o.id));
-      }
+      // 3. 기존 옵션 + variant 전체 삭제 후 재생성
+      await supabase.from('product_variants').delete().eq('product_id', productId!);
+      await supabase.from('product_options').delete().eq('product_id', productId!);
 
       if (data.hasOptions && data.options && data.options.length > 0) {
+        const optionIdMap: { optionIndex: number; valueIndex: number; optionId: string; valueId: string }[] = [];
+
         for (let i = 0; i < data.options.length; i++) {
           const option = data.options[i];
           const { data: optionData, error: optionError } = await supabase
@@ -487,15 +527,42 @@ export default function EditProductPage() {
             .single();
           if (optionError) throw optionError;
 
-          const { error: valueError } = await supabase.from('product_option_values').insert(
-            option.values.map((val, j) => ({
-              option_id: optionData.id,
-              value: val.value,
-              additional_price: val.additionalPrice,
-              sort_order: j,
-            }))
-          );
-          if (valueError) throw valueError;
+          for (let j = 0; j < option.values.length; j++) {
+            const { data: valueData, error: valueError } = await supabase
+              .from('product_option_values')
+              .insert({
+                option_id: optionData.id,
+                value: option.values[j].value,
+                additional_price: 0,
+                sort_order: j,
+              })
+              .select('id')
+              .single();
+            if (valueError) throw valueError;
+            optionIdMap.push({ optionIndex: i, valueIndex: j, optionId: optionData.id, valueId: valueData.id });
+          }
+        }
+
+        // variant 저장
+        if (variants.length > 0) {
+          const variantInserts = variants.map((variant) => {
+            const optionValues = variant.combination.map(({ optionIndex, valueIndex }) => {
+              const found = optionIdMap.find(
+                (m) => m.optionIndex === optionIndex && m.valueIndex === valueIndex
+              );
+              return { optionId: found?.optionId, valueId: found?.valueId };
+            });
+            return {
+              product_id: productId!,
+              sku: variant.sku || null,
+              option_values: optionValues,
+              additional_price: variant.additionalPrice,
+              stock_quantity: variant.stockQuantity,
+              is_active: variant.isActive,
+            };
+          });
+          const { error: variantError } = await supabase.from('product_variants').insert(variantInserts);
+          if (variantError) throw variantError;
         }
       }
 
@@ -555,7 +622,12 @@ export default function EditProductPage() {
 
       <h1 className="mb-8 text-2xl font-bold">상품 수정</h1>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={handleSubmit(onSubmit, (errors) => {
+        console.error('Validation errors:', errors);
+        const firstError = Object.values(errors)[0];
+        const msg = (firstError as any)?.message || '입력값을 확인해주세요.';
+        alert(`저장 실패: ${msg}`);
+      })} className="space-y-6">
 
         {/* 이미지 업로드 */}
         <Card className="overflow-hidden">
@@ -872,7 +944,11 @@ export default function EditProductPage() {
           <SectionHeader title="재고 정보" section="stock" required />
           {expandedSections.stock && (
             <div className="p-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              {hasOptions ? (
+                <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-700">
+                  옵션 사용 시 재고는 아래 <strong>옵션 섹션</strong>의 각 조합별로 관리됩니다.
+                </div>
+              ) : (
                 <div>
                   <Label htmlFor="stockQuantity">재고 수량 <span className="text-red-500">*</span></Label>
                   <Input
@@ -881,10 +957,9 @@ export default function EditProductPage() {
                     {...register('stockQuantity', { valueAsNumber: true })}
                     placeholder="0"
                   />
-                  {errors.stockQuantity && (
-                    <p className="mt-1 text-sm text-red-500">{errors.stockQuantity.message}</p>
-                  )}
                 </div>
+              )}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="stockAlertQuantity">재고 알림 수량</Label>
                   <Input
@@ -894,6 +969,8 @@ export default function EditProductPage() {
                     placeholder="10"
                   />
                 </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="minPurchaseQuantity">최소 구매 수량</Label>
                   <Input
@@ -937,12 +1014,7 @@ export default function EditProductPage() {
                           placeholder="옵션명 (예: 색상, 사이즈)"
                           className="flex-1"
                         />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeOption(optionIndex)}
-                        >
+                        <Button type="button" variant="ghost" size="sm" onClick={() => removeOption(optionIndex)}>
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
                       </div>
@@ -954,18 +1026,8 @@ export default function EditProductPage() {
                               placeholder="옵션값 (예: 빨강, L)"
                               className="flex-1"
                             />
-                            <Input
-                              {...register(`options.${optionIndex}.values.${valueIndex}.additionalPrice`, {
-                                valueAsNumber: true,
-                              })}
-                              type="number"
-                              placeholder="추가금액"
-                              className="w-28"
-                            />
                             <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
+                              type="button" variant="ghost" size="sm"
                               onClick={() => removeOptionValue(optionIndex, valueIndex)}
                               disabled={(watch(`options.${optionIndex}.values`) || []).length <= 1}
                             >
@@ -973,22 +1035,65 @@ export default function EditProductPage() {
                             </Button>
                           </div>
                         ))}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => addOptionValue(optionIndex)}
-                        >
-                          <Plus className="h-4 w-4 mr-1" />
-                          옵션값 추가
+                        <Button type="button" variant="outline" size="sm" onClick={() => addOptionValue(optionIndex)}>
+                          <Plus className="h-4 w-4 mr-1" />옵션값 추가
                         </Button>
                       </div>
                     </div>
                   ))}
                   <Button type="button" variant="outline" onClick={addOption}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    옵션 추가
+                    <Plus className="h-4 w-4 mr-2" />옵션 추가
                   </Button>
+
+                  {/* variant 재고 테이블 */}
+                  {variants.length > 0 && (
+                    <div className="mt-4">
+                      <p className="text-sm font-medium text-gray-700 mb-2">
+                        조합별 재고 관리 ({variants.length}개 조합)
+                      </p>
+                      <div className="overflow-x-auto border rounded-lg">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50 border-b">
+                            <tr>
+                              <th className="text-left px-3 py-2 font-medium text-gray-600">옵션 조합</th>
+                              <th className="text-left px-3 py-2 font-medium text-gray-600 w-32">SKU</th>
+                              <th className="text-left px-3 py-2 font-medium text-gray-600 w-28">추가금액</th>
+                              <th className="text-left px-3 py-2 font-medium text-gray-600 w-24">재고</th>
+                              <th className="text-center px-3 py-2 font-medium text-gray-600 w-16">활성</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y">
+                            {variants.map((variant, idx) => (
+                              <tr key={idx} className={!variant.isActive ? 'opacity-40' : ''}>
+                                <td className="px-3 py-2 font-medium">{variant.label}</td>
+                                <td className="px-3 py-2">
+                                  <Input value={variant.sku} onChange={(e) => updateVariant(idx, 'sku', e.target.value)} placeholder="SKU-001" className="h-8 text-sm" />
+                                </td>
+                                <td className="px-3 py-2">
+                                  <Input type="number" value={variant.additionalPrice} onChange={(e) => updateVariant(idx, 'additionalPrice', Number(e.target.value))} placeholder="0" className="h-8 text-sm" />
+                                </td>
+                                <td className="px-3 py-2">
+                                  <Input type="number" value={variant.stockQuantity} onChange={(e) => updateVariant(idx, 'stockQuantity', Number(e.target.value))} placeholder="0" className="h-8 text-sm" />
+                                </td>
+                                <td className="px-3 py-2 text-center">
+                                  <input type="checkbox" checked={variant.isActive} onChange={(e) => updateVariant(idx, 'isActive', e.target.checked)} className="rounded" />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-gray-50 border-t">
+                            <tr>
+                              <td colSpan={3} className="px-3 py-2 text-sm text-gray-500">총 재고</td>
+                              <td className="px-3 py-2 font-bold text-sm">
+                                {variants.filter((v) => v.isActive).reduce((s, v) => s + v.stockQuantity, 0)}
+                              </td>
+                              <td />
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

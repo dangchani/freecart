@@ -36,6 +36,8 @@ import {
   Truck,
   ChevronDown,
   ChevronUp,
+  Store,
+  LogOut,
 } from 'lucide-react';
 
 type NavItem = {
@@ -313,20 +315,23 @@ export default function AdminLayout() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
-      <aside className="relative flex w-64 shrink-0 flex-col bg-white shadow-sm">
+    <div className="bg-gray-50">
+      {/* 사이드바 — position:fixed로 완전 고정 */}
+      <aside className="fixed inset-y-0 left-0 z-30 flex w-64 flex-col bg-white shadow-sm">
+        {/* 상단 헤더 고정 */}
         <div className="shrink-0 border-b px-6 py-4">
           <Link to="/admin" className="text-lg font-bold text-gray-900">
             관리자 패널
           </Link>
         </div>
-        <div className="relative flex-1 overflow-hidden">
+
+        {/* 메뉴 영역 — 이 부분만 스크롤 */}
+        <div className="relative min-h-0 flex-1 overflow-hidden">
           <nav ref={navRef} className="scrollbar-hide h-full overflow-y-auto p-4">
             <ul className="space-y-1">
               {visibleItems.map((item) => (item.children ? renderGroup(item) : renderLeaf(item, false)))}
             </ul>
           </nav>
-          {/* joy: 위쪽 인디케이터 */}
           {showTopIndicator && (
             <div className="pointer-events-none absolute inset-x-0 top-0 flex h-8 items-start justify-center bg-gradient-to-b from-white to-transparent">
               <button
@@ -338,7 +343,6 @@ export default function AdminLayout() {
               </button>
             </div>
           )}
-          {/* joy: 아래쪽 인디케이터 */}
           {showBottomIndicator && (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-8 items-end justify-center bg-gradient-to-t from-white to-transparent">
               <button
@@ -351,8 +355,38 @@ export default function AdminLayout() {
             </div>
           )}
         </div>
+
+        {/* 하단 고정 */}
+        <div className="shrink-0 border-t bg-white p-3">
+          <div className="flex gap-1">
+            <Link
+              to="/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-xs text-gray-600 hover:bg-gray-100 transition-colors"
+            >
+              <Store className="h-4 w-4 shrink-0" />
+              쇼핑몰
+            </Link>
+            <div className="w-px bg-gray-100" />
+            <button
+              type="button"
+              onClick={async () => {
+                const { createClient } = await import('@/lib/supabase/client');
+                await createClient().auth.signOut();
+                navigate('/auth/login');
+              }}
+              className="flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-xs text-red-500 hover:bg-red-50 transition-colors"
+            >
+              <LogOut className="h-4 w-4 shrink-0" />
+              로그아웃
+            </button>
+          </div>
+        </div>
       </aside>
-      <main className="flex-1 overflow-y-auto">
+
+      {/* 메인 콘텐츠 — 사이드바 너비만큼 왼쪽 여백 */}
+      <main className="ml-64 min-h-screen">
         <Outlet />
       </main>
     </div>
