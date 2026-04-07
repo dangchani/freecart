@@ -2709,7 +2709,11 @@ CREATE TRIGGER trg_system_settings_updated_at
 
 INSERT INTO system_settings (key, value, description) VALUES
   ('enable_user_assignment', 'false'::jsonb,
-   '담당자 기능 활성화 여부. true이면 admin은 본인 담당 사용자만 접근 가능, false이면 모든 admin이 모든 사용자 접근 가능')
+   '담당자 기능 활성화 여부. true이면 admin은 본인 담당 사용자만 접근 가능, false이면 모든 admin이 모든 사용자 접근 가능'),
+  -- joy: 회원가입 시 관리자 승인이 필요한 사이트와 그렇지 않은 사이트를 토글로 전환하기 위한 설정.
+  -- true이면 가입 후 is_approved=true가 되기 전까지 일반 사용자 로그인 차단.
+  ('require_signup_approval', 'false'::jsonb,
+   '회원가입 시 관리자 승인 필요 여부. true이면 is_approved=false 상태의 일반 사용자는 로그인 불가')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -2834,6 +2838,33 @@ CREATE INDEX IF NOT EXISTS idx_signup_field_definitions_target_role
 CREATE TRIGGER trg_signup_field_definitions_updated_at
   BEFORE UPDATE ON signup_field_definitions
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- joy: 기본(시스템) 필드와 커스텀 필드가 값을 어디에 저장하는지 구분하기 위한 컬럼 추가.
+--   storage_target: 'auth'(Supabase Auth), 'users'(users 테이블 컬럼), 'custom'(user_field_values)
+--   storage_column: storage_target='users'일 때 대응되는 users 컬럼명
+ALTER TABLE signup_field_definitions
+  ADD COLUMN IF NOT EXISTS storage_target VARCHAR(20) NOT NULL DEFAULT 'custom',
+  ADD COLUMN IF NOT EXISTS storage_column VARCHAR(50);
+
+-- joy: 회원가입 기본 필드 시드. is_system=true로 삭제 방지.
+--   이메일/비밀번호는 field_key로 UI에서 비활성화 토글 차단 (항상 필수)
+INSERT INTO signup_field_definitions
+  (field_key, label, field_type, is_required, is_active, sort_order,
+   placeholder, help_text, target_role, is_system, storage_target, storage_column)
+VALUES
+  ('email',             '이메일',                 'email',    true, true, 10,
+   'example@domain.com', null, 'all', true, 'auth',  null),
+  ('password',          '비밀번호',               'text',     true, true, 20,
+   '비밀번호를 입력하세요', '영문/숫자/특수문자 조합 권장', 'all', true, 'auth', null),
+  ('name',              '이름',                   'text',     true, true, 30,
+   '홍길동', null, 'all', true, 'users', 'name'),
+  ('phone',             '휴대폰 번호',             'phone',    true, true, 40,
+   '010-0000-0000', null, 'all', true, 'users', 'phone'),
+  ('address',           '주소',                   'address',  false, true, 50,
+   null, '다음 우편번호 검색으로 입력됩니다', 'all', true, 'users', null),
+  ('privacy_agreement', '개인정보 처리 방침 동의', 'checkbox', true, true, 60,
+   null, '개인정보 수집·이용에 동의합니다', 'all', true, 'users', 'privacy_agreed_at')
+ON CONFLICT (field_key) DO NOTHING;
 
 -- 10) user_field_values : 회원이 입력한 동적 필드 값 -- joy 작성
 CREATE TABLE IF NOT EXISTS user_field_values (
@@ -3000,6 +3031,41 @@ CREATE POLICY "user_field_values_delete" ON user_field_values
   FOR DELETE USING (
     user_id = auth.uid() OR can_manage_user(auth.uid(), user_id)
   );
+
+-- =============================================================================
+-- super_admin 제약 트리거 -- joy 작성
+--   super_admin은 최대 2명까지만 허용. 강등/삭제는 자유.
+--   2/2 상태에서 새 super_admin을 만들려면 기존 1명을 먼저 강등해야 한다.
+-- =============================================================================
+CREATE OR REPLACE FUNCTION enforce_super_admin_constraints()
+RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+DECLARE
+  current_count INT;
+BEGIN
+  IF TG_OP = 'INSERT' AND NEW.role = 'super_admin' THEN
+    SELECT COUNT(*) INTO current_count FROM users WHERE role = 'super_admin';
+    IF current_count >= 2 THEN
+      RAISE EXCEPTION 'super_admin 계정은 최대 2개까지만 생성할 수 있습니다.';
+    END IF;
+  ELSIF TG_OP = 'UPDATE' AND NEW.role = 'super_admin' AND OLD.role <> 'super_admin' THEN
+    SELECT COUNT(*) INTO current_count FROM users WHERE role = 'super_admin';
+    IF current_count >= 2 THEN
+      RAISE EXCEPTION 'super_admin 계정은 최대 2개까지만 생성할 수 있습니다.';
+    END IF;
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_users_super_admin_check ON users;
+CREATE TRIGGER trg_users_super_admin_check
+  BEFORE INSERT OR UPDATE ON users
+  FOR EACH ROW EXECUTE FUNCTION enforce_super_admin_constraints();
 
 -- =============================================================================
 -- END OF SCHEMA

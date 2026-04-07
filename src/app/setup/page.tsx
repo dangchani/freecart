@@ -1,12 +1,13 @@
+// joy: 설치 시 입력된 이메일을 super_admin으로 생성.
+// super_admin은 최대 2명까지만 허용하고, 2명에 도달하면 페이지에서 안내 화면을 보여준다.
+// 관리자 페이지에서 강등되면 다시 생성 가능.
 import { useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-const ADMIN_EMAIL = 'admin@admin.com';
-const ADMIN_PASSWORD = 'admin@admin';
-const ADMIN_NAME = '관리자';
 const SCHEMA_SQL_URL = 'https://raw.githubusercontent.com/dangchani/freecart/main/supabase/db-schema-full.sql';
+const MAX_SUPER_ADMIN = 2;
 
-type Step = 'supabase' | 'database' | 'complete';
+type Step = 'supabase' | 'database' | 'account' | 'complete' | 'locked';
 type DbStatus = 'idle' | 'checking' | 'not_ready' | 'ready' | 'creating_admin' | 'done' | 'error';
 
 export default function SetupPage() {
@@ -17,13 +18,25 @@ export default function SetupPage() {
     supabaseServiceRoleKey: '',
   });
 
+  // 계정 입력
+  const [account, setAccount] = useState({ email: '', password: '', name: '' });
+  const [superAdminCount, setSuperAdminCount] = useState(0);
+
   // DB step
   const [sqlCopied, setSqlCopied] = useState(false);
   const [dbStatus, setDbStatus] = useState<DbStatus>('idle');
   const [dbMessage, setDbMessage] = useState('');
   const [error, setError] = useState('');
 
-  // ─── Step 1: Supabase 연결 정보 ───
+  function getAdminClient(): SupabaseClient {
+    return createClient(
+      form.supabaseUrl.trim(),
+      form.supabaseServiceRoleKey.trim(),
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+  }
+
+  // Step 1 → DB
   function handleSupabaseNext(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -34,7 +47,6 @@ export default function SetupPage() {
     setStep('database');
   }
 
-  // ─── Step 2: SQL 복사 ───
   async function handleCopySQL() {
     try {
       const res = await fetch(SCHEMA_SQL_URL);
@@ -47,21 +59,14 @@ export default function SetupPage() {
     }
   }
 
-  // ─── Step 2: DB 확인 & 관리자 생성 ───
-  async function handleVerifyAndCreateAdmin() {
+  // Step 2: DB 확인 + super_admin 수 체크
+  async function handleVerifyDb() {
     setDbStatus('checking');
     setDbMessage('');
     setError('');
-
     try {
-      const adminSupabase = createClient(
-        form.supabaseUrl.trim(),
-        form.supabaseServiceRoleKey.trim(),
-        { auth: { autoRefreshToken: false, persistSession: false } }
-      );
-
-      // 1. settings 테이블 존재 확인 (스키마 적용 여부)
-      const { data: settings, error: settingsError } = await adminSupabase
+      const supabase = getAdminClient();
+      const { data: settings, error: settingsError } = await supabase
         .from('settings')
         .select('key')
         .eq('key', 'schema_version')
@@ -73,87 +78,129 @@ export default function SetupPage() {
         return;
       }
 
-      setDbStatus('ready');
-      setDbMessage('DB 스키마 확인 완료!');
-
-      // 2. 관리자 계정 확인
-      const { data: existingAdmin } = await adminSupabase
+      const { count } = await supabase
         .from('users')
-        .select('id, role')
-        .eq('email', ADMIN_EMAIL)
-        .single();
+        .select('id', { count: 'exact', head: true })
+        .eq('role', 'super_admin');
+      const c = count ?? 0;
+      setSuperAdminCount(c);
 
-      if (existingAdmin) {
-        // 이미 관리자가 존재
-        if (existingAdmin.role === 'admin') {
-          setDbStatus('done');
-          setDbMessage('관리자 계정이 이미 존재합니다.');
-          return;
-        }
-        // 프로필은 있지만 admin이 아닌 경우
-        await adminSupabase
-          .from('users')
-          .update({ role: 'admin', updated_at: new Date().toISOString() })
-          .eq('id', existingAdmin.id);
-        setDbStatus('done');
-        setDbMessage('기존 계정에 관리자 권한을 부여했습니다.');
+      if (c >= MAX_SUPER_ADMIN) {
+        setDbStatus('ready');
+        setStep('locked');
         return;
       }
 
-      // 3. 관리자 계정 생성
-      setDbStatus('creating_admin');
-      setDbMessage('관리자 계정 생성 중...');
-
-      // user_metadata에 role: admin을 넘기면 트리거가 자동으로 admin 계정 생성
-      const { data: authData, error: authError } = await adminSupabase.auth.admin.createUser({
-        email: ADMIN_EMAIL,
-        password: ADMIN_PASSWORD,
-        email_confirm: true,
-        user_metadata: { name: ADMIN_NAME, role: 'admin' },
-      });
-
-      if (authError) throw authError;
-
-      // 트리거가 users 테이블에 레코드를 생성할 때까지 대기
-      await new Promise((r) => setTimeout(r, 2000));
-
-      // 기본 회원 등급 조회
-      const { data: defaultLevel } = await adminSupabase
-        .from('user_levels')
-        .select('id')
-        .order('level', { ascending: true })
-        .limit(1)
-        .single();
-
-      // role이 admin으로 설정되었는지 확인하고, 안 되어 있으면 업데이트
-      const { error: profileError } = await adminSupabase
-        .from('users')
-        .upsert({
-          id: authData.user.id,
-          email: ADMIN_EMAIL,
-          name: ADMIN_NAME,
-          role: 'admin',
-          level_id: defaultLevel?.id,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-
-      if (profileError) throw profileError;
-
-      setDbStatus('done');
-      setDbMessage('관리자 계정이 생성되었습니다.');
+      setDbStatus('ready');
+      setDbMessage(`DB 확인 완료. 현재 super_admin: ${c}/${MAX_SUPER_ADMIN}`);
+      setStep('account');
     } catch (err) {
       setDbStatus('error');
       setError(err instanceof Error ? err.message : 'DB 확인 중 오류가 발생했습니다.');
     }
   }
 
-  // ─── Step 2 → Complete ───
-  function handleComplete() {
-    setStep('complete');
+  // Step 3: super_admin 계정 생성
+  async function handleCreateSuperAdmin(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    if (!account.email.trim() || !account.password.trim() || !account.name.trim()) {
+      setError('모든 필드를 입력해주세요.');
+      return;
+    }
+    if (account.password.length < 8) {
+      setError('비밀번호는 8자 이상이어야 합니다.');
+      return;
+    }
+
+    setDbStatus('creating_admin');
+    try {
+      const supabase = getAdminClient();
+
+      // 개수 재확인 (race condition 방지)
+      const { count } = await supabase
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .eq('role', 'super_admin');
+      if ((count ?? 0) >= MAX_SUPER_ADMIN) {
+        setStep('locked');
+        setSuperAdminCount(count ?? 0);
+        return;
+      }
+
+      // 기존 사용자 확인
+      const { data: existing } = await supabase
+        .from('users')
+        .select('id, role')
+        .eq('email', account.email.trim())
+        .maybeSingle();
+
+      if (existing) {
+        // 기존 계정을 super_admin으로 승격
+        const { error: upErr } = await supabase
+          .from('users')
+          .update({ role: 'super_admin', is_approved: true, updated_at: new Date().toISOString() })
+          .eq('id', existing.id);
+        if (upErr) throw upErr;
+      } else {
+        // 신규 생성
+        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+          email: account.email.trim(),
+          password: account.password,
+          email_confirm: true,
+          user_metadata: { name: account.name.trim(), role: 'super_admin' },
+        });
+        if (authError) throw authError;
+
+        await new Promise((r) => setTimeout(r, 1500));
+
+        const { data: defaultLevel } = await supabase
+          .from('user_levels')
+          .select('id')
+          .order('level', { ascending: true })
+          .limit(1)
+          .single();
+
+        const { error: profileError } = await supabase.from('users').upsert({
+          id: authData.user.id,
+          email: account.email.trim(),
+          name: account.name.trim(),
+          role: 'super_admin',
+          is_approved: true,
+          level_id: defaultLevel?.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+        if (profileError) throw profileError;
+      }
+
+      setDbStatus('done');
+      setStep('complete');
+    } catch (err) {
+      setDbStatus('error');
+      setError(err instanceof Error ? err.message : '계정 생성 중 오류가 발생했습니다.');
+    }
   }
 
-  // ─── Supabase SQL Editor URL 생성 ───
+  // locked 단계에서 강등 후 재시도 체크
+  async function recheckSuperAdminCount() {
+    try {
+      const supabase = getAdminClient();
+      const { count } = await supabase
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .eq('role', 'super_admin');
+      const c = count ?? 0;
+      setSuperAdminCount(c);
+      if (c < MAX_SUPER_ADMIN) {
+        setStep('account');
+        setError('');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '재확인 실패');
+    }
+  }
+
   function getSqlEditorUrl() {
     try {
       const url = new URL(form.supabaseUrl.trim());
@@ -164,6 +211,9 @@ export default function SetupPage() {
     }
   }
 
+  const stepOrder: Step[] = ['supabase', 'database', 'account', 'complete'];
+  const currentIdx = stepOrder.indexOf(step === 'locked' ? 'account' : step);
+
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-lg w-full max-w-lg p-8">
@@ -171,31 +221,33 @@ export default function SetupPage() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Freecart 초기 설정</h1>
           <div className="flex items-center gap-2 mt-3">
-            {(['supabase', 'database', 'complete'] as Step[]).map((s, i) => (
+            {stepOrder.map((s, i) => (
               <div key={s} className="flex items-center gap-2">
                 <div
                   className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
                     step === s
                       ? 'bg-blue-600 text-white'
-                      : i < ['supabase', 'database', 'complete'].indexOf(step)
+                      : i < currentIdx
                         ? 'bg-green-500 text-white'
                         : 'bg-gray-200 text-gray-500'
                   }`}
                 >
-                  {i < ['supabase', 'database', 'complete'].indexOf(step) ? '✓' : i + 1}
+                  {i < currentIdx ? '✓' : i + 1}
                 </div>
-                {i < 2 && <div className="w-8 h-0.5 bg-gray-200" />}
+                {i < stepOrder.length - 1 && <div className="w-8 h-0.5 bg-gray-200" />}
               </div>
             ))}
           </div>
           <p className="text-xs text-gray-400 mt-2">
             {step === 'supabase' && 'Step 1: Supabase 연결'}
-            {step === 'database' && 'Step 2: DB 초기화 & 관리자 생성'}
+            {step === 'database' && 'Step 2: DB 초기화'}
+            {step === 'account' && 'Step 3: 최고 관리자 계정 생성'}
+            {step === 'locked' && 'Step 3: 생성 제한'}
             {step === 'complete' && '설정 완료'}
           </p>
         </div>
 
-        {/* ─── Step 1: Supabase ─── */}
+        {/* Step 1 */}
         {step === 'supabase' && (
           <form onSubmit={handleSupabaseNext} className="space-y-4">
             <div>
@@ -211,13 +263,12 @@ export default function SetupPage() {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Anon (Public) Key <span className="text-red-500">*</span>
               </label>
               <textarea
-                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                placeholder="eyJhbGciOiJIUzI1NiIs..."
                 value={form.supabaseAnonKey}
                 onChange={(e) => setForm({ ...form, supabaseAnonKey: e.target.value })}
                 required
@@ -225,43 +276,35 @@ export default function SetupPage() {
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               />
             </div>
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Service Role Key <span className="text-red-500">*</span>
               </label>
               <textarea
-                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                placeholder="eyJhbGciOiJIUzI1NiIs..."
                 value={form.supabaseServiceRoleKey}
                 onChange={(e) => setForm({ ...form, supabaseServiceRoleKey: e.target.value })}
                 required
                 rows={2}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               />
-              <p className="text-xs text-gray-400 mt-1">
-                Supabase Dashboard → Settings → API
-              </p>
+              <p className="text-xs text-gray-400 mt-1">Supabase Dashboard → Settings → API</p>
             </div>
-
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
-                {error}
-              </div>
+              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>
             )}
-
             <button
               type="submit"
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm transition-colors"
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm"
             >
               다음 →
             </button>
           </form>
         )}
 
-        {/* ─── Step 2: Database ─── */}
+        {/* Step 2 */}
         {step === 'database' && (
           <div className="space-y-5">
-            {/* SQL 복사 */}
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
               <p className="text-sm font-semibold text-gray-700 mb-2">1. DB 스키마 SQL 복사</p>
               <p className="text-xs text-gray-500 mb-3">
@@ -270,7 +313,7 @@ export default function SetupPage() {
               <div className="flex gap-2">
                 <button
                   onClick={handleCopySQL}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium ${
                     sqlCopied
                       ? 'bg-green-100 text-green-700 border border-green-300'
                       : 'bg-blue-600 hover:bg-blue-700 text-white'
@@ -282,36 +325,27 @@ export default function SetupPage() {
                   href={getSqlEditorUrl()}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex-1 py-2 rounded-lg text-sm font-medium text-center border border-gray-300 hover:bg-gray-100 transition-colors"
+                  className="flex-1 py-2 rounded-lg text-sm font-medium text-center border border-gray-300 hover:bg-gray-100"
                 >
                   SQL Editor 열기 ↗
                 </a>
               </div>
             </div>
 
-            {/* DB 확인 */}
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-              <p className="text-sm font-semibold text-gray-700 mb-2">2. DB 확인 & 관리자 생성</p>
-              <p className="text-xs text-gray-500 mb-3">
-                SQL 실행 후 아래 버튼을 눌러주세요. DB를 검증하고 관리자 계정을 자동 생성합니다.
-              </p>
-
+              <p className="text-sm font-semibold text-gray-700 mb-2">2. DB 스키마 확인</p>
+              <p className="text-xs text-gray-500 mb-3">SQL 실행 후 아래 버튼을 눌러 확인합니다.</p>
               <button
-                onClick={handleVerifyAndCreateAdmin}
-                disabled={dbStatus === 'checking' || dbStatus === 'creating_admin'}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-2.5 rounded-lg text-sm transition-colors"
+                onClick={handleVerifyDb}
+                disabled={dbStatus === 'checking'}
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-2.5 rounded-lg text-sm"
               >
-                {dbStatus === 'checking' && 'DB 확인 중...'}
-                {dbStatus === 'creating_admin' && '관리자 생성 중...'}
-                {(dbStatus === 'idle' || dbStatus === 'not_ready' || dbStatus === 'error') && 'DB 확인 & 관리자 생성'}
-                {(dbStatus === 'ready' || dbStatus === 'done') && '✓ 완료'}
+                {dbStatus === 'checking' ? 'DB 확인 중...' : 'DB 확인'}
               </button>
-
-              {/* 상태 메시지 */}
               {dbMessage && (
                 <div
                   className={`mt-3 rounded-lg px-3 py-2 text-xs whitespace-pre-line ${
-                    dbStatus === 'done' || dbStatus === 'ready'
+                    dbStatus === 'ready'
                       ? 'bg-green-50 text-green-700 border border-green-200'
                       : dbStatus === 'not_ready'
                         ? 'bg-yellow-50 text-yellow-700 border border-yellow-200'
@@ -321,39 +355,11 @@ export default function SetupPage() {
                   {dbMessage}
                 </div>
               )}
-
-              {/* 관리자 계정 정보 */}
-              {dbStatus === 'done' && (
-                <div className="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <p className="text-xs font-semibold text-blue-800 mb-2">관리자 계정</p>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-blue-600 w-14">이메일</span>
-                      <code className="text-xs font-mono text-blue-900">{ADMIN_EMAIL}</code>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-blue-600 w-14">비밀번호</span>
-                      <code className="text-xs font-mono text-blue-900">{ADMIN_PASSWORD}</code>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700 whitespace-pre-line">
-                {error}
-              </div>
+              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>
             )}
-
-            {/* 다음 버튼 */}
-            <button
-              onClick={handleComplete}
-              disabled={dbStatus !== 'done'}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:text-gray-500 text-white font-medium py-2.5 rounded-lg text-sm transition-colors"
-            >
-              {dbStatus !== 'done' ? 'DB 확인 완료 후 진행 가능' : '설정 완료 →'}
-            </button>
 
             <button
               onClick={() => { setStep('supabase'); setError(''); }}
@@ -364,39 +370,118 @@ export default function SetupPage() {
           </div>
         )}
 
-        {/* ─── Complete ─── */}
+        {/* Step 3: 계정 생성 */}
+        {step === 'account' && (
+          <form onSubmit={handleCreateSuperAdmin} className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-xs text-blue-800">
+              현재 super_admin 계정: <strong>{superAdminCount}/{MAX_SUPER_ADMIN}</strong>
+              <br />
+              입력한 이메일이 최고 관리자(super_admin) 계정으로 등록됩니다.
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                이메일 <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="email"
+                value={account.email}
+                onChange={(e) => setAccount({ ...account, email: e.target.value })}
+                required
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                비밀번호 <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="password"
+                value={account.password}
+                onChange={(e) => setAccount({ ...account, password: e.target.value })}
+                required
+                minLength={8}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-400 mt-1">8자 이상</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                이름 <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={account.name}
+                onChange={(e) => setAccount({ ...account, name: e.target.value })}
+                required
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>
+            )}
+            <button
+              type="submit"
+              disabled={dbStatus === 'creating_admin'}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-2.5 rounded-lg text-sm"
+            >
+              {dbStatus === 'creating_admin' ? '생성 중...' : 'super_admin 계정 생성'}
+            </button>
+          </form>
+        )}
+
+        {/* locked */}
+        {step === 'locked' && (
+          <div className="text-center py-4 space-y-4">
+            <div className="text-5xl">🔒</div>
+            <p className="text-lg font-semibold text-gray-800">생성 제한</p>
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-left text-sm text-yellow-800">
+              super_admin 계정이 이미 최대({MAX_SUPER_ADMIN}명)에 도달했습니다.
+              <br />
+              <br />
+              새 super_admin을 만들려면 기존 관리자 페이지에서 한 명을 강등해 주세요.
+              <br />
+              강등 후 아래 "재확인" 버튼을 누르면 다시 생성할 수 있습니다.
+            </div>
+            <div className="text-xs text-gray-500">현재: {superAdminCount}/{MAX_SUPER_ADMIN}</div>
+            <button
+              onClick={recheckSuperAdminCount}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm"
+            >
+              재확인
+            </button>
+            <a
+              href="/auth/login"
+              className="block text-sm text-gray-500 hover:text-gray-700"
+            >
+              로그인 페이지로 이동
+            </a>
+          </div>
+        )}
+
+        {/* complete */}
         {step === 'complete' && (
           <div className="text-center py-6">
             <div className="text-5xl mb-4">✅</div>
             <p className="text-lg font-semibold text-gray-800 mb-4">초기 설정 완료!</p>
-
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 text-left mb-4">
-              <p className="text-sm font-semibold text-blue-800 mb-3">관리자 계정</p>
+              <p className="text-sm font-semibold text-blue-800 mb-3">최고 관리자(super_admin) 계정</p>
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-blue-600 font-medium w-20">이메일</span>
                   <code className="text-sm bg-white border border-blue-200 rounded px-2 py-0.5 text-blue-900 font-mono">
-                    {ADMIN_EMAIL}
-                  </code>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-blue-600 font-medium w-20">비밀번호</span>
-                  <code className="text-sm bg-white border border-blue-200 rounded px-2 py-0.5 text-blue-900 font-mono">
-                    {ADMIN_PASSWORD}
+                    {account.email}
                   </code>
                 </div>
               </div>
             </div>
-
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-left mb-6">
               <p className="text-xs text-yellow-800">
-                ⚠️ 보안을 위해 로그인 후 반드시 비밀번호를 변경하세요.
+                ⚠️ 이 계정은 모든 권한을 가진 최고 관리자입니다. 비밀번호를 안전하게 보관하세요.
               </p>
             </div>
-
             <a
               href="/auth/login"
-              className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg text-sm transition-colors"
+              className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg text-sm"
             >
               로그인 페이지로 이동
             </a>
@@ -405,7 +490,7 @@ export default function SetupPage() {
 
         <div className="mt-6 pt-5 border-t border-gray-100">
           <p className="text-xs text-gray-400 text-center">
-            이 페이지는 최초 1회만 사용하세요.
+            super_admin은 최대 {MAX_SUPER_ADMIN}명까지 등록 가능합니다.
           </p>
         </div>
       </div>

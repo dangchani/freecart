@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { getMyPermissions, getSystemSetting } from '@/lib/permissions';
 import type { User } from '@/types';
+
+// joy: 승인 대기 사용자가 로그인 시도하면 강제 로그아웃하고 호출자에게 안내할 수 있도록 사용하는 마커
+export const PENDING_APPROVAL_ERROR = 'PENDING_APPROVAL';
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pendingApproval, setPendingApproval] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -26,6 +31,7 @@ export function useAuth() {
         loadUserProfile(session.user.id);
       } else {
         setUser(null);
+        setPendingApproval(false);
         setLoading(false);
       }
     });
@@ -77,22 +83,50 @@ export function useAuth() {
       return;
     }
 
+    // joy: 승인 토글 ON + 일반 사용자 + 미승인이면 강제 로그아웃
+    if (profile.role === 'user') {
+      const requireApproval = await getSystemSetting<boolean>('require_signup_approval');
+      if (requireApproval === true && profile.is_approved === false) {
+        await supabase.auth.signOut();
+        setUser(null);
+        setPendingApproval(true);
+        setLoading(false);
+        return;
+      }
+    }
+
+    // joy: 관리자 계정은 권한 목록을 함께 캐싱
+    let permissions: string[] = [];
+    if (profile.role === 'admin' || profile.role === 'super_admin') {
+      try {
+        permissions = await getMyPermissions();
+      } catch (e) {
+        console.error('[useAuth] Failed to load permissions:', e);
+      }
+    }
+
     setUser({
       id: profile.id,
       email: profile.email,
       name: profile.name,
       phone: profile.phone,
       role: profile.role,
+      isApproved: profile.is_approved,
+      permissions,
       createdAt: profile.created_at,
       updatedAt: profile.updated_at,
     });
+    setPendingApproval(false);
     setLoading(false);
   }
 
   return {
     user,
     loading,
+    pendingApproval,
     isAuthenticated: !!user,
-    isAdmin: user?.role === 'admin',
+    isAdmin: user?.role === 'admin' || user?.role === 'super_admin',
+    isSuperAdmin: user?.role === 'super_admin',
+    permissions: user?.permissions ?? [],
   };
 }

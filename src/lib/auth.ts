@@ -16,6 +16,10 @@ export async function signUp(email: string, password: string, name: string) {
   return data;
 }
 
+// joy: 로그인 후 require_signup_approval 토글이 켜져 있고 아직 미승인 사용자라면
+// 즉시 로그아웃하고 PENDING_APPROVAL 에러로 알린다. UI에서 안내 메시지 분기에 사용.
+export const PENDING_APPROVAL_ERROR = 'PENDING_APPROVAL';
+
 export async function signIn(email: string, password: string) {
   const supabase = createClient();
 
@@ -25,6 +29,27 @@ export async function signIn(email: string, password: string) {
   });
 
   if (error) throw error;
+
+  // 승인 대기 상태 체크
+  const { data: profile } = await supabase
+    .from('users')
+    .select('role, is_approved')
+    .eq('id', data.user.id)
+    .maybeSingle();
+
+  if (profile && profile.role === 'user' && profile.is_approved === false) {
+    const { data: setting } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'require_signup_approval')
+      .maybeSingle();
+
+    if (setting?.value === true) {
+      await supabase.auth.signOut();
+      throw new Error(PENDING_APPROVAL_ERROR);
+    }
+  }
+
   return data;
 }
 

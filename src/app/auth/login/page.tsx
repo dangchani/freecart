@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { signIn } from '@/lib/auth';
+import { signIn, PENDING_APPROVAL_ERROR } from '@/lib/auth';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -23,7 +23,12 @@ export default function LoginPage() {
       await signIn(email, password);
       navigate('/');
     } catch (err) {
-      setError('이메일 또는 비밀번호가 올바르지 않습니다.');
+      // joy: 승인 대기 사용자는 별도 안내 메시지로 분기
+      if (err instanceof Error && err.message === PENDING_APPROVAL_ERROR) {
+        setError('관리자 승인 대기 중인 계정입니다. 승인 후 다시 시도해 주세요.');
+      } else {
+        setError('이메일 또는 비밀번호가 올바르지 않습니다.');
+      }
     } finally {
       setLoading(false);
     }

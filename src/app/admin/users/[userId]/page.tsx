@@ -9,6 +9,8 @@ import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ArrowLeft } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { UserManagersSection } from '@/components/admin/user-managers-section';
+import { UserCustomFieldsSection } from '@/components/admin/user-custom-fields-section';
 
 interface UserDetail {
   id: string;
@@ -274,6 +276,14 @@ export default function AdminUserDetailPage() {
           {userDetail.isBlocked ? '차단 해제' : '회원 차단'}
         </Button>
       </div>
+
+      {/* joy: 담당자 + 커스텀 필드 섹션 */}
+      {userId && (
+        <div className="mb-6 space-y-4">
+          <UserManagersSection userId={userId} />
+          <UserCustomFieldsSection userId={userId} />
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* 기본 정보 */}

@@ -60,7 +60,7 @@ export default function AdminShippingSettingsPage() {
 
   useEffect(() => {
     if (!authLoading) {
-      if (!user || user.role !== 'admin') {
+      if (!user || (user.role !== 'admin' && user.role !== 'super_admin')) {
         navigate('/');
         return;
       }
