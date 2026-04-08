@@ -20,8 +20,14 @@ export async function signUp(email: string, password: string, name: string) {
 // 즉시 로그아웃하고 PENDING_APPROVAL 에러로 알린다. UI에서 안내 메시지 분기에 사용.
 export const PENDING_APPROVAL_ERROR = 'PENDING_APPROVAL';
 
-export async function signIn(email: string, password: string) {
+// joy: 아이디 기반 로그인 — login_id로 이메일을 조회한 뒤 signInWithPassword 호출.
+//   RPC get_email_by_login_id는 SECURITY DEFINER로 RLS 없이 이메일만 반환.
+//   아이디 미존재/비밀번호 불일치 모두 동일 에러로 처리해 계정 존재 여부 미노출.
+export async function signIn(loginId: string, password: string) {
   const supabase = createClient();
+
+  const { data: email } = await supabase.rpc('get_email_by_login_id', { p_login_id: loginId });
+  if (!email) throw new Error('아이디 또는 비밀번호가 올바르지 않습니다.');
 
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
@@ -79,6 +85,7 @@ export async function getCurrentUser(): Promise<User | null> {
   return {
     id: profile.id,
     email: profile.email,
+    loginId: profile.login_id ?? undefined,
     name: profile.name,
     phone: profile.phone,
     role: profile.role,
@@ -104,6 +111,22 @@ export async function updateProfile(userId: string, data: Partial<User>) {
 
 export async function resetPassword(email: string) {
   const supabase = createClient();
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/auth/reset-password`,
+  });
+
+  if (error) throw error;
+}
+
+// joy: 아이디로 비밀번호 재설정 링크 발송.
+//   login_id → RPC get_email_by_login_id → resetPasswordForEmail 순서로 처리.
+//   아이디 미존재 시 NOT_FOUND 에러로 UI에서 분기.
+export async function resetPasswordByLoginId(loginId: string) {
+  const supabase = createClient();
+
+  const { data: email } = await supabase.rpc('get_email_by_login_id', { p_login_id: loginId });
+  if (!email) throw new Error('NOT_FOUND');
 
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo: `${window.location.origin}/auth/reset-password`,

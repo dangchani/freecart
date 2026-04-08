@@ -31,6 +31,7 @@ import {
 
 interface UserRow {
   id: string;
+  loginId: string;
   name: string;
   email: string;
   phone: string;
@@ -50,11 +51,12 @@ type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
 const LS_KEY_COLUMNS = 'freecart.admin.users.visibleColumns';
 const LS_KEY_PAGE_SIZE = 'freecart.admin.users.pageSize';
 
-// 회원가입 필드 중 기본 고정 헤더(이름/이메일/전화번호)와 중복되는 건 제외
-const EXCLUDED_FIELD_KEYS = new Set(['email', 'password', 'name', 'phone']);
+// 회원가입 필드 중 기본 고정 헤더(아이디/이름/이메일/전화번호)와 중복되는 건 제외
+const EXCLUDED_FIELD_KEYS = new Set(['email', 'password', 'name', 'phone', 'login_id']);
 
 // 정렬 키: 기본(서버 정렬) 키는 고정 매핑
 const CORE_SORT_MAP: Record<string, string> = {
+  login_id: 'login_id',
   name: 'name',
   email: 'email',
   phone: 'phone',
@@ -108,7 +110,7 @@ export default function AdminUsersPage() {
 
   // 회원 추가 모달
   const [showAddModal, setShowAddModal] = useState(false);
-  const [addForm, setAddForm] = useState({ name: '', email: '', password: '', phone: '' });
+  const [addForm, setAddForm] = useState({ loginId: '', name: '', email: '', password: '', phone: '' });
   const [addSubmitting, setAddSubmitting] = useState(false);
   const [addError, setAddError] = useState('');
 
@@ -196,7 +198,7 @@ export default function AdminUsersPage() {
         .filter((f) => f.storage_target === 'users' && f.storage_column)
         .map((f) => f.storage_column as string);
       const baseCols =
-        'id, name, email, phone, points, is_blocked, created_at, level_id, user_levels(name)';
+        'id, login_id, name, email, phone, points, is_blocked, created_at, level_id, user_levels(name)';
       const selectExpr = extraCols.length > 0 ? `${baseCols}, ${extraCols.join(', ')}` : baseCols;
 
       let query = supabase
@@ -205,7 +207,7 @@ export default function AdminUsersPage() {
 
       if (myId) query = query.neq('id', myId);
       if (search) {
-        query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
+        query = query.or(`login_id.ilike.%${search}%,name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
       }
 
       // 2) 정렬
@@ -262,6 +264,7 @@ export default function AdminUsersPage() {
         for (const col of extraCols) userCols[col] = u[col];
         return {
           id: u.id,
+          loginId: u.login_id || '',
           name: u.name,
           email: u.email,
           phone: u.phone || '',
@@ -340,6 +343,10 @@ export default function AdminUsersPage() {
       setAddError('비밀번호는 8자 이상이어야 합니다.');
       return;
     }
+    if (addForm.loginId && !/^[a-zA-Z0-9]{5,}$/.test(addForm.loginId)) {
+      setAddError('아이디는 영문/숫자 5자 이상으로 입력해주세요.');
+      return;
+    }
     setAddSubmitting(true);
     setAddError('');
     try {
@@ -349,10 +356,11 @@ export default function AdminUsersPage() {
         p_password: addForm.password,
         p_name: addForm.name,
         p_phone: addForm.phone || null,
+        p_login_id: addForm.loginId || null,
       });
       if (error) throw error;
       alert(`${addForm.name}(${addForm.email}) 회원이 생성되었습니다.`);
-      setAddForm({ name: '', email: '', password: '', phone: '' });
+      setAddForm({ loginId: '', name: '', email: '', password: '', phone: '' });
       setShowAddModal(false);
       await loadUsers();
     } catch (err) {
@@ -457,7 +465,7 @@ export default function AdminUsersPage() {
                   </div>
                 )}
                 <p className="mt-2 text-[11px] text-gray-400">
-                  기본 컬럼(이름·이메일·전화번호·가입일·상태·관리)은 항상 표시됩니다.
+                  기본 컬럼(아이디·이름·이메일·전화번호·가입일·상태·관리)은 항상 표시됩니다.
                 </p>
               </div>
             )}
@@ -525,7 +533,7 @@ export default function AdminUsersPage() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="이름, 이메일, 전화번호 검색"
+              placeholder="아이디, 이름, 이메일, 전화번호 검색"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               className="w-full rounded-md border px-4 py-2 pl-9 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -570,6 +578,7 @@ export default function AdminUsersPage() {
                   <th className="w-[60px] px-2 py-3 font-medium text-gray-600 text-center whitespace-nowrap">
                     No.
                   </th>
+                  {sortableHeader('아이디', 'login_id')}
                   {sortableHeader('이름', 'name')}
                   {sortableHeader('이메일', 'email')}
                   {sortableHeader('전화번호', 'phone')}
@@ -616,6 +625,9 @@ export default function AdminUsersPage() {
                   >
                     <td className="w-[60px] px-2 py-3 text-center text-gray-500">
                       {(page - 1) * pageSize + idx + 1}
+                    </td>
+                    <td className="px-4 py-3 text-gray-600 text-center truncate" title={u.loginId}>
+                      {u.loginId || '-'}
                     </td>
                     <td className="px-4 py-3 font-medium text-center truncate" title={u.name}>
                       {u.name}
@@ -745,6 +757,16 @@ export default function AdminUsersPage() {
             </div>
 
             <form onSubmit={handleAddUser} className="space-y-4">
+              <div>
+                <Label htmlFor="add-login-id">아이디 (영문/숫자 5자 이상)</Label>
+                <Input
+                  id="add-login-id"
+                  type="text"
+                  value={addForm.loginId}
+                  onChange={(e) => setAddForm({ ...addForm, loginId: e.target.value })}
+                  placeholder="영문/숫자 5자 이상"
+                />
+              </div>
               <div>
                 <Label htmlFor="add-name">이름 *</Label>
                 <Input

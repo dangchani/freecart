@@ -14,7 +14,7 @@ export default function LoginPage() {
   const reason = searchParams.get('reason');
   const nextPath = searchParams.get('next') || '/';
 
-  const [email, setEmail] = useState('');
+  const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -25,14 +25,14 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await signIn(email, password);
+      await signIn(loginId, password);
       navigate(nextPath);
     } catch (err) {
       // joy: 승인 대기 사용자는 별도 안내 메시지로 분기
       if (err instanceof Error && err.message === PENDING_APPROVAL_ERROR) {
         setError('관리자 승인 대기 중인 계정입니다. 승인 후 다시 시도해 주세요.');
       } else {
-        setError('이메일 또는 비밀번호가 올바르지 않습니다.');
+        setError('아이디 또는 비밀번호가 올바르지 않습니다.');
       }
     } finally {
       setLoading(false);
@@ -44,7 +44,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>로그인</CardTitle>
-          <CardDescription>이메일과 비밀번호를 입력하세요</CardDescription>
+          <CardDescription>아이디와 비밀번호를 입력하세요</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -58,13 +58,13 @@ export default function LoginPage() {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="email">이메일</Label>
+              <Label htmlFor="loginId">아이디</Label>
               <Input
-                id="email"
-                type="email"
-                placeholder="name@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="loginId"
+                type="text"
+                placeholder="영문/숫자 5자 이상"
+                value={loginId}
+                onChange={(e) => setLoginId(e.target.value)}
                 required
               />
             </div>

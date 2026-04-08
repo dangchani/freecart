@@ -19,6 +19,7 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
 export interface User {
   id: string;
   email: string;
+  loginId?: string;
   name: string;
   nickname?: string;
   phone?: string | null;

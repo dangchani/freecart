@@ -7,9 +7,9 @@ import { logAdminAction, buildDiff } from '@/lib/admin-log';
 import { openDaumPostcode } from '@/lib/daum-postcode';
 import { uploadSignupFile } from '@/lib/upload-signup-file';
 
-// 기본 정보 카드에서 이미 표시되는 필드 (이메일/이름/휴대폰/가입일)
+// 기본 정보 카드에서 이미 표시되는 필드 (아이디/이메일/이름/휴대폰/가입일)
 // password는 절대 노출 금지
-const EXCLUDED_KEYS = new Set(['email', 'password', 'name', 'phone']);
+const EXCLUDED_KEYS = new Set(['email', 'password', 'name', 'phone', 'login_id']);
 
 interface FieldOption {
   label: string;

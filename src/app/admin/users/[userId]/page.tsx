@@ -17,6 +17,7 @@ import { UserPermissionSection } from '@/components/admin/user-permission-sectio
 
 interface UserDetail {
   id: string;
+  loginId: string;
   name: string;
   email: string;
   phone: string;
@@ -67,9 +68,9 @@ export default function AdminUserDetailPage() {
   const [memo, setMemo] = useState('');
   const [selectedLevel, setSelectedLevel] = useState('');
 
-  // joy: 기본 정보 편집 상태 (이름/전화번호). 이메일은 수정 불가.
+  // joy: 기본 정보 편집 상태 (아이디/이름/전화번호). 이메일은 수정 불가.
   const [editingBasic, setEditingBasic] = useState(false);
-  const [basicForm, setBasicForm] = useState({ name: '', phone: '' });
+  const [basicForm, setBasicForm] = useState({ loginId: '', name: '', phone: '' });
   const [savingBasic, setSavingBasic] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
   const signupFieldsRef = useRef<UserSignupFieldsSectionHandle>(null);
@@ -112,7 +113,7 @@ export default function AdminUserDetailPage() {
 
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('id, name, email, phone, points, is_blocked, created_at, memo, level_id, role, user_levels(name)')
+        .select('id, login_id, name, email, phone, points, is_blocked, created_at, memo, level_id, role, user_levels(name)')
         .eq('id', userId!)
         .single();
 
@@ -137,6 +138,7 @@ export default function AdminUserDetailPage() {
       const levelName = (userData.user_levels as any)?.name || '';
       const detail: UserDetail = {
         id: userData.id,
+        loginId: (userData as any).login_id || '',
         name: userData.name,
         email: userData.email,
         phone: userData.phone || '',
@@ -159,7 +161,7 @@ export default function AdminUserDetailPage() {
       setUserDetail(detail);
       setMemo(detail.memo);
       setSelectedLevel(detail.level || 'bronze');
-      setBasicForm({ name: detail.name, phone: detail.phone });
+      setBasicForm({ loginId: detail.loginId, name: detail.name, phone: detail.phone });
     } catch {
       setError('회원 정보를 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -192,18 +194,38 @@ export default function AdminUserDetailPage() {
     }
   }
 
-  // joy: 회원 기본정보(이름/전화번호) 저장 + admin_logs 기록
+  // joy: 회원 기본정보(아이디/이름/전화번호) 저장 + admin_logs 기록. 이메일은 수정 불가.
   async function handleSaveBasic() {
     if (!userDetail) return;
+    const loginId = basicForm.loginId.trim();
     const name = basicForm.name.trim();
     if (!name) {
       alert('이름을 입력해주세요.');
       return;
     }
+    if (loginId && !/^[a-zA-Z0-9]{5,}$/.test(loginId)) {
+      alert('아이디는 영문/숫자 5자 이상으로 입력해주세요.');
+      return;
+    }
     const phone = basicForm.phone.trim();
+
+    // login_id 중복 체크 (변경된 경우에만)
+    if (loginId && loginId !== userDetail.loginId) {
+      const supabase = createClient();
+      const { count } = await supabase
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .eq('login_id', loginId)
+        .neq('id', userId!);
+      if (count && count > 0) {
+        alert('이미 사용 중인 아이디입니다.');
+        return;
+      }
+    }
+
     const diff = buildDiff(
-      { name: userDetail.name, phone: userDetail.phone },
-      { name, phone },
+      { loginId: userDetail.loginId, name: userDetail.name, phone: userDetail.phone },
+      { loginId, name, phone },
     );
     const signupHasChanges = signupFieldsRef.current?.hasChanges() ?? false;
     if (!diff && !signupHasChanges) {
@@ -216,7 +238,7 @@ export default function AdminUserDetailPage() {
         const supabase = createClient();
         const { error: updateError } = await supabase
           .from('users')
-          .update({ name, phone: phone || null })
+          .update({ login_id: loginId || null, name, phone: phone || null })
           .eq('id', userId!);
         if (updateError) throw updateError;
 
@@ -248,7 +270,7 @@ export default function AdminUserDetailPage() {
 
   function handleCancelBasic() {
     if (!userDetail) return;
-    setBasicForm({ name: userDetail.name, phone: userDetail.phone });
+    setBasicForm({ loginId: userDetail.loginId, name: userDetail.name, phone: userDetail.phone });
     setEditingBasic(false);
   }
 
@@ -456,6 +478,22 @@ export default function AdminUserDetailPage() {
             )}
           </div>
           <dl className="space-y-3 text-sm">
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-gray-500 shrink-0">아이디</dt>
+              <dd className="font-medium text-right flex-1">
+                {editingBasic ? (
+                  <input
+                    type="text"
+                    value={basicForm.loginId}
+                    onChange={(e) => setBasicForm((f) => ({ ...f, loginId: e.target.value }))}
+                    className="w-full rounded-md border px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="영문/숫자 5자 이상"
+                  />
+                ) : (
+                  userDetail.loginId || '-'
+                )}
+              </dd>
+            </div>
             <div className="flex items-center justify-between gap-4">
               <dt className="text-gray-500 shrink-0">이름</dt>
               <dd className="font-medium text-right flex-1">
