@@ -123,7 +123,7 @@ function SystemSettingsInner() {
           );
         })}
 
-        <div className="border-t pt-4">
+        <div>
           <Label htmlFor="point-label" className="font-medium text-gray-900">포인트 명칭</Label>
           <div className="mt-1 text-sm text-gray-500">UI에 표시되는 포인트의 명칭 (예: 포인트, 적립금, 마일리지)</div>
           <div className="mt-2 flex gap-2">

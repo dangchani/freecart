@@ -9,6 +9,7 @@ import { format } from 'date-fns';
 import { Search, Plus, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { getSystemSetting } from '@/lib/permissions';
+import { useAuth } from '@/hooks/useAuth';
 
 interface User {
   id: string;
@@ -23,7 +24,9 @@ interface User {
 
 export default function AdminUsersPage() {
   const navigate = useNavigate();
+  const { user: authUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
+  const [myInfo, setMyInfo] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
@@ -48,8 +51,12 @@ export default function AdminUsersPage() {
       setUsePoints(up !== false);
       if (typeof pl === 'string' && pl) setPointLabel(pl);
     })();
-    loadUsers();
   }, []);
+
+  useEffect(() => {
+    loadUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser?.id]);
 
   async function loadUsers() {
     try {
@@ -68,18 +75,27 @@ export default function AdminUsersPage() {
       const { data, error: fetchError } = await query;
       if (fetchError) throw fetchError;
 
-      setUsers(
-        (data || []).map((u: any) => ({
-          id: u.id,
-          name: u.name,
-          email: u.email,
-          phone: u.phone || '',
-          level: (u.user_levels as any)?.name || '',
-          points: u.points || 0,
-          createdAt: u.created_at,
-          isBlocked: u.is_blocked,
-        }))
-      );
+      const mapped: User[] = (data || []).map((u: any) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        phone: u.phone || '',
+        level: (u.user_levels as any)?.name || '',
+        points: u.points || 0,
+        createdAt: u.created_at,
+        isBlocked: u.is_blocked,
+      }));
+
+      // 본인 레코드는 목록 상단 카드로 분리
+      const myId = authUser?.id;
+      if (myId) {
+        const mine = mapped.find((u) => u.id === myId) ?? null;
+        setMyInfo(mine);
+        setUsers(mapped.filter((u) => u.id !== myId));
+      } else {
+        setMyInfo(null);
+        setUsers(mapped);
+      }
     } catch {
       setError('회원 목록을 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -144,6 +160,55 @@ export default function AdminUsersPage() {
           회원 추가
         </Button>
       </div>
+
+      {/* 본인 정보 카드 */}
+      {myInfo && (
+        <Card
+          className="mb-4 cursor-pointer p-5 transition-colors hover:bg-blue-50 border-blue-200"
+          onClick={() => navigate(`/admin/users/${myInfo.id}`)}
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 text-lg font-bold text-blue-600">
+                {myInfo.name.charAt(0)}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-semibold">{myInfo.name}</span>
+                  <Badge className="bg-blue-100 text-blue-700 border-blue-200">내 계정</Badge>
+                  <Badge variant={myInfo.isBlocked ? 'destructive' : 'default'}>
+                    {myInfo.isBlocked ? '차단됨' : '정상'}
+                  </Badge>
+                </div>
+                <div className="mt-1 text-sm text-gray-500">
+                  {myInfo.email}
+                  {myInfo.phone && <span className="ml-2">· {myInfo.phone}</span>}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-6 text-sm text-gray-600">
+              {useLevels && (
+                <div className="text-right">
+                  <div className="text-xs text-gray-400">등급</div>
+                  <div className="font-medium">{myInfo.level || '-'}</div>
+                </div>
+              )}
+              {usePoints && (
+                <div className="text-right">
+                  <div className="text-xs text-gray-400">{pointLabel}</div>
+                  <div className="font-medium">{(myInfo.points || 0).toLocaleString()}P</div>
+                </div>
+              )}
+              <div className="text-right">
+                <div className="text-xs text-gray-400">가입일</div>
+                <div className="font-medium">
+                  {myInfo.createdAt ? format(new Date(myInfo.createdAt), 'yyyy.MM.dd') : '-'}
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* 검색/필터 */}
       <Card className="mb-6 p-4">

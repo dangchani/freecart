@@ -1392,6 +1392,19 @@ CREATE TABLE IF NOT EXISTS admin_logs (
 CREATE INDEX IF NOT EXISTS idx_admin_logs_admin_id   ON admin_logs(admin_id);
 CREATE INDEX IF NOT EXISTS idx_admin_logs_created_at ON admin_logs(created_at DESC);
 
+-- joy: admin_logs RLS — 관리자만 조회, 본인이 admin_id인 로그만 insert
+ALTER TABLE admin_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "admin_logs_select_admin" ON admin_logs;
+CREATE POLICY "admin_logs_select_admin" ON admin_logs
+  FOR SELECT USING (is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS "admin_logs_insert_self" ON admin_logs;
+CREATE POLICY "admin_logs_insert_self" ON admin_logs
+  FOR INSERT WITH CHECK (
+    is_admin(auth.uid()) AND admin_id = auth.uid()
+  );
+
 -- 10.7 ip_blocks (IP 차단)
 CREATE TABLE IF NOT EXISTS ip_blocks (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2033,6 +2046,12 @@ CREATE POLICY "users_update_own" ON users
 DROP POLICY IF EXISTS "user_addresses_own" ON user_addresses;
 CREATE POLICY "user_addresses_own" ON user_addresses
   FOR ALL USING (auth.uid()::text = user_id::text);
+
+-- joy: 관리자(admin/super_admin)는 모든 회원의 주소를 조회/수정 가능
+DROP POLICY IF EXISTS "user_addresses_admin_all" ON user_addresses;
+CREATE POLICY "user_addresses_admin_all" ON user_addresses
+  FOR ALL USING (is_admin(auth.uid()))
+  WITH CHECK (is_admin(auth.uid()));
 
 -- user_points_history: read own history
 DROP POLICY IF EXISTS "user_points_history_read_own" ON user_points_history;
