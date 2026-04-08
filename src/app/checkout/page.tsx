@@ -121,7 +121,18 @@ async function requestPayment(
       break;
     }
 
-    case 'kiwoom':
+    case 'kiwoom': {
+      // 키움페이 Mock: 테스트 환경에서는 내부 mock 페이지로 이동
+      const mockUrl = new URL('/checkout/kiwoom-mock', window.location.origin);
+      mockUrl.searchParams.set('orderId', params.orderId);
+      mockUrl.searchParams.set('amount', String(params.amount));
+      mockUrl.searchParams.set('orderName', params.orderName);
+      mockUrl.searchParams.set('successUrl', params.successUrl);
+      mockUrl.searchParams.set('failUrl', params.failUrl);
+      window.location.href = mockUrl.toString();
+      break;
+    }
+
     case 'kcp':
     case 'nicepay': {
       throw new Error(`${pg.name}은 현재 준비 중입니다. 다른 결제 수단을 선택해주세요.`);

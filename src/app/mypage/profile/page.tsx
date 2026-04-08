@@ -11,6 +11,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { createClient } from '@/lib/supabase/client';
+import { UserProfileCustomFields } from '@/components/mypage/user-profile-custom-fields';
 
 const profileSchema = z.object({
   displayName: z.string().min(1, '이름을 입력해주세요').optional(),
@@ -170,6 +171,8 @@ export default function ProfilePage() {
             </Button>
           </form>
         </Card>
+
+        {user && <UserProfileCustomFields userId={user.id} />}
 
         <Card className="mt-6 p-6 border-red-200">
           <h2 className="mb-2 text-lg font-bold text-red-600">위험 영역</h2>

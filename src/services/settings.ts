@@ -133,6 +133,18 @@ export async function getBankTransferSettings(): Promise<{
   };
 }
 
+/** 폐쇄몰 설정 */
+export async function getPrivateMallSettings(): Promise<{
+  enabled: boolean;
+  mode: 'full' | 'product';
+}> {
+  await ensureLoaded();
+  return {
+    enabled: parseValue(cache['closed_mall_enabled']) === 'true',
+    mode: (parseValue(cache['closed_mall_mode']) as 'full' | 'product') || 'product',
+  };
+}
+
 export async function getSiteInfo(): Promise<{
   siteName: string;
   siteDescription: string;

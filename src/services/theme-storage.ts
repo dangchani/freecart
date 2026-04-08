@@ -205,21 +205,28 @@ export async function downloadAndInstallTheme(
   storeApiUrl: string,
   themeId: string,
   themeSlug: string,
-  licenseKey?: string
-): Promise<{ success: boolean; cssUrl?: string; error?: string }> {
+  licenseKey?: string,
+  accessToken?: string
+): Promise<{ success: boolean; cssUrl?: string; error?: string; code?: string; activatedDomains?: string[] }> {
   try {
-    // freecart-web API에서 테마 파일 다운로드
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
+    }
     const response = await fetch(`${storeApiUrl}/api/themes/${themeId}/download`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ licenseKey }),
+      headers,
+      body: JSON.stringify({ licenseKey, domain: window.location.origin }),
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `HTTP ${response.status}`);
+      return {
+        success: false,
+        error: errorData.error || `HTTP ${response.status}`,
+        code: errorData.code,
+        activatedDomains: errorData.activatedDomains,
+      };
     }
 
     const data = await response.json();

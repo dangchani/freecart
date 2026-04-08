@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,11 @@ import { signIn, PENDING_APPROVAL_ERROR } from '@/lib/auth';
 
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const reason = searchParams.get('reason');
+  const nextPath = searchParams.get('next') || '/';
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,7 +26,7 @@ export default function LoginPage() {
 
     try {
       await signIn(email, password);
-      navigate('/');
+      navigate(nextPath);
     } catch (err) {
       // joy: 승인 대기 사용자는 별도 안내 메시지로 분기
       if (err instanceof Error && err.message === PENDING_APPROVAL_ERROR) {
@@ -43,6 +48,11 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {reason === 'closed_mall' && (
+              <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-700">
+                이 쇼핑몰은 승인된 회원만 이용 가능합니다. 로그인 후 이용해 주세요.
+              </div>
+            )}
             {error && (
               <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">{error}</div>
             )}

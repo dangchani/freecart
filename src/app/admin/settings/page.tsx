@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 import { invalidateSettingsCache } from '@/services/settings';
+import { getOAuthConnection, startOAuthFlow, disconnectOAuth, OAuthConnection } from '@/services/oauth';
 
 interface Settings {
   // 사이트 기본 정보
@@ -46,6 +47,9 @@ interface Settings {
   smtpPass: string;
   smtpSenderName: string;
   smtpSenderEmail: string;
+  // 폐쇄몰 설정
+  closedMallEnabled: string; // 'true' | 'false'
+  closedMallMode: string;    // 'full' | 'product'
 }
 
 const defaultSettings: Settings = {
@@ -77,9 +81,12 @@ const defaultSettings: Settings = {
   smtpHost: '',
   smtpPort: '587',
   smtpUser: '',
+
   smtpPass: '',
   smtpSenderName: '',
   smtpSenderEmail: '',
+  closedMallEnabled: 'false',
+  closedMallMode: 'product',
 };
 
 // settings 테이블의 key와 JS 프로퍼티 매핑
@@ -115,6 +122,8 @@ const keyMap: Record<keyof Settings, string> = {
   smtpPass: 'smtp_pass',
   smtpSenderName: 'smtp_sender_name',
   smtpSenderEmail: 'smtp_sender_email',
+  closedMallEnabled: 'closed_mall_enabled',
+  closedMallMode: 'closed_mall_mode',
 };
 
 export default function AdminSettingsPage() {
@@ -129,6 +138,11 @@ export default function AdminSettingsPage() {
   const [applyError, setApplyError] = useState('');
   const [applySuccess, setApplySuccess] = useState('');
 
+  // freecart-web OAuth 연동 상태
+  const [oauthConn, setOauthConn] = useState<OAuthConnection | null>(null);
+  const [oauthLoading, setOauthLoading] = useState(false);
+  const [oauthMsg, setOauthMsg] = useState('');
+
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
@@ -136,8 +150,39 @@ export default function AdminSettingsPage() {
         return;
       }
       loadSettings();
+      getOAuthConnection().then(setOauthConn).catch(() => {});
     }
   }, [user, authLoading, navigate]);
+
+  async function handleOAuthConnect() {
+    setOauthLoading(true);
+    setOauthMsg('');
+    try {
+      const result = await startOAuthFlow();
+      if (result.success) {
+        setOauthMsg(`연동 완료: ${result.email}`);
+        const conn = await getOAuthConnection();
+        setOauthConn(conn);
+      } else {
+        setOauthMsg(result.error || '연동 실패');
+      }
+    } finally {
+      setOauthLoading(false);
+    }
+  }
+
+  async function handleOAuthDisconnect() {
+    if (!confirm('freecart-web 연동을 해제하시겠습니까?')) return;
+    setOauthLoading(true);
+    setOauthMsg('');
+    try {
+      await disconnectOAuth();
+      setOauthConn(null);
+      setOauthMsg('연동이 해제되었습니다.');
+    } finally {
+      setOauthLoading(false);
+    }
+  }
 
   async function loadSettings() {
     try {
@@ -405,6 +450,54 @@ export default function AdminSettingsPage() {
               <p className="mt-1 text-xs text-gray-500">네이버 소셜 로그인용 클라이언트 ID</p>
             </div>
           </div>
+        </Card>
+
+        {/* freecart-web 계정 연동 */}
+        <Card className="p-6">
+          <h2 className="mb-1 text-lg font-bold">freecart-web 계정 연동</h2>
+          <p className="mb-4 text-xs text-gray-500">
+            freecart-web 마켓플레이스와 연동하면 구매한 테마/스킨을 자동으로 설치할 수 있습니다.
+          </p>
+          {oauthConn ? (
+            <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-green-800">연동됨</p>
+                <p className="text-xs text-green-700">{oauthConn.freecartUserEmail}</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  연결: {new Date(oauthConn.connectedAt).toLocaleString('ko-KR')} ·
+                  만료: {new Date(oauthConn.tokenExpiresAt).toLocaleString('ko-KR')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleOAuthDisconnect}
+                disabled={oauthLoading}
+                className="text-sm text-red-600 hover:text-red-700 font-medium disabled:opacity-50"
+              >
+                {oauthLoading ? '처리 중...' : '연동 해제'}
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+              <p className="text-sm text-gray-500">연동되지 않음</p>
+              <button
+                type="button"
+                onClick={handleOAuthConnect}
+                disabled={oauthLoading || !settings.storeApiUrl}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {oauthLoading ? '연동 중...' : 'freecart-web 연동하기'}
+              </button>
+            </div>
+          )}
+          {oauthMsg && (
+            <p className={`mt-2 text-xs ${oauthMsg.includes('완료') || oauthMsg.includes('해제') ? 'text-green-600' : 'text-red-600'}`}>
+              {oauthMsg}
+            </p>
+          )}
+          {!settings.storeApiUrl && (
+            <p className="mt-2 text-xs text-amber-600">스토어 API URL을 먼저 입력하고 저장해주세요.</p>
+          )}
         </Card>
 
         {/* 무통장입금 설정 */}
@@ -706,6 +799,75 @@ export default function AdminSettingsPage() {
               </div>
             )}
           </div>
+        </Card>
+
+        {/* 폐쇄몰 설정 */}
+        <Card className="p-6">
+          <h2 className="text-lg font-semibold mb-1">폐쇄몰 설정</h2>
+          <p className="text-sm text-gray-500 mb-5">승인된 회원만 접근 가능하도록 사이트를 제한합니다.</p>
+
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <p className="font-medium text-sm">폐쇄몰 활성화</p>
+              <p className="text-xs text-gray-400 mt-0.5">비활성화 시 모든 방문자가 자유롭게 접근할 수 있습니다.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSettings((prev) => ({ ...prev, closedMallEnabled: prev.closedMallEnabled === 'true' ? 'false' : 'true' }))}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                settings.closedMallEnabled === 'true' ? 'bg-blue-600' : 'bg-gray-200'
+              }`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                settings.closedMallEnabled === 'true' ? 'translate-x-6' : 'translate-x-1'
+              }`} />
+            </button>
+          </div>
+
+          {settings.closedMallEnabled === 'true' && (
+            <div className="border rounded-xl p-4 bg-blue-50/50 space-y-3">
+              <p className="text-sm font-medium text-gray-700 mb-3">비로그인/미승인 사용자를 어느 지점부터 차단할까요?</p>
+
+              <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                settings.closedMallMode === 'full' ? 'border-blue-500 bg-white' : 'border-transparent hover:bg-white/70'
+              }`}>
+                <input
+                  type="radio"
+                  name="closedMallMode"
+                  value="full"
+                  checked={settings.closedMallMode === 'full'}
+                  onChange={() => setSettings((prev) => ({ ...prev, closedMallMode: 'full' }))}
+                  className="mt-0.5 accent-blue-600"
+                />
+                <div>
+                  <p className="text-sm font-semibold text-gray-800">메인 페이지부터 차단</p>
+                  <p className="text-xs text-gray-500 mt-0.5">사이트에 접속하자마자 로그인이 필요합니다. 완전한 회원 전용 사이트 운영에 적합합니다.</p>
+                </div>
+              </label>
+
+              <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                settings.closedMallMode === 'product' ? 'border-blue-500 bg-white' : 'border-transparent hover:bg-white/70'
+              }`}>
+                <input
+                  type="radio"
+                  name="closedMallMode"
+                  value="product"
+                  checked={settings.closedMallMode === 'product'}
+                  onChange={() => setSettings((prev) => ({ ...prev, closedMallMode: 'product' }))}
+                  className="mt-0.5 accent-blue-600"
+                />
+                <div>
+                  <p className="text-sm font-semibold text-gray-800">상품 상세부터 차단 <span className="text-blue-600 font-normal">(권장)</span></p>
+                  <p className="text-xs text-gray-500 mt-0.5">메인/카테고리/검색은 누구나 볼 수 있지만, 상품 상세 조회·장바구니·주문은 승인된 회원만 가능합니다.</p>
+                </div>
+              </label>
+
+              <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+                <strong>※ 승인 조건:</strong> 로그인 + 관리자가 회원을 직접 승인한 경우에만 접근 가능합니다.
+                회원 승인은 <a href="/admin/users" className="underline hover:text-amber-900">회원 관리</a> 페이지에서 할 수 있습니다.
+              </div>
+            </div>
+          )}
         </Card>
 
         <Button type="submit" disabled={submitting} className="w-full md:w-auto">

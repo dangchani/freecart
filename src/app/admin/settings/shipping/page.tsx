@@ -246,7 +246,7 @@ export default function AdminShippingSettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="flex items-center gap-2 text-2xl font-bold">
           <Truck className="h-6 w-6" />

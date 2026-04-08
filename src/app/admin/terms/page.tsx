@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, Edit2, Plus, X, Save, Trash2 } from 'lucide-react';
+import { FileText, Edit2, Plus, X, Save, Trash2, Eye, EyeOff } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
 interface Terms {
@@ -8,8 +8,18 @@ interface Terms {
   content: string;
   type: string;
   isRequired?: boolean;
+  isActive: boolean;
   updatedAt: string;
 }
+
+const TERM_TYPES = [
+  { value: 'privacy_policy', label: '개인정보처리방침' },
+  { value: 'terms_of_service', label: '이용약관' },
+  { value: 'marketing', label: '마케팅 정보 수신 동의' },
+  { value: 'location', label: '위치정보 이용 동의' },
+  { value: 'age', label: '만 14세 이상 확인' },
+  { value: 'refund', label: '환불 정책' },
+];
 
 export default function AdminTermsPage() {
   const [terms, setTerms] = useState<Terms[]>([]);
@@ -39,7 +49,7 @@ export default function AdminTermsPage() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('terms')
-        .select('id, title, content, type, is_required, created_at')
+        .select('id, title, content, type, is_required, is_active, created_at')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -50,6 +60,7 @@ export default function AdminTermsPage() {
           content: t.content,
           type: t.type,
           isRequired: t.is_required,
+          isActive: t.is_active ?? true,
           updatedAt: t.created_at,
         }))
       );
@@ -70,6 +81,21 @@ export default function AdminTermsPage() {
     setEditingId(null);
     setEditContent('');
     setEditTitle('');
+  }
+
+  async function toggleActive(term: Terms) {
+    try {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('terms')
+        .update({ is_active: !term.isActive })
+        .eq('id', term.id);
+      if (error) throw error;
+      setTerms((prev) => prev.map((t) => t.id === term.id ? { ...t, isActive: !term.isActive } : t));
+      showToast(term.isActive ? '비활성화되었습니다.' : '활성화되었습니다.');
+    } catch {
+      showToast('상태 변경에 실패했습니다.');
+    }
   }
 
   async function saveTerm() {
@@ -136,6 +162,7 @@ export default function AdminTermsPage() {
         title: newTitle,
         type: newType,
         content: newContent,
+        isActive: true,
         updatedAt: new Date().toISOString(),
       };
       setTerms((prev) => [created, ...prev]);
@@ -183,7 +210,12 @@ export default function AdminTermsPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">약관 유형</label>
-              <input type="text" value={newType} onChange={(e) => setNewType(e.target.value)} placeholder="예: terms_of_service" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+              <select value={newType} onChange={(e) => setNewType(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white">
+                <option value="">유형 선택...</option>
+                {TERM_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
             </div>
           </div>
           <div className="mb-4">
@@ -216,12 +248,17 @@ export default function AdminTermsPage() {
                 <div>
                   <h3 className="font-semibold text-gray-900">{term.title}</h3>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    유형: {term.type} · 최종 수정: {new Date(term.updatedAt).toLocaleDateString('ko-KR')}
+                    유형: {TERM_TYPES.find((t) => t.value === term.type)?.label || term.type} · 최종 수정: {new Date(term.updatedAt).toLocaleDateString('ko-KR')}
                     {term.isRequired && <span className="ml-2 bg-red-100 text-red-600 text-xs px-1.5 py-0.5 rounded">필수</span>}
+                    {!term.isActive && <span className="ml-2 bg-gray-100 text-gray-500 text-xs px-1.5 py-0.5 rounded">비공개</span>}
                   </p>
                 </div>
                 {editingId !== term.id && (
                   <div className="flex items-center gap-2">
+                    <button onClick={() => toggleActive(term)} className={`flex items-center gap-1.5 text-sm font-medium ${term.isActive ? 'text-green-600 hover:text-green-700' : 'text-gray-400 hover:text-gray-600'}`} title={term.isActive ? '비활성화' : '활성화'}>
+                      {term.isActive ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                      {term.isActive ? '공개' : '비공개'}
+                    </button>
                     <button onClick={() => startEdit(term)} className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium">
                       <Edit2 className="h-4 w-4" />수정
                     </button>
