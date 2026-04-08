@@ -29,7 +29,7 @@ import { GripVertical, Trash2, Eye, EyeOff } from 'lucide-react';
 
 const FIELD_TYPES: FieldType[] = [
   'text', 'textarea', 'email', 'url', 'phone', 'number',
-  'select', 'radio', 'checkbox', 'date', 'time', 'datetime', 'address', 'file',
+  'select', 'radio', 'checkbox', 'date', 'time', 'datetime', 'address', 'file', 'terms',
 ];
 
 interface EditDraft {
@@ -43,6 +43,7 @@ interface EditDraft {
   help_text: string;
   options: Array<{ label: string; value: string }>;
   is_system: boolean;
+  terms_id: string | null;
 }
 
 function emptyDraft(): EditDraft {
@@ -57,6 +58,7 @@ function emptyDraft(): EditDraft {
     help_text: '',
     options: [],
     is_system: false,
+    terms_id: null,
   };
 }
 
@@ -117,9 +119,12 @@ function SortableRow({
   );
 }
 
+interface TermsOption { id: string; title: string; }
+
 function Inner() {
   const supabase = createClient();
   const [fields, setFields] = useState<FieldDefinition[]>([]);
+  const [termsList, setTermsList] = useState<TermsOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<EditDraft>(emptyDraft());
   const [error, setError] = useState('');
@@ -133,12 +138,13 @@ function Inner() {
 
   async function load() {
     setLoading(true);
-    const { data, error: e } = await supabase
-      .from('signup_field_definitions')
-      .select('*')
-      .order('sort_order');
-    if (e) setError(e.message);
-    setFields((data as FieldDefinition[]) ?? []);
+    const [fieldsRes, termsRes] = await Promise.all([
+      supabase.from('signup_field_definitions').select('*, terms(id, title, content)').order('sort_order'),
+      supabase.from('terms').select('id, title').order('title'),
+    ]);
+    if (fieldsRes.error) setError(fieldsRes.error.message);
+    setFields((fieldsRes.data as FieldDefinition[]) ?? []);
+    setTermsList((termsRes.data as TermsOption[]) ?? []);
     setLoading(false);
   }
 
@@ -154,6 +160,7 @@ function Inner() {
       help_text: f.help_text ?? '',
       options: f.options ?? [],
       is_system: f.is_system,
+      terms_id: f.terms_id ?? null,
     });
   }
 
@@ -191,6 +198,7 @@ function Inner() {
     setError('');
     if (!draft.label.trim()) return setError('라벨을 입력하세요');
     if (!draft.id && !draft.field_key.trim()) return setError('필드 키를 입력하세요');
+    if (draft.field_type === 'terms' && !draft.terms_id) return setError('약관을 선택하세요');
 
     if (draft.id) {
       // 수정 - 시스템 필드는 label/required/active/placeholder/help만, 그 외 모두 가능
@@ -203,6 +211,7 @@ function Inner() {
       };
       if (!draft.is_system) {
         update.options = draft.options.length > 0 ? draft.options : null;
+        if (draft.field_type === 'terms') update.terms_id = draft.terms_id;
       }
       const { error: e } = await supabase.from('signup_field_definitions').update(update).eq('id', draft.id);
       if (e) return setError(e.message);
@@ -221,6 +230,7 @@ function Inner() {
         placeholder: draft.placeholder || null,
         help_text: draft.help_text || null,
         options: draft.options.length > 0 ? draft.options : null,
+        terms_id: draft.field_type === 'terms' ? draft.terms_id : null,
         storage_target: 'custom',
       });
       if (e) return setError(e.message);
@@ -236,6 +246,7 @@ function Inner() {
 
   const coreDraft = isCoreField(draft.field_key);
   const needsOptions = ['select', 'radio', 'checkbox'].includes(draft.field_type);
+  const isTermsType = draft.field_type === 'terms';
 
   return (
     <div className="p-8">
@@ -272,7 +283,14 @@ function Inner() {
 
         {/* 편집 폼 */}
         <Card className="p-4 lg:col-span-1">
-          <h2 className="mb-3 text-lg font-bold">{draft.id ? '필드 편집' : '새 필드 추가'}</h2>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-bold">{draft.id ? '필드 편집' : '새 필드 추가'}</h2>
+            {draft.id && (
+              <Button size="sm" variant="outline" onClick={() => setDraft(emptyDraft())}>
+                + 새 필드 추가
+              </Button>
+            )}
+          </div>
           <div className="space-y-3">
             <div>
               <Label>라벨</Label>
@@ -327,6 +345,25 @@ function Inner() {
               활성화
             </label>
 
+            {isTermsType && (
+              <div>
+                <Label>약관 선택 <span className="text-red-500">*</span></Label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={draft.terms_id ?? ''}
+                  onChange={(e) => setDraft({ ...draft, terms_id: e.target.value || null })}
+                >
+                  <option value="">약관을 선택하세요</option>
+                  {termsList.map((t) => (
+                    <option key={t.id} value={t.id}>{t.title}</option>
+                  ))}
+                </select>
+                {termsList.length === 0 && (
+                  <p className="mt-1 text-xs text-gray-500">설정 → 약관관리에서 약관을 먼저 등록하세요.</p>
+                )}
+              </div>
+            )}
+
             {needsOptions && !draft.is_system && (
               <div>
                 <Label>선택지</Label>
@@ -373,9 +410,16 @@ function Inner() {
               </div>
             )}
 
-            <Button onClick={saveDraft} className="w-full">
-              {draft.id ? '수정 저장' : '필드 추가'}
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={saveDraft} className="flex-1">
+                {draft.id ? '수정 저장' : '필드 추가'}
+              </Button>
+              {draft.id && (
+                <Button type="button" variant="outline" onClick={() => setDraft(emptyDraft())}>
+                  취소
+                </Button>
+              )}
+            </div>
           </div>
         </Card>
 

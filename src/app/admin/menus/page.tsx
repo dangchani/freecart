@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   DndContext,
   DragEndEvent,
@@ -186,13 +187,17 @@ export default function AdminMenusPage() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const loadingRef = useRef(false); // StrictMode 이중 실행 방지
+  const location = useLocation();
 
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
   }
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadingRef.current = false; // 페이지 진입마다 가드 초기화
+    loadData();
+  }, [location.pathname]);
 
   async function loadData() {
     if (loadingRef.current) return;

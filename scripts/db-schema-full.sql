@@ -2819,6 +2819,24 @@ ALTER TABLE users
 
 CREATE INDEX IF NOT EXISTS idx_users_login_id ON users(login_id);
 
+-- joy: 기존 가입 회원 중 login_id가 없는 경우 email 앞부분 + '0801'로 채움
+--   동일 이메일 접두사가 여러 명인 경우 2번째부터 '0801' + 순번을 붙여 충돌 방지
+UPDATE users u
+SET login_id = sub.new_login_id
+FROM (
+  SELECT
+    id,
+    CASE
+      WHEN ROW_NUMBER() OVER (PARTITION BY split_part(email, '@', 1) ORDER BY created_at) = 1
+        THEN split_part(email, '@', 1) || '0801'
+      ELSE split_part(email, '@', 1) || '0801' ||
+           ROW_NUMBER() OVER (PARTITION BY split_part(email, '@', 1) ORDER BY created_at)::text
+    END AS new_login_id
+  FROM users
+  WHERE login_id IS NULL
+) sub
+WHERE u.id = sub.id;
+
 -- role 값 표준화: super_admin / admin / user
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users
@@ -2958,7 +2976,8 @@ CREATE TABLE IF NOT EXISTS signup_field_definitions (
                     'select', 'radio', 'checkbox',
                     'url', 'phone',
                     'date', 'time', 'datetime',
-                    'address', 'file', 'number', 'email'
+                    'address', 'file', 'number', 'email',
+                    'terms'
                   )),
   is_required     BOOLEAN NOT NULL DEFAULT false,
   is_active       BOOLEAN NOT NULL DEFAULT true,                 -- 삭제 대신 비활성화
@@ -2970,6 +2989,7 @@ CREATE TABLE IF NOT EXISTS signup_field_definitions (
   options         JSONB,                                         -- select/radio/checkbox 선택지
   target_role     VARCHAR(30) DEFAULT 'all',
   is_system       BOOLEAN NOT NULL DEFAULT false,
+  terms_id        UUID REFERENCES terms(id) ON DELETE SET NULL,  -- terms 타입일 때 약관 참조
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -3012,7 +3032,7 @@ VALUES
   ('address',           '주소',                   'address',  false, true, 60,
    null, '다음 우편번호 검색으로 입력됩니다', null, 'all', true, 'users', null),
   ('privacy_agreement', '개인정보 처리 방침 동의', 'checkbox', true, true, 70,
-   null, '개인정보 수집·이용에 동의합니다', null, 'all', true, 'users', 'privacy_agreed_at')
+   null, '개인정보 수집·이용에 동의합니다', null, 'all', false, 'users', 'privacy_agreed_at')
 ON CONFLICT (field_key) DO NOTHING;
 
 -- joy: 기존 DB에 이미 시드가 들어간 경우를 위한 sort_order 업데이트 + login_id 필드 upsert

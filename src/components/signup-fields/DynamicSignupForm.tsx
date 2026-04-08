@@ -31,7 +31,7 @@ export function DynamicSignupForm({ onSuccess, previewOnly, previewDefinitions }
     (async () => {
       const { data, error } = await supabase
         .from('signup_field_definitions')
-        .select('*')
+        .select('*, terms(id, title, content)')
         .eq('is_active', true)
         .order('sort_order');
       if (error) setServerError(error.message);
@@ -112,6 +112,7 @@ export function DynamicSignupForm({ onSuccess, previewOnly, previewDefinitions }
           }
         } else if (d.storage_target === 'custom') {
           if (d.field_type === 'file') fileFields.push(d);
+          else if (d.field_type === 'terms') customFields.push(d); // 동의 여부를 value_text 'true'로 저장
           else customFields.push(d);
         }
       }
@@ -166,6 +167,7 @@ export function DynamicSignupForm({ onSuccess, previewOnly, previewDefinitions }
             };
             if (d.field_type === 'number' && typeof v === 'number') row.value_number = v;
             else if (['date', 'time', 'datetime'].includes(d.field_type) && typeof v === 'string') row.value_date = v;
+            else if (d.field_type === 'terms') row.value_text = v === true ? 'true' : 'false';
             else if (Array.isArray(v) || (typeof v === 'object' && v !== null)) row.value_json = v;
             else row.value_text = String(v);
             return row;
