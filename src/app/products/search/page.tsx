@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
 import { Search, X, TrendingUp } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { dispatchThemeEvent } from '@/lib/theme';
 
 interface Product {
   id: string;
@@ -72,6 +73,7 @@ function SearchPageContent() {
 
   async function fetchProducts(q: string, sort: SortOption) {
     setLoading(true);
+    dispatchThemeEvent('search', { query: q, sort });
     try {
       const supabase = createClient();
       let query_ = supabase

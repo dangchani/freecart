@@ -1,0 +1,284 @@
+<!-- default-shop / product-detail.html -->
+<style>
+.ds-pdet {
+  background: {{pdet_bg | default: '#ffffff'}};
+  padding: 48px 0 80px;
+  font-family: var(--ds-font, 'Pretendard', sans-serif);
+}
+.ds-pdet-inner {
+  max-width: var(--ds-max-width, 1280px);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.ds-pdet-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #94a3b8;
+  margin-bottom: 28px;
+}
+.ds-pdet-breadcrumb a { color: #64748b; text-decoration: none; }
+.ds-pdet-breadcrumb a:hover { color: var(--ds-primary, #1a56db); }
+.ds-pdet-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 64px;
+  align-items: start;
+}
+@media (max-width: 768px) { .ds-pdet-grid { grid-template-columns: 1fr; gap: 32px; } }
+.ds-pdet-gallery-main {
+  aspect-ratio: 3/4;
+  background: #f8fafc;
+  border-radius: var(--ds-card-radius, 16px);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 96px;
+  border: 1px solid #e2e8f0;
+}
+.ds-pdet-thumbs {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.ds-pdet-thumb {
+  width: 72px;
+  height: 72px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color .15s;
+}
+.ds-pdet-thumb.active { border-color: var(--ds-primary, #1a56db); }
+.ds-pdet-info { padding-top: 8px; }
+.ds-pdet-brand { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
+.ds-pdet-name { font-size: clamp(20px, 3vw, 28px); font-weight: 800; color: #0f172a; margin: 0 0 12px; font-family: var(--ds-font-heading, inherit); line-height: 1.25; }
+.ds-pdet-rating {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.ds-pdet-rating-stars { font-size: 15px; }
+.ds-pdet-rating-val { font-size: 14px; font-weight: 700; color: #1e293b; }
+.ds-pdet-rating-count { font-size: 13px; color: #94a3b8; }
+.ds-pdet-pricing {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 24px;
+  padding: 16px 0;
+  border-top: 1px solid #f1f5f9;
+  border-bottom: 1px solid #f1f5f9;
+}
+.ds-pdet-price { font-size: 30px; font-weight: 900; color: #0f172a; }
+.ds-pdet-price-old { font-size: 16px; color: #94a3b8; text-decoration: line-through; }
+.ds-pdet-discount { font-size: 16px; font-weight: 700; color: #ef4444; }
+.ds-pdet-options { margin-bottom: 20px; }
+.ds-pdet-opt-label { font-size: 13px; font-weight: 700; color: #374151; margin-bottom: 8px; }
+.ds-pdet-opt-list { display: flex; gap: 8px; flex-wrap: wrap; }
+.ds-pdet-opt-btn {
+  padding: 7px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #374151;
+  background: #fff;
+  cursor: pointer;
+  transition: all .15s;
+}
+.ds-pdet-opt-btn:hover { border-color: var(--ds-primary, #1a56db); color: var(--ds-primary, #1a56db); }
+.ds-pdet-opt-btn.active { border-color: var(--ds-primary, #1a56db); background: var(--ds-primary, #1a56db); color: #fff; }
+.ds-pdet-qty {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.ds-pdet-qty-label { font-size: 13px; font-weight: 700; color: #374151; }
+.ds-pdet-qty-ctrl {
+  display: flex;
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.ds-pdet-qty-btn {
+  width: 40px;
+  height: 40px;
+  background: #f8fafc;
+  border: none;
+  font-size: 18px;
+  color: #374151;
+  cursor: pointer;
+  transition: background .15s;
+}
+.ds-pdet-qty-btn:hover { background: #f1f5f9; }
+.ds-pdet-qty-val {
+  width: 48px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e293b;
+  border: none;
+  border-left: 1px solid #e2e8f0;
+  border-right: 1px solid #e2e8f0;
+  outline: none;
+}
+.ds-pdet-actions { display: flex; gap: 10px; margin-bottom: 24px; }
+.ds-pdet-btn-cart {
+  flex: 1;
+  padding: 15px;
+  background: var(--ds-primary, #1a56db);
+  color: #fff;
+  border: none;
+  border-radius: var(--ds-btn-radius, 10px);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.ds-pdet-btn-cart:hover { opacity: .88; }
+.ds-pdet-btn-buy {
+  flex: 1;
+  padding: 15px;
+  background: #0f172a;
+  color: #fff;
+  border: none;
+  border-radius: var(--ds-btn-radius, 10px);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.ds-pdet-btn-buy:hover { opacity: .88; }
+.ds-pdet-btn-wish {
+  width: 52px;
+  height: 52px;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--ds-btn-radius, 10px);
+  background: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  transition: border-color .15s;
+  flex-shrink: 0;
+}
+.ds-pdet-btn-wish:hover { border-color: #ef4444; }
+.ds-pdet-meta { font-size: 12px; color: #94a3b8; display: flex; flex-direction: column; gap: 4px; }
+.ds-pdet-tabs {
+  margin-top: 60px;
+  border-top: 1px solid #e2e8f0;
+}
+.ds-pdet-tab-list {
+  display: flex;
+  border-bottom: 1px solid #e2e8f0;
+}
+.ds-pdet-tab {
+  padding: 14px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #64748b;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+  margin-bottom: -1px;
+}
+.ds-pdet-tab.active { color: var(--ds-primary, #1a56db); border-bottom-color: var(--ds-primary, #1a56db); }
+.ds-pdet-tab-content {
+  padding: 32px 0;
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.8;
+}
+</style>
+
+<section class="ms-pdet">
+  <div class="ms-pdet-inner">
+    <div class="ms-pdet-breadcrumb">
+      <a href="/">홈</a> › <a href="/products">상품</a> › <span>상품 상세</span>
+    </div>
+    <div class="ms-pdet-grid">
+      <!-- 이미지 -->
+      <div>
+        <div class="ms-pdet-gallery-main">👗</div>
+        <div class="ms-pdet-thumbs">
+          <div class="ms-pdet-thumb active">👗</div>
+          <div class="ms-pdet-thumb">📸</div>
+          <div class="ms-pdet-thumb">🖼️</div>
+          <div class="ms-pdet-thumb">🎨</div>
+        </div>
+      </div>
+      <!-- 정보 -->
+      <div class="ms-pdet-info">
+        <div class="ms-pdet-brand">{{pdet_brand | default: 'BRAND NAME'}}</div>
+        <h1 class="ms-pdet-name">{{pdet_product_name | default: '프리미엄 린넨 셔츠'}}</h1>
+        <div class="ms-pdet-rating">
+          <span class="ms-pdet-rating-stars">⭐⭐⭐⭐⭐</span>
+          <span class="ms-pdet-rating-val">4.8</span>
+          <span class="ms-pdet-rating-count">후기 128개</span>
+        </div>
+        <div class="ms-pdet-pricing">
+          <span class="ms-pdet-price">39,000원</span>
+          <span class="ms-pdet-price-old">59,000원</span>
+          <span class="ms-pdet-discount">34% ↓</span>
+        </div>
+        <div class="ms-pdet-options">
+          <div class="ms-pdet-opt-label">색상</div>
+          <div class="ms-pdet-opt-list">
+            <button class="ms-pdet-opt-btn active">화이트</button>
+            <button class="ms-pdet-opt-btn">블랙</button>
+            <button class="ms-pdet-opt-btn">베이지</button>
+            <button class="ms-pdet-opt-btn">네이비</button>
+          </div>
+        </div>
+        <div class="ms-pdet-options">
+          <div class="ms-pdet-opt-label">사이즈</div>
+          <div class="ms-pdet-opt-list">
+            <button class="ms-pdet-opt-btn">XS</button>
+            <button class="ms-pdet-opt-btn active">S</button>
+            <button class="ms-pdet-opt-btn">M</button>
+            <button class="ms-pdet-opt-btn">L</button>
+            <button class="ms-pdet-opt-btn">XL</button>
+          </div>
+        </div>
+        <div class="ms-pdet-qty">
+          <span class="ms-pdet-qty-label">수량</span>
+          <div class="ms-pdet-qty-ctrl">
+            <button class="ms-pdet-qty-btn">−</button>
+            <input class="ms-pdet-qty-val" value="1" type="number" min="1" />
+            <button class="ms-pdet-qty-btn">+</button>
+          </div>
+        </div>
+        <div class="ms-pdet-actions">
+          <button class="ms-pdet-btn-cart">장바구니 담기</button>
+          <button class="ms-pdet-btn-buy">바로 구매</button>
+          <button class="ms-pdet-btn-wish">🤍</button>
+        </div>
+        <div class="ms-pdet-meta">
+          <span>🚚 오늘 주문 시 내일 도착 (오후 2시 이전 주문)</span>
+          <span>🔄 30일 이내 무료 반품</span>
+          <span>🛡️ 정품 보증</span>
+        </div>
+      </div>
+    </div>
+    <div class="ms-pdet-tabs">
+      <div class="ms-pdet-tab-list">
+        <div class="ms-pdet-tab active">상품 정보</div>
+        <div class="ms-pdet-tab">리뷰 (128)</div>
+        <div class="ms-pdet-tab">배송/반품</div>
+        <div class="ms-pdet-tab">문의 (3)</div>
+      </div>
+      <div class="ms-pdet-tab-content">
+        {{pdet_description | default: '상품에 대한 상세 설명이 여기에 표시됩니다. 소재, 사이즈 정보, 세탁 방법 등을 안내합니다.'}}
+      </div>
+    </div>
+  </div>
+</section>

@@ -35,6 +35,7 @@ import {
 } from '@/services/relatedProducts';
 import { requestStockAlert } from '@/services/stockAlert';
 import { addToRecentlyViewed } from '@/services/recentlyViewed';
+import { dispatchThemeEvent } from '@/lib/theme';
 import { RecentlyViewed } from '@/components/recently-viewed';
 import { useAuth } from '@/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
@@ -136,6 +137,13 @@ export default function ProductDetailPage() {
           setProduct(data as unknown as Product);
           // 최근 본 상품에 추가
           addToRecentlyViewed(data.id);
+          // 테마 이벤트 디스패치
+          dispatchThemeEvent('product-view', {
+            productId: data.id,
+            productName: data.name,
+            slug: data.slug,
+            price: data.salePrice ?? data.regularPrice,
+          });
         }
       })
       .catch(() => setNotFound(true))
@@ -309,6 +317,13 @@ export default function ProductDetailPage() {
         useCartStore.getState().addItem(product as any, quantity);
       }
       showToast('장바구니에 담겼습니다!', 'success');
+      dispatchThemeEvent('add-to-cart', {
+        productId: product.id,
+        productName: product.name,
+        quantity,
+        price: product.salePrice ?? product.regularPrice,
+        variantId: selectedVariant?.id ?? null,
+      });
     } catch {
       showToast('장바구니 담기 중 오류가 발생했습니다.', 'error');
     } finally {

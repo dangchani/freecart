@@ -1,0 +1,263 @@
+<!-- default-shop / mypage.html -->
+<style>
+.ds-mypage {
+  background: {{mypage_bg | default: '#f8fafc'}};
+  padding: 48px 0 80px;
+  font-family: var(--ds-font, 'Pretendard', sans-serif);
+  min-height: 70vh;
+}
+.ds-mypage-inner {
+  max-width: var(--ds-max-width, 1280px);
+  margin: 0 auto;
+  padding: 0 24px;
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 768px) { .ds-mypage-inner { grid-template-columns: 1fr; } }
+/* 사이드 */
+.ds-mypage-sidebar {
+  background: #fff;
+  border-radius: var(--ds-card-radius, 16px);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+.ds-mypage-profile {
+  padding: 24px;
+  text-align: center;
+  border-bottom: 1px solid #f1f5f9;
+}
+.ds-mypage-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--ds-primary, #1a56db), #7c3aed);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 auto 12px;
+}
+.ds-mypage-name { font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 4px; }
+.ds-mypage-grade {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 100px;
+  background: rgba(245,158,11,.15);
+  color: #d97706;
+}
+.ds-mypage-points {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.ds-mypage-point-item { text-align: center; }
+.ds-mypage-point-val { font-size: 18px; font-weight: 800; color: #0f172a; }
+.ds-mypage-point-label { font-size: 11px; color: #64748b; margin-top: 2px; }
+.ds-mypage-nav { padding: 8px 0; }
+.ds-mypage-nav-group {
+  padding: 10px 16px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+.ds-mypage-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  font-size: 14px;
+  color: #374151;
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: all .15s;
+  cursor: pointer;
+}
+.ds-mypage-nav-item:hover { background: #f8fafc; color: #1e293b; }
+.ds-mypage-nav-item.active {
+  border-left-color: var(--ds-primary, #1a56db);
+  color: var(--ds-primary, #1a56db);
+  background: rgba(37,99,235,.04);
+  font-weight: 600;
+}
+.ds-mypage-nav-item .badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  background: #ef4444;
+  color: #fff;
+  padding: 1px 6px;
+  border-radius: 100px;
+}
+/* 메인 */
+.ds-mypage-main { display: flex; flex-direction: column; gap: 16px; }
+.ds-mypage-card {
+  background: #fff;
+  border-radius: var(--ds-card-radius, 16px);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+.ds-mypage-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.ds-mypage-card-title { font-size: 15px; font-weight: 800; color: #0f172a; margin: 0; }
+.ds-mypage-card-link { font-size: 12px; color: #94a3b8; text-decoration: none; }
+.ds-mypage-card-link:hover { color: var(--ds-primary, #1a56db); }
+/* 주문 현황 */
+.ds-order-status { display: flex; gap: 0; padding: 20px; }
+.ds-order-status-item {
+  flex: 1;
+  text-align: center;
+  padding: 16px 8px;
+  position: relative;
+}
+.ds-order-status-item::after {
+  content: '›';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #e2e8f0;
+  font-size: 20px;
+}
+.ds-order-status-item:last-child::after { display: none; }
+.ds-order-status-num { font-size: 28px; font-weight: 900; color: #0f172a; margin-bottom: 6px; }
+.ds-order-status-label { font-size: 12px; color: #64748b; }
+/* 최근 주문 */
+.ds-order-item {
+  display: flex;
+  gap: 14px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f8fafc;
+  align-items: center;
+}
+.ds-order-item:last-child { border-bottom: none; }
+.ds-order-item-img {
+  width: 60px; height: 60px;
+  background: #f1f5f9;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 26px; flex-shrink: 0;
+}
+.ds-order-item-info { flex: 1; min-width: 0; }
+.ds-order-item-name { font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 4px; }
+.ds-order-item-date { font-size: 12px; color: #64748b; }
+.ds-order-item-price { font-size: 15px; font-weight: 700; color: #0f172a; white-space: nowrap; margin-right: 16px; }
+.ds-order-status-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 100px;
+  white-space: nowrap;
+}
+.ds-order-status-badge.shipped { background: rgba(16,185,129,.1); color: #10b981; }
+.ds-order-status-badge.preparing { background: rgba(245,158,11,.1); color: #d97706; }
+.ds-order-status-badge.done { background: #f1f5f9; color: #64748b; }
+</style>
+
+<section class="ms-mypage">
+  <div class="ms-mypage-inner">
+    <!-- 사이드바 -->
+    <div class="ms-mypage-sidebar">
+      <div class="ms-mypage-profile">
+        <div class="ms-mypage-avatar">김</div>
+        <div class="ms-mypage-name">김*수 님</div>
+        <div class="ms-mypage-grade">VIP 회원</div>
+      </div>
+      <div class="ms-mypage-points">
+        <div class="ms-mypage-point-item">
+          <div class="ms-mypage-point-val">12,400P</div>
+          <div class="ms-mypage-point-label">포인트</div>
+        </div>
+        <div class="ms-mypage-point-item">
+          <div class="ms-mypage-point-val">3</div>
+          <div class="ms-mypage-point-label">쿠폰</div>
+        </div>
+      </div>
+      <nav class="ms-mypage-nav">
+        <div class="ms-mypage-nav-group">주문/배송</div>
+        <a class="ms-mypage-nav-item active" href="#">📦 주문 내역</a>
+        <a class="ms-mypage-nav-item" href="#">🚚 배송 조회</a>
+        <a class="ms-mypage-nav-item" href="#">🔄 반품/교환</a>
+        <div class="ms-mypage-nav-group">혜택</div>
+        <a class="ms-mypage-nav-item" href="#">🎁 포인트</a>
+        <a class="ms-mypage-nav-item" href="#">🎫 쿠폰 <span class="badge">3</span></a>
+        <a class="ms-mypage-nav-item" href="#">❤️ 위시리스트</a>
+        <div class="ms-mypage-nav-group">계정</div>
+        <a class="ms-mypage-nav-item" href="#">👤 회원정보 수정</a>
+        <a class="ms-mypage-nav-item" href="#">🔐 비밀번호 변경</a>
+        <a class="ms-mypage-nav-item" href="#">📋 문의 내역 <span class="badge">1</span></a>
+        <a class="ms-mypage-nav-item" href="#">🚪 로그아웃</a>
+      </nav>
+    </div>
+    <!-- 메인 -->
+    <div class="ms-mypage-main">
+      <!-- 주문 현황 요약 -->
+      <div class="ms-mypage-card">
+        <div class="ms-mypage-card-header">
+          <h2 class="ms-mypage-card-title">주문 현황</h2>
+        </div>
+        <div class="ms-order-status">
+          <div class="ms-order-status-item">
+            <div class="ms-order-status-num">1</div>
+            <div class="ms-order-status-label">결제 완료</div>
+          </div>
+          <div class="ms-order-status-item">
+            <div class="ms-order-status-num">0</div>
+            <div class="ms-order-status-label">상품 준비중</div>
+          </div>
+          <div class="ms-order-status-item">
+            <div class="ms-order-status-num">2</div>
+            <div class="ms-order-status-label">배송 중</div>
+          </div>
+          <div class="ms-order-status-item">
+            <div class="ms-order-status-num">0</div>
+            <div class="ms-order-status-label">배송 완료</div>
+          </div>
+          <div class="ms-order-status-item">
+            <div class="ms-order-status-num">0</div>
+            <div class="ms-order-status-label">반품/교환</div>
+          </div>
+        </div>
+      </div>
+      <!-- 최근 주문 내역 -->
+      <div class="ms-mypage-card">
+        <div class="ms-mypage-card-header">
+          <h2 class="ms-mypage-card-title">최근 주문 내역</h2>
+          <a href="#" class="ms-mypage-card-link">전체 보기 →</a>
+        </div>
+        <div class="ms-order-item">
+          <div class="ms-order-item-img">👗</div>
+          <div class="ms-order-item-info">
+            <div class="ms-order-item-name">프리미엄 린넨 셔츠 외 1건</div>
+            <div class="ms-order-item-date">2025.04.09 · 주문번호 20250409-001</div>
+          </div>
+          <div class="ms-order-item-price">128,000원</div>
+          <span class="ms-order-status-badge shipped">배송 중</span>
+        </div>
+        <div class="ms-order-item">
+          <div class="ms-order-item-img">👟</div>
+          <div class="ms-order-item-info">
+            <div class="ms-order-item-name">경량 러닝화 에어쿠션</div>
+            <div class="ms-order-item-date">2025.03.28 · 주문번호 20250328-004</div>
+          </div>
+          <div class="ms-order-item-price">89,000원</div>
+          <span class="ms-order-status-badge done">배송 완료</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

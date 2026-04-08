@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { CheckCircle2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
+import { dispatchThemeEvent } from '@/lib/theme';
 
 function SuccessContent() {
   const navigate = useNavigate();
@@ -52,6 +53,11 @@ function SuccessContent() {
         throw new Error(result.error || '결제 검증에 실패했습니다.');
       }
 
+      dispatchThemeEvent('checkout-complete', {
+        orderId,
+        amount: parseInt(amount || '0', 10),
+        paymentKey,
+      });
       setConfirming(false);
     } catch (err) {
       console.error('Payment confirmation failed:', err);

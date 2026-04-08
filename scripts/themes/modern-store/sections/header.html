@@ -1,0 +1,148 @@
+<!-- modern-store / header.html -->
+<style>
+.ms-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: {{header_bg | default: '#ffffff'}};
+  border-bottom: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  font-family: var(--theme-font, 'Pretendard', sans-serif);
+}
+.ms-header-inner {
+  max-width: var(--theme-max-width, 1280px);
+  margin: 0 auto;
+  padding: 0 24px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 40px;
+}
+.ms-logo {
+  font-size: 20px;
+  font-weight: 800;
+  color: {{header_text | default: '#111827'}};
+  text-decoration: none;
+  letter-spacing: -0.5px;
+  flex-shrink: 0;
+}
+.ms-logo span { color: var(--theme-primary, #2563eb); }
+.ms-nav {
+  display: flex;
+  gap: 28px;
+  flex: 1;
+}
+.ms-nav a {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  text-decoration: none;
+  transition: color .15s;
+}
+.ms-nav a:hover { color: var(--theme-primary, #2563eb); }
+.ms-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.ms-actions button, .ms-actions a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 16px;
+  transition: background .15s, color .15s;
+}
+.ms-actions button:hover, .ms-actions a:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+.ms-cart-badge {
+  position: relative;
+}
+.ms-cart-badge::after {
+  content: '3';
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 16px;
+  height: 16px;
+  background: var(--theme-primary, #2563eb);
+  color: #fff;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.ms-search-bar {
+  flex: 1;
+  max-width: 360px;
+  position: relative;
+}
+.ms-search-bar input {
+  width: 100%;
+  height: 36px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0 12px 0 36px;
+  font-size: 13px;
+  background: #f9fafb;
+  color: #111827;
+  outline: none;
+  transition: border-color .15s, background .15s;
+  box-sizing: border-box;
+}
+.ms-search-bar input:focus {
+  border-color: var(--theme-primary, #2563eb);
+  background: #fff;
+}
+.ms-search-bar .ms-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af;
+  font-size: 14px;
+  pointer-events: none;
+}
+@media (max-width: 768px) {
+  .ms-nav { display: none; }
+  .ms-search-bar { max-width: 200px; }
+}
+</style>
+
+<header class="ms-header">
+  <div class="ms-header-inner">
+    <a href="/" class="ms-logo">{{brand_name | default: 'STORE'}}<span>.</span></a>
+
+    <nav class="ms-nav">
+      <a href="/products">전체상품</a>
+      <a href="/products?category=new">신상품</a>
+      <a href="/products?category=best">베스트</a>
+      <a href="/products?category=sale">세일</a>
+      <a href="/community">커뮤니티</a>
+    </nav>
+
+    <div class="ms-search-bar">
+      <span class="ms-search-icon">🔍</span>
+      <input type="search" placeholder="{{search_placeholder | default: '상품 검색'}}">
+    </div>
+
+    <div class="ms-actions">
+      <a href="/account" title="내 계정">👤</a>
+      <a href="/wishlist" title="위시리스트">🤍</a>
+      <a href="/cart" class="ms-cart-badge" title="장바구니">🛒</a>
+    </div>
+  </div>
+</header>

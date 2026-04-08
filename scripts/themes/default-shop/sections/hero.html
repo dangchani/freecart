@@ -1,0 +1,179 @@
+<!-- default-shop / hero.html -->
+<style>
+.ds-hero {
+  background: {{hero_bg | default: '#f0f4ff'}};
+  font-family: var(--ds-font, 'Pretendard', sans-serif);
+  overflow: hidden;
+  position: relative;
+}
+.ds-hero-inner {
+  max-width: var(--ds-max-width, 1280px);
+  margin: 0 auto;
+  padding: 0 20px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  min-height: 440px;
+  gap: 40px;
+}
+@media (max-width: 768px) {
+  .ds-hero-inner { grid-template-columns: 1fr; padding: 40px 20px; min-height: auto; }
+  .ds-hero-visual { display: none; }
+}
+.ds-hero-content { padding: 60px 0; }
+.ds-hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(26,86,219,.1);
+  color: var(--ds-primary, #1a56db);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 100px;
+  margin-bottom: 16px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.ds-hero-title {
+  font-size: clamp(28px, 4vw, 48px);
+  font-weight: 900;
+  color: #111827;
+  line-height: 1.2;
+  margin-bottom: 12px;
+  letter-spacing: -1px;
+}
+.ds-hero-title em {
+  font-style: normal;
+  color: var(--ds-primary, #1a56db);
+}
+.ds-hero-sub {
+  font-size: 17px;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 8px;
+}
+.ds-hero-desc {
+  font-size: 15px;
+  color: #6b7280;
+  line-height: 1.7;
+  margin-bottom: 32px;
+  max-width: 460px;
+}
+.ds-hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.ds-hero-btn-primary {
+  padding: 13px 28px;
+  background: var(--ds-primary, #1a56db);
+  color: #fff;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background .15s;
+}
+.ds-hero-btn-primary:hover { background: #1048c8; }
+.ds-hero-btn-outline {
+  padding: 13px 28px;
+  background: transparent;
+  color: var(--ds-primary, #1a56db);
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  border: 1.5px solid var(--ds-primary, #1a56db);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background .15s;
+}
+.ds-hero-btn-outline:hover { background: rgba(26,86,219,.05); }
+.ds-hero-badges {
+  display: flex;
+  gap: 16px;
+  margin-top: 28px;
+  flex-wrap: wrap;
+}
+.ds-hero-badge-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+/* 오른쪽 비주얼 */
+.ds-hero-visual {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  height: 440px;
+}
+.ds-hero-img-main {
+  width: 340px;
+  height: 380px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 96px;
+  box-shadow: 0 20px 60px rgba(26,86,219,.2);
+  overflow: hidden;
+}
+.ds-hero-img-main img { width: 100%; height: 100%; object-fit: cover; }
+.ds-hero-card-float {
+  position: absolute;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.1);
+  padding: 10px 14px;
+}
+.ds-hero-card-float.tl { top: 40px; left: -10px; }
+.ds-hero-card-float.br { bottom: 40px; right: -10px; }
+.ds-hero-card-float .val { font-size: 18px; font-weight: 900; color: #111827; }
+.ds-hero-card-float .lbl { font-size: 10px; color: #9ca3af; font-weight: 500; }
+</style>
+
+<section class="ds-hero">
+  <div class="ds-hero-inner">
+    <div class="ds-hero-content">
+      <div class="ds-hero-eyebrow">🔥 {{hero_eyebrow | default: '이번 주 특가'}}</div>
+      <h1 class="ds-hero-title">
+        {{hero_title | default: '이번 시즌'}}<br>
+        <em>{{hero_subtitle | default: '최고의 상품'}}</em>
+      </h1>
+      <p class="ds-hero-desc">{{hero_desc | default: '최대 70% 할인된 특가 상품을 만나보세요. 매일 새로운 상품이 업데이트됩니다.'}}</p>
+      <div class="ds-hero-actions">
+        <a href="{{hero_cta_url | default: '/products'}}" class="ds-hero-btn-primary">
+          {{hero_cta_text | default: '지금 쇼핑하기'}} →
+        </a>
+        <a href="{{hero_cta2_url | default: '/products?tag=sale'}}" class="ds-hero-btn-outline">
+          {{hero_cta2_text | default: '세일 상품 보기'}}
+        </a>
+      </div>
+      <div class="ds-hero-badges">
+        <div class="ds-hero-badge-item">🚚 무료배송</div>
+        <div class="ds-hero-badge-item">🔄 30일 반품</div>
+        <div class="ds-hero-badge-item">🛡️ 정품 보증</div>
+      </div>
+    </div>
+    <div class="ds-hero-visual">
+      <div class="ds-hero-img-main">🛍️</div>
+      <div class="ds-hero-card-float tl">
+        <div class="val">4.9★</div>
+        <div class="lbl">평균 평점</div>
+      </div>
+      <div class="ds-hero-card-float br">
+        <div class="val">12K+</div>
+        <div class="lbl">누적 고객</div>
+      </div>
+    </div>
+  </div>
+</section>

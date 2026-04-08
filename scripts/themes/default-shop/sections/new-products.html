@@ -1,0 +1,169 @@
+<!-- default-shop / new-products.html — magazine 카드, 슬라이더 그리드 -->
+<style>
+.ds-newprod {
+  padding: 56px 0;
+  background: {{newprod_bg | default: '#ffffff'}};
+  font-family: var(--ds-font, 'Pretendard', sans-serif);
+}
+.ds-newprod-inner { max-width: var(--ds-max-width, 1280px); margin: 0 auto; padding: 0 20px; }
+/* magazine 카드: 큰 카드 + 작은 카드 조합 */
+.ds-newprod-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 1024px) { .ds-newprod-layout { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 580px)  { .ds-newprod-layout { grid-template-columns: 1fr 1fr; gap: 10px; } }
+/* 첫 번째 카드 크게 (magazine 스타일) */
+.ds-newprod-layout .ds-mag-card:first-child {
+  grid-row: span 2;
+  display: flex;
+  flex-direction: column;
+}
+@media (max-width: 1024px) { .ds-newprod-layout .ds-mag-card:first-child { grid-row: span 1; } }
+.ds-mag-card {
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow .2s, transform .2s;
+  text-decoration: none;
+  display: block;
+}
+.ds-mag-card:hover { box-shadow: 0 6px 24px rgba(0,0,0,.1); transform: translateY(-2px); }
+.ds-mag-card-img {
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+.ds-newprod-layout .ds-mag-card:first-child .ds-mag-card-img {
+  height: 360px;
+  font-size: 72px;
+}
+.ds-newprod-layout .ds-mag-card:not(:first-child) .ds-mag-card-img {
+  height: 160px;
+  font-size: 48px;
+}
+@media (max-width: 1024px) {
+  .ds-newprod-layout .ds-mag-card .ds-mag-card-img { height: 180px !important; font-size: 56px !important; }
+}
+.ds-mag-card-badges { position: absolute; top: 8px; left: 8px; display: flex; gap: 4px; }
+.ds-mag-card-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+.ds-mag-card-badge.new { background: var(--ds-primary, #1a56db); color: #fff; }
+.ds-mag-card-badge.sale { background: #ef4444; color: #fff; }
+.ds-mag-card-like {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+}
+.ds-mag-card-body { padding: 12px; }
+.ds-mag-card-brand { font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase; margin-bottom: 3px; }
+.ds-mag-card-name { font-size: 14px; font-weight: 600; color: #111827; margin-bottom: 8px; line-height: 1.4; }
+.ds-mag-card-price { display: flex; align-items: baseline; gap: 6px; }
+.ds-mag-price { font-size: 15px; font-weight: 800; color: #111827; }
+.ds-mag-price-old { font-size: 12px; color: #9ca3af; text-decoration: line-through; }
+.ds-mag-price-pct { font-size: 12px; font-weight: 700; color: #ef4444; }
+.ds-mag-card-rating { font-size: 11px; color: #9ca3af; margin-top: 6px; }
+</style>
+
+<section class="ds-newprod">
+  <div class="ds-newprod-inner">
+    <div class="ds-section-head">
+      <h2 class="ds-section-title">{{newprod_title | default: '신상품'}}</h2>
+      <a href="/products?tag=new" class="ds-more-link">전체 보기 ›</a>
+    </div>
+    <div class="ds-newprod-layout">
+      <a href="#" class="ds-mag-card">
+        <div class="ds-mag-card-img">
+          🧥
+          <div class="ds-mag-card-badges"><span class="ds-mag-card-badge new">NEW</span></div>
+          <button class="ds-mag-card-like">🤍</button>
+        </div>
+        <div class="ds-mag-card-body">
+          <div class="ds-mag-card-brand">BRAND</div>
+          <div class="ds-mag-card-name">오버핏 코튼 자켓 2025 신상</div>
+          <div class="ds-mag-card-price">
+            <span class="ds-mag-price">89,000원</span>
+            <span class="ds-mag-price-old">128,000원</span>
+            <span class="ds-mag-price-pct">30%</span>
+          </div>
+          <div class="ds-mag-card-rating">⭐ 4.8 (204)</div>
+        </div>
+      </a>
+      <a href="#" class="ds-mag-card">
+        <div class="ds-mag-card-img">
+          👗
+          <div class="ds-mag-card-badges"><span class="ds-mag-card-badge new">NEW</span></div>
+          <button class="ds-mag-card-like">🤍</button>
+        </div>
+        <div class="ds-mag-card-body">
+          <div class="ds-mag-card-brand">BRAND</div>
+          <div class="ds-mag-card-name">플로럴 프린트 미디 원피스</div>
+          <div class="ds-mag-card-price"><span class="ds-mag-price">52,000원</span></div>
+          <div class="ds-mag-card-rating">⭐ 4.7 (89)</div>
+        </div>
+      </a>
+      <a href="#" class="ds-mag-card">
+        <div class="ds-mag-card-img">
+          👟
+          <div class="ds-mag-card-badges"><span class="ds-mag-card-badge sale">SALE</span></div>
+          <button class="ds-mag-card-like">🤍</button>
+        </div>
+        <div class="ds-mag-card-body">
+          <div class="ds-mag-card-brand">BRAND</div>
+          <div class="ds-mag-card-name">경량 런닝화 쿠셔닝 에디션</div>
+          <div class="ds-mag-card-price">
+            <span class="ds-mag-price">79,000원</span>
+            <span class="ds-mag-price-old">110,000원</span>
+            <span class="ds-mag-price-pct">28%</span>
+          </div>
+          <div class="ds-mag-card-rating">⭐ 4.9 (312)</div>
+        </div>
+      </a>
+      <a href="#" class="ds-mag-card">
+        <div class="ds-mag-card-img">
+          👜
+          <button class="ds-mag-card-like">🤍</button>
+        </div>
+        <div class="ds-mag-card-body">
+          <div class="ds-mag-card-brand">BRAND</div>
+          <div class="ds-mag-card-name">미니멀 토트백 캔버스</div>
+          <div class="ds-mag-card-price"><span class="ds-mag-price">43,000원</span></div>
+          <div class="ds-mag-card-rating">⭐ 4.6 (57)</div>
+        </div>
+      </a>
+      <a href="#" class="ds-mag-card">
+        <div class="ds-mag-card-img">
+          🧴
+          <div class="ds-mag-card-badges"><span class="ds-mag-card-badge new">NEW</span></div>
+          <button class="ds-mag-card-like">🤍</button>
+        </div>
+        <div class="ds-mag-card-body">
+          <div class="ds-mag-card-brand">BRAND</div>
+          <div class="ds-mag-card-name">수분 세럼 히알루론산 집중</div>
+          <div class="ds-mag-card-price"><span class="ds-mag-price">34,000원</span></div>
+          <div class="ds-mag-card-rating">⭐ 4.8 (143)</div>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>

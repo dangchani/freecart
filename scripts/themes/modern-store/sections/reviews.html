@@ -1,0 +1,132 @@
+<!-- modern-store / reviews.html -->
+<style>
+.ms-reviews {
+  padding: 80px 24px;
+  background: {{reviews_bg | default: '#f8fafc'}};
+  font-family: var(--theme-font, 'Pretendard', sans-serif);
+}
+.ms-reviews-inner {
+  max-width: var(--theme-max-width, 1280px);
+  margin: 0 auto;
+}
+.ms-reviews-header {
+  text-align: {{reviews_align | default: 'center'}};
+  margin-bottom: 48px;
+}
+.ms-reviews-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--theme-primary, #2563eb);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.ms-reviews-title {
+  font-size: clamp(24px, 4vw, 36px);
+  font-weight: 800;
+  color: #111827;
+  letter-spacing: -0.5px;
+  margin: 0;
+  font-family: var(--theme-font-heading, inherit);
+}
+.ms-reviews-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.ms-review-card {
+  background: #fff;
+  border-radius: var(--theme-card-radius, 16px);
+  padding: 28px;
+  border: 1px solid #f1f5f9;
+  transition: box-shadow .2s;
+}
+.ms-review-card:hover { box-shadow: 0 8px 32px rgba(0,0,0,.07); }
+.ms-review-stars {
+  color: #f59e0b;
+  font-size: 14px;
+  margin-bottom: 16px;
+  letter-spacing: 2px;
+}
+.ms-review-text {
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.7;
+  margin: 0 0 20px;
+}
+.ms-review-author {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ms-review-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--theme-primary, #2563eb);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.ms-review-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #111827;
+}
+.ms-review-product {
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 1px;
+}
+@media (max-width: 768px) {
+  .ms-reviews-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+<section class="ms-reviews">
+  <div class="ms-reviews-inner">
+    <div class="ms-reviews-header">
+      <p class="ms-reviews-label">{{reviews_label | default: 'Customer Reviews'}}</p>
+      <h2 class="ms-reviews-title">{{reviews_title | default: '고객 후기'}}</h2>
+    </div>
+    <div class="ms-reviews-grid">
+      <div class="ms-review-card">
+        <div class="ms-review-stars">★★★★★</div>
+        <p class="ms-review-text">{{review1_text | default: '퀄리티가 정말 좋아요. 소재가 부드럽고 핏도 딱 맞습니다. 배송도 빠르고 포장도 꼼꼼하게 되어 있어서 만족스러워요!'}}</p>
+        <div class="ms-review-author">
+          <div class="ms-review-avatar">{{review1_initial | default: '김'}}</div>
+          <div>
+            <p class="ms-review-name">{{review1_name | default: '김*수'}}</p>
+            <p class="ms-review-product">{{review1_product | default: '캐시미어 코트 구매'}}</p>
+          </div>
+        </div>
+      </div>
+      <div class="ms-review-card">
+        <div class="ms-review-stars">★★★★★</div>
+        <p class="ms-review-text">{{review2_text | default: '생각보다 훨씬 예쁘게 나왔어요. 사진이랑 실제 색상이 거의 같고, 사이즈도 정확해요. 다음에도 꼭 여기서 살 것 같아요.'}}</p>
+        <div class="ms-review-author">
+          <div class="ms-review-avatar">{{review2_initial | default: '이'}}</div>
+          <div>
+            <p class="ms-review-name">{{review2_name | default: '이*진'}}</p>
+            <p class="ms-review-product">{{review2_product | default: '와이드 팬츠 구매'}}</p>
+          </div>
+        </div>
+      </div>
+      <div class="ms-review-card">
+        <div class="ms-review-stars">★★★★☆</div>
+        <p class="ms-review-text">{{review3_text | default: '전반적으로 만족해요. 디자인이 심플해서 여러 옷이랑 매치하기 좋고, 가성비도 좋은 편입니다. 재구매 의향 있습니다.'}}</p>
+        <div class="ms-review-author">
+          <div class="ms-review-avatar">{{review3_initial | default: '박'}}</div>
+          <div>
+            <p class="ms-review-name">{{review3_name | default: '박*영'}}</p>
+            <p class="ms-review-product">{{review3_product | default: '스니커즈 구매'}}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

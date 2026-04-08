@@ -1,0 +1,303 @@
+<!-- modern-store / product-list.html -->
+<style>
+.ms-plist {
+  background: {{plist_bg | default: '#ffffff'}};
+  padding: 48px 0 80px;
+  font-family: var(--theme-font, 'Pretendard', sans-serif);
+}
+.ms-plist-inner {
+  max-width: var(--theme-max-width, 1280px);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.ms-plist-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.ms-plist-title {
+  font-size: clamp(20px, 3vw, 28px);
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+  font-family: var(--theme-font-heading, inherit);
+}
+.ms-plist-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ms-filter-btn {
+  padding: 7px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 100px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+  background: #fff;
+  cursor: pointer;
+  transition: all .15s;
+}
+.ms-filter-btn:hover, .ms-filter-btn.active {
+  border-color: var(--theme-primary, #2563eb);
+  color: var(--theme-primary, #2563eb);
+  background: rgba(37,99,235,.06);
+}
+.ms-plist-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.ms-plist-count {
+  font-size: 13px;
+  color: #64748b;
+}
+.ms-plist-sort select {
+  padding: 6px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #374151;
+  background: #fff;
+  cursor: pointer;
+  outline: none;
+}
+.ms-prod-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+@media (max-width: 1024px) { .ms-prod-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 640px)  { .ms-prod-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; } }
+.ms-prod-card {
+  background: #fff;
+  border-radius: var(--theme-card-radius, 12px);
+  overflow: hidden;
+  border: 1px solid #f1f5f9;
+  transition: box-shadow .2s, transform .2s;
+}
+.ms-prod-card:hover {
+  box-shadow: 0 8px 32px rgba(15,23,42,.1);
+  transform: translateY(-2px);
+}
+.ms-prod-thumb {
+  position: relative;
+  aspect-ratio: 3/4;
+  background: #f8fafc;
+  overflow: hidden;
+}
+.ms-prod-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform .3s;
+}
+.ms-prod-card:hover .ms-prod-thumb img { transform: scale(1.04); }
+.ms-prod-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.ms-prod-like {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  border: none;
+  transition: background .15s;
+}
+.ms-prod-like:hover { background: #fff; }
+.ms-prod-info {
+  padding: 14px;
+}
+.ms-prod-brand {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  margin-bottom: 4px;
+}
+.ms-prod-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ms-prod-price {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.ms-prod-price-main {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+}
+.ms-prod-price-old {
+  font-size: 12px;
+  color: #94a3b8;
+  text-decoration: line-through;
+}
+.ms-prod-price-discount {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ef4444;
+}
+.ms-prod-stars {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+.ms-prod-stars-val {
+  font-size: 11px;
+  color: #64748b;
+}
+.ms-plist-pagination {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 48px;
+}
+.ms-page-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+  background: #fff;
+  transition: all .15s;
+}
+.ms-page-btn:hover, .ms-page-btn.active {
+  background: var(--theme-primary, #2563eb);
+  border-color: var(--theme-primary, #2563eb);
+  color: #fff;
+}
+</style>
+
+<section class="ms-plist">
+  <div class="ms-plist-inner">
+    <div class="ms-plist-top">
+      <h1 class="ms-plist-title">{{plist_title | default: '전체 상품'}}</h1>
+      <div class="ms-plist-filters">
+        <button class="ms-filter-btn active">전체</button>
+        <button class="ms-filter-btn">{{plist_filter1 | default: '신상품'}}</button>
+        <button class="ms-filter-btn">{{plist_filter2 | default: '베스트'}}</button>
+        <button class="ms-filter-btn">{{plist_filter3 | default: '세일'}}</button>
+      </div>
+    </div>
+    <div class="ms-plist-sort">
+      <span class="ms-plist-count">{{plist_count | default: '상품 128개'}}</span>
+      <select>
+        <option>인기순</option>
+        <option>최신순</option>
+        <option>낮은가격순</option>
+        <option>높은가격순</option>
+        <option>리뷰많은순</option>
+      </select>
+    </div>
+    <div class="ms-prod-grid">
+      <!-- 상품 카드 샘플 (실제 렌더링 시 동적 데이터로 교체) -->
+      <div class="ms-prod-card">
+        <div class="ms-prod-thumb">
+          <div style="width:100%;height:100%;background:linear-gradient(135deg,#e0f2fe,#bae6fd);display:flex;align-items:center;justify-content:center;font-size:48px;">👗</div>
+          <span class="ms-prod-badge">NEW</span>
+          <button class="ms-prod-like">🤍</button>
+        </div>
+        <div class="ms-prod-info">
+          <div class="ms-prod-brand">BRAND</div>
+          <div class="ms-prod-name">프리미엄 린넨 셔츠</div>
+          <div class="ms-prod-price">
+            <span class="ms-prod-price-main">39,000원</span>
+            <span class="ms-prod-price-old">59,000원</span>
+            <span class="ms-prod-price-discount">34%</span>
+          </div>
+          <div class="ms-prod-stars">⭐⭐⭐⭐⭐ <span class="ms-prod-stars-val">(128)</span></div>
+        </div>
+      </div>
+      <div class="ms-prod-card">
+        <div class="ms-prod-thumb">
+          <div style="width:100%;height:100%;background:linear-gradient(135deg,#fce7f3,#fbcfe8);display:flex;align-items:center;justify-content:center;font-size:48px;">👟</div>
+          <button class="ms-prod-like">🤍</button>
+        </div>
+        <div class="ms-prod-info">
+          <div class="ms-prod-brand">BRAND</div>
+          <div class="ms-prod-name">경량 러닝화 에어쿠션</div>
+          <div class="ms-prod-price">
+            <span class="ms-prod-price-main">89,000원</span>
+          </div>
+          <div class="ms-prod-stars">⭐⭐⭐⭐☆ <span class="ms-prod-stars-val">(76)</span></div>
+        </div>
+      </div>
+      <div class="ms-prod-card">
+        <div class="ms-prod-thumb">
+          <div style="width:100%;height:100%;background:linear-gradient(135deg,#d1fae5,#a7f3d0);display:flex;align-items:center;justify-content:center;font-size:48px;">👜</div>
+          <span class="ms-prod-badge">SALE</span>
+          <button class="ms-prod-like">❤️</button>
+        </div>
+        <div class="ms-prod-info">
+          <div class="ms-prod-brand">BRAND</div>
+          <div class="ms-prod-name">미니멀 크로스백</div>
+          <div class="ms-prod-price">
+            <span class="ms-prod-price-main">52,000원</span>
+            <span class="ms-prod-price-old">78,000원</span>
+            <span class="ms-prod-price-discount">33%</span>
+          </div>
+          <div class="ms-prod-stars">⭐⭐⭐⭐⭐ <span class="ms-prod-stars-val">(203)</span></div>
+        </div>
+      </div>
+      <div class="ms-prod-card">
+        <div class="ms-prod-thumb">
+          <div style="width:100%;height:100%;background:linear-gradient(135deg,#fef3c7,#fde68a);display:flex;align-items:center;justify-content:center;font-size:48px;">🧣</div>
+          <button class="ms-prod-like">🤍</button>
+        </div>
+        <div class="ms-prod-info">
+          <div class="ms-prod-brand">BRAND</div>
+          <div class="ms-prod-name">울 캐시미어 스카프</div>
+          <div class="ms-prod-price">
+            <span class="ms-prod-price-main">45,000원</span>
+          </div>
+          <div class="ms-prod-stars">⭐⭐⭐⭐☆ <span class="ms-prod-stars-val">(54)</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="ms-plist-pagination">
+      <button class="ms-page-btn">‹</button>
+      <button class="ms-page-btn active">1</button>
+      <button class="ms-page-btn">2</button>
+      <button class="ms-page-btn">3</button>
+      <button class="ms-page-btn">4</button>
+      <button class="ms-page-btn">5</button>
+      <button class="ms-page-btn">›</button>
+    </div>
+  </div>
+</section>

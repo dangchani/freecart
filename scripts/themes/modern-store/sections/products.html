@@ -1,0 +1,237 @@
+<!-- modern-store / products.html -->
+<style>
+.ms-products {
+  padding: 80px 24px;
+  background: {{products_bg | default: '#ffffff'}};
+  font-family: var(--theme-font, 'Pretendard', sans-serif);
+}
+.ms-products-inner {
+  max-width: var(--theme-max-width, 1280px);
+  margin: 0 auto;
+}
+.ms-section-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 40px;
+  gap: 16px;
+}
+.ms-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--theme-primary, #2563eb);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.ms-section-title {
+  font-size: clamp(24px, 4vw, 36px);
+  font-weight: 800;
+  color: #111827;
+  letter-spacing: -0.5px;
+  margin: 0;
+  font-family: var(--theme-font-heading, inherit);
+}
+.ms-section-link {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--theme-primary, #2563eb);
+  text-decoration: none;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: gap .15s;
+}
+.ms-section-link:hover { gap: 8px; }
+.ms-products-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+.ms-product-card {
+  border-radius: var(--theme-card-radius, 16px);
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #f1f5f9;
+  transition: box-shadow .2s, transform .2s;
+  cursor: pointer;
+}
+.ms-product-card:hover {
+  box-shadow: 0 12px 40px rgba(0,0,0,.1);
+  transform: translateY(-3px);
+}
+.ms-product-image {
+  aspect-ratio: 3/4;
+  background: #f8fafc;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+}
+.ms-product-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform .3s;
+}
+.ms-product-card:hover .ms-product-image img { transform: scale(1.05); }
+.ms-product-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: var(--theme-accent, #ef4444);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 100px;
+  letter-spacing: .03em;
+}
+.ms-product-wishlist {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  background: rgba(255,255,255,.9);
+  backdrop-filter: blur(4px);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .2s;
+}
+.ms-product-card:hover .ms-product-wishlist { opacity: 1; }
+.ms-product-info {
+  padding: 14px 16px 16px;
+}
+.ms-product-brand {
+  font-size: 11px;
+  color: #9ca3af;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.ms-product-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 10px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ms-product-price-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ms-product-price {
+  font-size: 16px;
+  font-weight: 800;
+  color: #111827;
+}
+.ms-product-original {
+  font-size: 12px;
+  color: #d1d5db;
+  text-decoration: line-through;
+}
+.ms-product-discount {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--theme-accent, #ef4444);
+  margin-left: auto;
+}
+@media (max-width: 1024px) {
+  .ms-products-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 640px) {
+  .ms-products-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .ms-section-header { flex-direction: column; align-items: flex-start; }
+}
+</style>
+
+<section class="ms-products">
+  <div class="ms-products-inner">
+    <div class="ms-section-header">
+      <div>
+        <p class="ms-section-label">{{products_label | default: 'Featured'}}</p>
+        <h2 class="ms-section-title">{{products_title | default: '이번 주 추천 상품'}}</h2>
+      </div>
+      <a href="{{products_link | default: '/products'}}" class="ms-section-link">
+        전체보기 →
+      </a>
+    </div>
+
+    <div class="ms-products-grid">
+      <!-- 상품 카드 (실제 상품 데이터는 React 컴포넌트가 렌더링) -->
+      <div class="ms-product-card">
+        <div class="ms-product-image">
+          🧥
+          <span class="ms-product-badge">NEW</span>
+          <div class="ms-product-wishlist">🤍</div>
+        </div>
+        <div class="ms-product-info">
+          <p class="ms-product-brand">BRAND</p>
+          <p class="ms-product-name">프리미엄 오버핏 캐시미어 코트</p>
+          <div class="ms-product-price-row">
+            <span class="ms-product-price">189,000원</span>
+            <span class="ms-product-original">250,000원</span>
+            <span class="ms-product-discount">-24%</span>
+          </div>
+        </div>
+      </div>
+      <div class="ms-product-card">
+        <div class="ms-product-image">
+          👕
+          <div class="ms-product-wishlist">🤍</div>
+        </div>
+        <div class="ms-product-info">
+          <p class="ms-product-brand">BRAND</p>
+          <p class="ms-product-name">슬림핏 데일리 코튼 티셔츠</p>
+          <div class="ms-product-price-row">
+            <span class="ms-product-price">29,000원</span>
+          </div>
+        </div>
+      </div>
+      <div class="ms-product-card">
+        <div class="ms-product-image">
+          👖
+          <span class="ms-product-badge">BEST</span>
+          <div class="ms-product-wishlist">🤍</div>
+        </div>
+        <div class="ms-product-info">
+          <p class="ms-product-brand">BRAND</p>
+          <p class="ms-product-name">와이드 핏 데님 팬츠</p>
+          <div class="ms-product-price-row">
+            <span class="ms-product-price">69,000원</span>
+            <span class="ms-product-original">89,000원</span>
+            <span class="ms-product-discount">-22%</span>
+          </div>
+        </div>
+      </div>
+      <div class="ms-product-card">
+        <div class="ms-product-image">
+          👟
+          <div class="ms-product-wishlist">🤍</div>
+        </div>
+        <div class="ms-product-info">
+          <p class="ms-product-brand">BRAND</p>
+          <p class="ms-product-name">클래식 캔버스 스니커즈</p>
+          <div class="ms-product-price-row">
+            <span class="ms-product-price">85,000원</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

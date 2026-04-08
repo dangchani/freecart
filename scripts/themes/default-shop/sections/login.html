@@ -1,0 +1,170 @@
+<!-- default-shop / login.html -->
+<style>
+.ds-login {
+  background: {{login_bg | default: '#f8fafc'}};
+  min-height: 70vh;
+  display: flex;
+  align-items: center;
+  padding: 60px 24px;
+  font-family: var(--ds-font, 'Pretendard', sans-serif);
+}
+.ds-login-inner {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+}
+.ds-login-logo {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.ds-login-logo-text {
+  font-size: 28px;
+  font-weight: 900;
+  color: var(--ds-primary, #1a56db);
+  font-family: var(--ds-font-heading, inherit);
+  letter-spacing: -1px;
+}
+.ds-login-card {
+  background: #fff;
+  border-radius: var(--ds-card-radius, 20px);
+  border: 1px solid #e2e8f0;
+  padding: 36px;
+  box-shadow: 0 4px 24px rgba(15,23,42,.06);
+}
+.ds-login-card-title {
+  font-size: 22px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 24px;
+  font-family: var(--ds-font-heading, inherit);
+}
+.ds-login-field { margin-bottom: 16px; }
+.ds-login-field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 7px;
+}
+.ds-login-field input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 15px;
+  color: #1e293b;
+  background: #fff;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+  box-sizing: border-box;
+}
+.ds-login-field input:focus {
+  border-color: var(--ds-primary, #1a56db);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+}
+.ds-login-remember {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.ds-login-remember label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+}
+.ds-login-remember input { accent-color: var(--ds-primary, #1a56db); }
+.ds-login-forgot { font-size: 13px; color: var(--ds-primary, #1a56db); text-decoration: none; }
+.ds-login-forgot:hover { text-decoration: underline; }
+.ds-login-btn {
+  width: 100%;
+  padding: 14px;
+  background: var(--ds-primary, #1a56db);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity .15s;
+  margin-bottom: 16px;
+}
+.ds-login-btn:hover { opacity: .88; }
+.ds-login-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+}
+.ds-login-divider::before, .ds-login-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e2e8f0;
+}
+.ds-login-divider span { font-size: 12px; color: #94a3b8; white-space: nowrap; }
+.ds-login-sns { display: flex; flex-direction: column; gap: 10px; }
+.ds-login-sns-btn {
+  width: 100%;
+  padding: 12px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background .15s, border-color .15s;
+}
+.ds-login-sns-btn:hover { background: #f8fafc; border-color: #cbd5e1; }
+.ds-login-sns-btn.kakao { background: #fee500; border-color: #fee500; color: #1a1a1a; }
+.ds-login-sns-btn.kakao:hover { opacity: .88; }
+.ds-login-footer {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 13px;
+  color: #64748b;
+}
+.ds-login-footer a { color: var(--ds-primary, #1a56db); text-decoration: none; font-weight: 700; }
+.ds-login-footer a:hover { text-decoration: underline; }
+</style>
+
+<section class="ms-login">
+  <div class="ms-login-inner">
+    <div class="ms-login-logo">
+      <div class="ms-login-logo-text">{{brand_name | default: 'STORE'}}</div>
+    </div>
+    <div class="ms-login-card">
+      <h1 class="ms-login-card-title">{{login_title | default: '로그인'}}</h1>
+      <div class="ms-login-field">
+        <label>이메일</label>
+        <input type="email" placeholder="{{login_email_placeholder | default: '이메일 주소'}}" />
+      </div>
+      <div class="ms-login-field">
+        <label>비밀번호</label>
+        <input type="password" placeholder="{{login_password_placeholder | default: '비밀번호'}}" />
+      </div>
+      <div class="ms-login-remember">
+        <label><input type="checkbox" /> 로그인 유지</label>
+        <a href="{{login_forgot_url | default: '/forgot-password'}}" class="ms-login-forgot">비밀번호 찾기</a>
+      </div>
+      <button class="ms-login-btn">{{login_btn_text | default: '로그인'}}</button>
+      <div class="ms-login-divider"><span>또는 소셜 계정으로 로그인</span></div>
+      <div class="ms-login-sns">
+        <button class="ms-login-sns-btn kakao">카카오 로그인</button>
+        <button class="ms-login-sns-btn">🔵 네이버 로그인</button>
+        <button class="ms-login-sns-btn">🍎 Apple로 로그인</button>
+      </div>
+    </div>
+    <div class="ms-login-footer">
+      아직 회원이 아닌가요? <a href="{{login_signup_url | default: '/signup'}}">회원가입</a>
+    </div>
+  </div>
+</section>

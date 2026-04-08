@@ -1,0 +1,136 @@
+/* default-shop / theme.css — 클래식 쇼핑몰 기본 테마 */
+
+:root {
+  --ds-primary: #1a56db;
+  --ds-primary-dark: #1048c8;
+  --ds-accent: #f59e0b;
+  --ds-text: #111827;
+  --ds-text-muted: #6b7280;
+  --ds-bg: #ffffff;
+  --ds-bg-gray: #f9fafb;
+  --ds-border: #e5e7eb;
+  --ds-card-radius: 8px;
+  --ds-btn-radius: 6px;
+  --ds-font: 'Pretendard', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+  --ds-max-width: 1280px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--ds-font); color: var(--ds-text); background: var(--ds-bg); }
+a { color: inherit; text-decoration: none; }
+button { font-family: var(--ds-font); }
+img { display: block; max-width: 100%; }
+input, select, textarea { font-family: var(--ds-font); }
+
+.ds-container {
+  max-width: var(--ds-max-width);
+  margin: 0 auto;
+  padding: 0 20px;
+}
+.ds-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  gap: 12px;
+}
+.ds-section-title {
+  font-size: clamp(18px, 2.5vw, 24px);
+  font-weight: 800;
+  color: var(--ds-text);
+  line-height: 1.2;
+}
+.ds-section-title span {
+  color: var(--ds-primary);
+}
+.ds-more-link {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ds-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.ds-more-link:hover { color: var(--ds-primary); }
+
+/* 버튼 공통 */
+.ds-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: var(--ds-btn-radius);
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: opacity .15s, transform .15s;
+  white-space: nowrap;
+}
+.ds-btn:hover { opacity: .88; transform: translateY(-1px); }
+.ds-btn-primary { background: var(--ds-primary); color: #fff; }
+.ds-btn-outline { background: transparent; border: 1.5px solid var(--ds-primary); color: var(--ds-primary); }
+.ds-btn-dark { background: #111827; color: #fff; }
+
+/* 뱃지 */
+.ds-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.ds-badge-new { background: var(--ds-primary); color: #fff; }
+.ds-badge-sale { background: #ef4444; color: #fff; }
+.ds-badge-best { background: var(--ds-accent); color: #fff; }
+
+/* 상품 카드 (magazine 스타일) */
+.ds-product-card {
+  background: #fff;
+  border-radius: var(--ds-card-radius);
+  overflow: hidden;
+  border: 1px solid var(--ds-border);
+  transition: box-shadow .2s;
+}
+.ds-product-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.1); }
+.ds-product-card-img {
+  aspect-ratio: 1/1;
+  background: var(--ds-bg-gray);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.ds-product-card-img img { width: 100%; height: 100%; object-fit: cover; transition: transform .3s; }
+.ds-product-card:hover .ds-product-card-img img { transform: scale(1.04); }
+.ds-product-card-body { padding: 12px; }
+.ds-product-card-brand { font-size: 11px; color: var(--ds-text-muted); font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
+.ds-product-card-name { font-size: 14px; font-weight: 600; color: var(--ds-text); margin-bottom: 8px; line-height: 1.4; }
+.ds-product-card-price { display: flex; align-items: baseline; gap: 6px; }
+.ds-price-main { font-size: 16px; font-weight: 800; color: var(--ds-text); }
+.ds-price-old { font-size: 12px; color: #9ca3af; text-decoration: line-through; }
+.ds-price-pct { font-size: 12px; font-weight: 700; color: #ef4444; }
+
+/* 공통 form */
+.ds-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid var(--ds-border);
+  border-radius: var(--ds-btn-radius);
+  font-size: 14px;
+  color: var(--ds-text);
+  background: #fff;
+  outline: none;
+  transition: border-color .15s;
+  box-sizing: border-box;
+}
+.ds-input:focus { border-color: var(--ds-primary); box-shadow: 0 0 0 3px rgba(26,86,219,.08); }
+
+/* 스크롤바 */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }

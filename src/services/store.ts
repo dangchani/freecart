@@ -7,10 +7,17 @@ import { getSetting } from '@/services/settings';
 
 let _storeApiUrl: string | null = null;
 
-async function getStoreApiUrl(): Promise<string> {
+export async function getStoreApiUrl(): Promise<string> {
   if (_storeApiUrl) return _storeApiUrl;
-  _storeApiUrl = await getSetting('store_api_url', 'https://freecart.kr');
+  const val = await getSetting('store_api_url', 'https://freecart.kr');
+  // 후행 슬래시 제거
+  _storeApiUrl = val.replace(/\/$/, '');
   return _storeApiUrl;
+}
+
+/** 캐시 초기화 (설정 변경 후 호출) */
+export function clearStoreApiUrlCache() {
+  _storeApiUrl = null;
 }
 
 interface Theme {
@@ -64,6 +71,74 @@ interface StoreResponse<T> {
   data?: T;
   error?: string;
   message?: string;
+}
+
+// ============================================================================
+// 스토어 연결 확인
+// ============================================================================
+
+export async function checkStoreConnection(): Promise<{
+  connected: boolean;
+  url: string;
+}> {
+  // 항상 최신 DB 값으로 확인 (캐시 무효화)
+  clearStoreApiUrlCache();
+  const url = await getStoreApiUrl();
+  try {
+    const res = await fetch(`${url}/api/ping`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(5000),
+    });
+    return { connected: res.ok, url };
+  } catch {
+    return { connected: false, url };
+  }
+}
+
+/**
+ * 스토어 계정 토큰 검증 — /api/auth/me
+ */
+export async function verifyStoreAccount(accessToken: string): Promise<{
+  valid: boolean;
+  email?: string;
+  name?: string;
+}> {
+  try {
+    const url = await getStoreApiUrl();
+    const res = await fetch(`${url}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return { valid: false };
+    const data = await res.json();
+    return { valid: true, email: data.email, name: data.name };
+  } catch {
+    return { valid: false };
+  }
+}
+
+/**
+ * 스토어 계정의 구매 목록 조회 — /api/purchases
+ */
+export async function getStorePurchases(accessToken: string): Promise<{
+  themeIds: string[];
+  skinIds: string[];
+}> {
+  try {
+    const url = await getStoreApiUrl();
+    const res = await fetch(`${url}/api/purchases`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return { themeIds: [], skinIds: [] };
+    const data = await res.json();
+    return {
+      themeIds: (data.themes || []).map((t: any) => t.id || t.themeId),
+      skinIds: (data.skins || []).map((s: any) => s.id || s.skinId),
+    };
+  } catch {
+    return { themeIds: [], skinIds: [] };
+  }
 }
 
 // ============================================================================

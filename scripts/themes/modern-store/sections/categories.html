@@ -1,0 +1,115 @@
+<!-- modern-store / categories.html -->
+<style>
+.ms-cats {
+  background: {{cats_bg | default: '#f8fafc'}};
+  padding: 64px 0;
+  font-family: var(--theme-font, 'Pretendard', sans-serif);
+}
+.ms-cats-inner {
+  max-width: var(--theme-max-width, 1280px);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.ms-cats-head {
+  text-align: center;
+  margin-bottom: 40px;
+}
+.ms-cats-label {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--theme-primary, #2563eb);
+  margin-bottom: 8px;
+}
+.ms-cats-title {
+  font-size: clamp(22px, 4vw, 32px);
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+  font-family: var(--theme-font-heading, inherit);
+}
+.ms-cats-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 16px;
+}
+@media (max-width: 1024px) { .ms-cats-grid { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 640px)  { .ms-cats-grid { grid-template-columns: repeat(3, 1fr); gap: 12px; } }
+.ms-cat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--theme-card-radius, 16px);
+  text-decoration: none;
+  transition: border-color .15s, box-shadow .15s, transform .15s;
+  cursor: pointer;
+}
+.ms-cat-card:hover {
+  border-color: var(--theme-primary, #2563eb);
+  box-shadow: 0 4px 20px rgba(37,99,235,.12);
+  transform: translateY(-2px);
+}
+.ms-cat-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--theme-bg-secondary, #f1f5f9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  line-height: 1;
+}
+.ms-cat-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  text-align: center;
+  line-height: 1.3;
+}
+.ms-cat-count {
+  font-size: 11px;
+  color: #94a3b8;
+}
+</style>
+
+<section class="ms-cats">
+  <div class="ms-cats-inner">
+    <div class="ms-cats-head">
+      <span class="ms-cats-label">{{cats_label | default: 'Categories'}}</span>
+      <h2 class="ms-cats-title">{{cats_title | default: '카테고리'}}</h2>
+    </div>
+    <div class="ms-cats-grid">
+      <a href="{{cat1_url | default: '/products?category=fashion'}}" class="ms-cat-card">
+        <div class="ms-cat-icon">{{cat1_icon | default: '👗'}}</div>
+        <span class="ms-cat-name">{{cat1_name | default: '패션'}}</span>
+      </a>
+      <a href="{{cat2_url | default: '/products?category=shoes'}}" class="ms-cat-card">
+        <div class="ms-cat-icon">{{cat2_icon | default: '👟'}}</div>
+        <span class="ms-cat-name">{{cat2_name | default: '신발'}}</span>
+      </a>
+      <a href="{{cat3_url | default: '/products?category=bag'}}" class="ms-cat-card">
+        <div class="ms-cat-icon">{{cat3_icon | default: '👜'}}</div>
+        <span class="ms-cat-name">{{cat3_name | default: '가방'}}</span>
+      </a>
+      <a href="{{cat4_url | default: '/products?category=beauty'}}" class="ms-cat-card">
+        <div class="ms-cat-icon">{{cat4_icon | default: '💄'}}</div>
+        <span class="ms-cat-name">{{cat4_name | default: '뷰티'}}</span>
+      </a>
+      <a href="{{cat5_url | default: '/products?category=living'}}" class="ms-cat-card">
+        <div class="ms-cat-icon">{{cat5_icon | default: '🏠'}}</div>
+        <span class="ms-cat-name">{{cat5_name | default: '리빙'}}</span>
+      </a>
+      <a href="{{cat6_url | default: '/products?category=digital'}}" class="ms-cat-card">
+        <div class="ms-cat-icon">{{cat6_icon | default: '💻'}}</div>
+        <span class="ms-cat-name">{{cat6_name | default: '디지털'}}</span>
+      </a>
+    </div>
+  </div>
+</section>

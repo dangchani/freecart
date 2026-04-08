@@ -1,0 +1,177 @@
+<!-- default-shop / footer.html — simple -->
+<style>
+.ds-footer {
+  background: {{footer_bg | default: '#111827'}};
+  color: {{footer_text | default: '#9ca3af'}};
+  font-family: var(--ds-font, 'Pretendard', sans-serif);
+  font-size: 13px;
+}
+.ds-footer-top {
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  padding: 40px 0;
+}
+.ds-footer-top-inner {
+  max-width: var(--ds-max-width, 1280px);
+  margin: 0 auto;
+  padding: 0 20px;
+  display: grid;
+  grid-template-columns: 240px 1fr 1fr 1fr;
+  gap: 40px;
+}
+@media (max-width: 900px) { .ds-footer-top-inner { grid-template-columns: 1fr 1fr; gap: 28px; } }
+@media (max-width: 580px) { .ds-footer-top-inner { grid-template-columns: 1fr; } }
+.ds-footer-brand {}
+.ds-footer-logo {
+  font-size: 22px;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: -1px;
+  margin-bottom: 12px;
+}
+.ds-footer-desc {
+  font-size: 12px;
+  line-height: 1.7;
+  margin-bottom: 16px;
+  color: #6b7280;
+}
+.ds-footer-sns {
+  display: flex;
+  gap: 8px;
+}
+.ds-footer-sns a {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  transition: background .15s;
+}
+.ds-footer-sns a:hover { background: rgba(255,255,255,.16); }
+.ds-footer-col-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e5e7eb;
+  margin-bottom: 14px;
+}
+.ds-footer-links { display: flex; flex-direction: column; gap: 8px; }
+.ds-footer-links a {
+  font-size: 13px;
+  color: #9ca3af;
+  transition: color .15s;
+}
+.ds-footer-links a:hover { color: #e5e7eb; }
+/* CS 박스 */
+.ds-footer-cs { }
+.ds-footer-cs-phone {
+  font-size: 24px;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: -1px;
+  margin-bottom: 4px;
+}
+.ds-footer-cs-hours {
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+/* 사업자 정보 */
+.ds-footer-bottom {
+  padding: 20px 0;
+}
+.ds-footer-bottom-inner {
+  max-width: var(--ds-max-width, 1280px);
+  margin: 0 auto;
+  padding: 0 20px;
+}
+.ds-footer-biz {
+  font-size: 11px;
+  color: #4b5563;
+  line-height: 1.8;
+  margin-bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 16px;
+}
+.ds-footer-biz span { white-space: nowrap; }
+.ds-footer-copy {
+  font-size: 11px;
+  color: #374151;
+}
+.ds-footer-policy-links {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.ds-footer-policy-links a {
+  font-size: 12px;
+  color: #6b7280;
+  transition: color .15s;
+}
+.ds-footer-policy-links a:hover { color: #e5e7eb; }
+.ds-footer-policy-links a.strong { color: #e5e7eb; font-weight: 600; }
+</style>
+
+<footer class="ds-footer">
+  <div class="ds-footer-top">
+    <div class="ds-footer-top-inner">
+      <div class="ds-footer-brand">
+        <div class="ds-footer-logo">{{brand_name | default: 'SHOP'}}</div>
+        <p class="ds-footer-desc">{{footer_desc | default: '고객 만족을 최우선으로 하는 쇼핑몰입니다.'}}</p>
+        <div class="ds-footer-sns">
+          <a href="{{sns_instagram | default: '#'}}" title="Instagram">📷</a>
+          <a href="{{sns_facebook | default: '#'}}" title="Facebook">📘</a>
+          <a href="{{sns_youtube | default: '#'}}" title="YouTube">▶️</a>
+          <a href="{{sns_blog | default: '#'}}" title="Blog">📝</a>
+        </div>
+      </div>
+      <div>
+        <div class="ds-footer-col-title">쇼핑 정보</div>
+        <div class="ds-footer-links">
+          <a href="/products?tag=new">신상품</a>
+          <a href="/products?tag=best">베스트셀러</a>
+          <a href="/products?tag=sale">세일</a>
+          <a href="/products">전체 상품</a>
+          <a href="/categories">카테고리</a>
+        </div>
+      </div>
+      <div>
+        <div class="ds-footer-col-title">고객 서비스</div>
+        <div class="ds-footer-links">
+          <a href="/notices">공지사항</a>
+          <a href="/faqs">자주 묻는 질문</a>
+          <a href="/inquiries">1:1 문의</a>
+          <a href="/mypage/orders">주문 조회</a>
+          <a href="/mypage/returns">반품/교환</a>
+        </div>
+      </div>
+      <div class="ds-footer-cs">
+        <div class="ds-footer-col-title">고객센터</div>
+        <div class="ds-footer-cs-phone">{{cs_phone | default: '1588-0000'}}</div>
+        <div class="ds-footer-cs-hours">{{cs_hours | default: '평일 09:00~18:00 (점심 12:00~13:00)'}}</div>
+      </div>
+    </div>
+  </div>
+  <div class="ds-footer-bottom">
+    <div class="ds-footer-bottom-inner">
+      <div class="ds-footer-policy-links">
+        <a href="/terms" class="strong">이용약관</a>
+        <a href="/privacy" class="strong">개인정보처리방침</a>
+        <a href="/terms/youth">청소년보호정책</a>
+        <a href="/terms/refund">환불정책</a>
+      </div>
+      <div class="ds-footer-biz">
+        <span>상호: {{biz_name | default: '(주)쇼핑몰'}}</span>
+        <span>대표: {{biz_ceo | default: '홍길동'}}</span>
+        <span>사업자등록번호: {{biz_reg | default: '000-00-00000'}}</span>
+        <span>통신판매업: {{biz_mail | default: '제2025-서울강남-0000호'}}</span>
+        <span>주소: {{biz_address | default: '서울특별시 강남구 테헤란로 123'}}</span>
+      </div>
+      <div class="ds-footer-copy">© {{biz_year | default: '2025'}} {{brand_name | default: 'SHOP'}}. All rights reserved.</div>
+    </div>
+  </div>
+</footer>

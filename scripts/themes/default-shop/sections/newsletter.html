@@ -1,0 +1,51 @@
+<!-- default-shop / newsletter.html -->
+<style>
+.ds-nl {
+  background: {{nl_bg | default: '#1a56db'}};
+  padding: 56px 24px;
+  text-align: center;
+  font-family: var(--ds-font, 'Pretendard', sans-serif);
+}
+.ds-nl-inner { max-width: 560px; margin: 0 auto; }
+.ds-nl-icon { font-size: 36px; margin-bottom: 12px; }
+.ds-nl-title { font-size: clamp(20px, 3vw, 28px); font-weight: 800; color: #fff; margin-bottom: 8px; }
+.ds-nl-desc { font-size: 14px; color: rgba(255,255,255,.8); margin-bottom: 24px; line-height: 1.7; }
+.ds-nl-form { display: flex; gap: 8px; max-width: 420px; margin: 0 auto; }
+.ds-nl-form input {
+  flex: 1;
+  padding: 12px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #111827;
+  background: #fff;
+  outline: none;
+}
+.ds-nl-form button {
+  padding: 12px 24px;
+  background: #111827;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity .15s;
+}
+.ds-nl-form button:hover { opacity: .88; }
+.ds-nl-note { font-size: 11px; color: rgba(255,255,255,.6); margin-top: 12px; }
+@media (max-width: 480px) { .ds-nl-form { flex-direction: column; } }
+</style>
+<section class="ds-nl">
+  <div class="ds-nl-inner">
+    <div class="ds-nl-icon">📧</div>
+    <h2 class="ds-nl-title">{{nl_title | default: '할인 소식을 가장 먼저 받아보세요'}}</h2>
+    <p class="ds-nl-desc">{{nl_desc | default: '구독하시면 신상품 소식과 특별 할인 쿠폰을 이메일로 보내드립니다.'}}</p>
+    <form class="ds-nl-form" onsubmit="return false">
+      <input type="email" placeholder="{{nl_placeholder | default: '이메일 주소 입력'}}" />
+      <button>{{nl_cta | default: '구독하기'}}</button>
+    </form>
+    <p class="ds-nl-note">{{nl_note | default: '언제든지 구독 취소할 수 있습니다.'}}</p>
+  </div>
+</section>

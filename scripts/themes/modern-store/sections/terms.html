@@ -1,0 +1,140 @@
+<!-- modern-store / terms.html -->
+<style>
+.ms-terms {
+  background: {{terms_bg | default: '#ffffff'}};
+  padding: 48px 0 80px;
+  font-family: var(--theme-font, 'Pretendard', sans-serif);
+}
+.ms-terms-inner {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.ms-terms-header { margin-bottom: 36px; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; }
+.ms-terms-label {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--theme-primary, #2563eb);
+  margin-bottom: 8px;
+}
+.ms-terms-title {
+  font-size: clamp(20px, 3vw, 28px);
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 8px;
+  font-family: var(--theme-font-heading, inherit);
+}
+.ms-terms-effective { font-size: 13px; color: #64748b; }
+.ms-terms-toc {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 40px;
+}
+.ms-terms-toc-title { font-size: 13px; font-weight: 700; color: #374151; margin-bottom: 10px; }
+.ms-terms-toc ol { margin: 0; padding-left: 20px; }
+.ms-terms-toc li {
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 4px;
+  line-height: 1.6;
+}
+.ms-terms-toc a { color: var(--theme-primary, #2563eb); text-decoration: none; }
+.ms-terms-toc a:hover { text-decoration: underline; }
+.ms-terms-section { margin-bottom: 40px; }
+.ms-terms-section-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.ms-terms-body {
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.85;
+}
+.ms-terms-body p { margin: 0 0 12px; }
+.ms-terms-body ol, .ms-terms-body ul {
+  padding-left: 20px;
+  margin: 0 0 14px;
+}
+.ms-terms-body li { margin-bottom: 6px; }
+.ms-terms-body strong { color: #1e293b; }
+.ms-terms-highlight {
+  background: rgba(37,99,235,.05);
+  border-left: 3px solid var(--theme-primary, #2563eb);
+  padding: 12px 16px;
+  border-radius: 0 8px 8px 0;
+  margin: 12px 0;
+  font-size: 13px;
+  color: #374151;
+}
+</style>
+
+<section class="ms-terms">
+  <div class="ms-terms-inner">
+    <div class="ms-terms-header">
+      <div class="ms-terms-label">Legal</div>
+      <h1 class="ms-terms-title">{{terms_title | default: '이용약관'}}</h1>
+      <div class="ms-terms-effective">{{terms_effective | default: '시행일: 2025년 1월 1일'}}</div>
+    </div>
+    <div class="ms-terms-toc">
+      <div class="ms-terms-toc-title">목차</div>
+      <ol>
+        <li><a href="#">제1조 (목적)</a></li>
+        <li><a href="#">제2조 (정의)</a></li>
+        <li><a href="#">제3조 (약관의 효력 및 변경)</a></li>
+        <li><a href="#">제4조 (서비스 제공 및 변경)</a></li>
+        <li><a href="#">제5조 (회원가입)</a></li>
+        <li><a href="#">제6조 (개인정보보호)</a></li>
+        <li><a href="#">제7조 (이용 계약의 해지)</a></li>
+        <li><a href="#">제8조 (구매 및 결제)</a></li>
+        <li><a href="#">제9조 (청약철회 및 환불)</a></li>
+        <li><a href="#">제10조 (면책조항)</a></li>
+      </ol>
+    </div>
+    <div class="ms-terms-section">
+      <h2 class="ms-terms-section-title">제1조 (목적)</h2>
+      <div class="ms-terms-body">
+        <p>이 약관은 <strong>{{brand_name | default: 'STORE'}}</strong>(이하 "회사")가 운영하는 인터넷 쇼핑몰(이하 "서비스")을 이용함에 있어 회사와 이용자 간의 권리·의무 및 책임사항을 규정함을 목적으로 합니다.</p>
+      </div>
+    </div>
+    <div class="ms-terms-section">
+      <h2 class="ms-terms-section-title">제2조 (정의)</h2>
+      <div class="ms-terms-body">
+        <ol>
+          <li>"서비스"란 회사가 운영하는 전자상거래 플랫폼을 통해 제공하는 모든 서비스를 의미합니다.</li>
+          <li>"회원"이란 회사가 정한 절차에 따라 회원등록을 한 자로서, 회사의 정보를 지속적으로 제공받으며, 회사가 제공하는 서비스를 계속적으로 이용할 수 있는 자를 말합니다.</li>
+          <li>"비회원"이란 회원에 가입하지 않고 회사가 제공하는 서비스를 이용하는 자를 말합니다.</li>
+        </ol>
+      </div>
+    </div>
+    <div class="ms-terms-section">
+      <h2 class="ms-terms-section-title">제9조 (청약철회 및 환불)</h2>
+      <div class="ms-terms-body">
+        <div class="ms-terms-highlight">
+          전자상거래 등에서의 소비자보호에 관한 법률에 따라 상품을 받은 날로부터 <strong>7일 이내</strong> 청약철회가 가능합니다.
+        </div>
+        <p>다음의 경우에는 청약철회가 제한될 수 있습니다.</p>
+        <ul>
+          <li>소비자에게 책임있는 사유로 재화 등이 멸실 또는 훼손된 경우</li>
+          <li>소비자의 사용 또는 일부 소비로 재화 등의 가치가 현저히 감소한 경우</li>
+          <li>시간이 지나 다시 판매하기 곤란할 정도로 재화 등의 가치가 현저히 감소한 경우</li>
+          <li>복제가 가능한 재화 등의 포장을 훼손한 경우</li>
+        </ul>
+      </div>
+    </div>
+    <div class="ms-terms-section">
+      <h2 class="ms-terms-section-title">제10조 (면책조항)</h2>
+      <div class="ms-terms-body">
+        <p>회사는 천재지변, 전쟁, 기간통신사업자의 서비스 중지, 기타 불가항력으로 인하여 서비스를 제공할 수 없는 경우에는 서비스 제공에 관한 책임이 면제됩니다.</p>
+        <p>회사는 이용자의 귀책사유로 인한 서비스 이용의 장애에 대하여는 책임을 지지 않습니다.</p>
+      </div>
+    </div>
+  </div>
+</section>

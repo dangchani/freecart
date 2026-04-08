@@ -1,0 +1,95 @@
+<!-- modern-store / newsletter.html -->
+<style>
+.ms-newsletter {
+  padding: 80px 24px;
+  background: {{newsletter_bg | default: 'var(--theme-primary, #2563eb)'}};
+  font-family: var(--theme-font, 'Pretendard', sans-serif);
+  text-align: center;
+}
+.ms-newsletter-inner {
+  max-width: 560px;
+  margin: 0 auto;
+}
+.ms-newsletter-badge {
+  display: inline-block;
+  background: rgba(255,255,255,.15);
+  color: rgba(255,255,255,.9);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 5px 14px;
+  border-radius: 100px;
+  margin-bottom: 20px;
+}
+.ms-newsletter-title {
+  font-size: clamp(26px, 4vw, 40px);
+  font-weight: 800;
+  color: #fff;
+  margin: 0 0 12px;
+  letter-spacing: -0.5px;
+  font-family: var(--theme-font-heading, inherit);
+}
+.ms-newsletter-desc {
+  font-size: 15px;
+  color: rgba(255,255,255,.75);
+  line-height: 1.6;
+  margin: 0 0 36px;
+}
+.ms-newsletter-form {
+  display: flex;
+  gap: 8px;
+  max-width: 440px;
+  margin: 0 auto;
+}
+.ms-newsletter-input {
+  flex: 1;
+  height: 48px;
+  border: none;
+  border-radius: 10px;
+  padding: 0 16px;
+  font-size: 14px;
+  color: #111827;
+  background: #fff;
+  outline: none;
+  transition: box-shadow .15s;
+}
+.ms-newsletter-input:focus { box-shadow: 0 0 0 3px rgba(255,255,255,.4); }
+.ms-newsletter-input::placeholder { color: #9ca3af; }
+.ms-newsletter-btn {
+  height: 48px;
+  padding: 0 24px;
+  background: #111827;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity .15s;
+}
+.ms-newsletter-btn:hover { opacity: .85; }
+.ms-newsletter-note {
+  font-size: 11px;
+  color: rgba(255,255,255,.5);
+  margin-top: 14px;
+}
+@media (max-width: 480px) {
+  .ms-newsletter-form { flex-direction: column; }
+  .ms-newsletter-btn { width: 100%; }
+}
+</style>
+
+<section class="ms-newsletter">
+  <div class="ms-newsletter-inner">
+    <span class="ms-newsletter-badge">{{newsletter_badge | default: 'Newsletter'}}</span>
+    <h2 class="ms-newsletter-title">{{newsletter_title | default: '신상품 소식을\n가장 먼저 받아보세요'}}</h2>
+    <p class="ms-newsletter-desc">{{newsletter_desc | default: '구독하시면 신상품 알림, 할인 쿠폰, 시즌 세일 소식을 이메일로 보내드립니다.'}}</p>
+    <div class="ms-newsletter-form">
+      <input class="ms-newsletter-input" type="email" placeholder="{{newsletter_placeholder | default: '이메일 주소를 입력하세요'}}">
+      <button class="ms-newsletter-btn">{{newsletter_cta | default: '구독하기'}}</button>
+    </div>
+    <p class="ms-newsletter-note">{{newsletter_note | default: '개인정보는 안전하게 보호되며, 언제든지 구독을 취소하실 수 있습니다.'}}</p>
+  </div>
+</section>

@@ -1,0 +1,282 @@
+<!-- modern-store / board-detail.html -->
+<style>
+.ms-bdet {
+  background: {{bdet_bg | default: '#ffffff'}};
+  padding: 48px 0 80px;
+  font-family: var(--theme-font, 'Pretendard', sans-serif);
+}
+.ms-bdet-inner {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.ms-bdet-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #94a3b8;
+  margin-bottom: 28px;
+}
+.ms-bdet-breadcrumb a { color: #64748b; text-decoration: none; }
+.ms-bdet-breadcrumb a:hover { color: var(--theme-primary, #2563eb); }
+.ms-bdet-header {
+  padding-bottom: 20px;
+  border-bottom: 2px solid #e2e8f0;
+  margin-bottom: 8px;
+}
+.ms-bdet-category {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 100px;
+  background: rgba(37,99,235,.1);
+  color: var(--theme-primary, #2563eb);
+  margin-bottom: 10px;
+}
+.ms-bdet-title {
+  font-size: clamp(18px, 3vw, 24px);
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 14px;
+  font-family: var(--theme-font-heading, inherit);
+  line-height: 1.35;
+}
+.ms-bdet-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.ms-bdet-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: #64748b;
+}
+.ms-bdet-author-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--theme-primary, #2563eb);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+.ms-bdet-body {
+  padding: 32px 0;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 15px;
+  color: #374151;
+  line-height: 1.85;
+  min-height: 200px;
+}
+.ms-bdet-body img { max-width: 100%; border-radius: 10px; margin: 12px 0; }
+.ms-bdet-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+.ms-bdet-like-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 100px;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  cursor: pointer;
+  transition: all .15s;
+}
+.ms-bdet-like-btn:hover { border-color: #ef4444; color: #ef4444; background: #fef2f2; }
+.ms-bdet-btn-group { display: flex; gap: 8px; }
+.ms-bdet-btn {
+  padding: 8px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: all .15s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.ms-bdet-btn:hover { background: #f8fafc; color: #374151; }
+.ms-bdet-btn.primary {
+  background: var(--theme-primary, #2563eb);
+  border-color: var(--theme-primary, #2563eb);
+  color: #fff;
+}
+/* 댓글 */
+.ms-bdet-comments { margin-top: 40px; }
+.ms-bdet-comments-title { font-size: 16px; font-weight: 800; color: #0f172a; margin: 0 0 20px; }
+.ms-comment {
+  display: flex;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+.ms-comment-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.ms-comment-body { flex: 1; }
+.ms-comment-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.ms-comment-name { font-size: 13px; font-weight: 700; color: #1e293b; }
+.ms-comment-date { font-size: 11px; color: #94a3b8; }
+.ms-comment-text { font-size: 14px; color: #374151; line-height: 1.65; }
+.ms-comment-write {
+  margin-top: 24px;
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 16px;
+}
+.ms-comment-write textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #374151;
+  background: #fff;
+  resize: none;
+  outline: none;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+.ms-comment-write textarea:focus { border-color: var(--theme-primary, #2563eb); }
+.ms-comment-write-footer { display: flex; justify-content: flex-end; margin-top: 8px; }
+.ms-comment-submit {
+  padding: 9px 20px;
+  background: var(--theme-primary, #2563eb);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+/* 이전/다음 글 */
+.ms-bdet-nav {
+  margin-top: 32px;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+.ms-bdet-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  font-size: 13px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.ms-bdet-nav-row:last-child { border-bottom: none; }
+.ms-bdet-nav-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+  width: 48px;
+  flex-shrink: 0;
+}
+.ms-bdet-nav-row a { color: #374151; text-decoration: none; }
+.ms-bdet-nav-row a:hover { color: var(--theme-primary, #2563eb); }
+</style>
+
+<section class="ms-bdet">
+  <div class="ms-bdet-inner">
+    <div class="ms-bdet-breadcrumb">
+      <a href="/">홈</a> › <a href="{{bdet_board_url | default: '/board'}}">{{bdet_board_name | default: '커뮤니티'}}</a> › 게시글
+    </div>
+    <div class="ms-bdet-header">
+      <div class="ms-bdet-category">후기</div>
+      <h1 class="ms-bdet-title">구매 후기 올립니다 — 퀄리티가 정말 좋아요!</h1>
+      <div class="ms-bdet-meta">
+        <div class="ms-bdet-meta-item">
+          <div class="ms-bdet-author-avatar">김</div>
+          <span style="font-weight:600;color:#374151">김*수</span>
+        </div>
+        <div class="ms-bdet-meta-item">🕐 2025.04.09 14:32</div>
+        <div class="ms-bdet-meta-item">👁 87</div>
+        <div class="ms-bdet-meta-item">💬 5</div>
+        <div class="ms-bdet-meta-item">❤️ 12</div>
+      </div>
+    </div>
+    <div class="ms-bdet-body">
+      안녕하세요! 오늘은 제가 구매한 프리미엄 린넨 셔츠 후기를 남기러 왔어요.<br><br>
+      소재가 정말 부드럽고 통기성이 좋아서 봄/여름에 입기 딱 좋을 것 같아요.
+      색상도 사진이랑 거의 똑같고, 사이즈도 정확하게 맞네요.<br><br>
+      배송도 빠르고 포장도 꼼꼼하게 되어있어서 만족스러워요. 다음에도 여기서 구매할 것 같아요! 👍
+    </div>
+    <div class="ms-bdet-actions">
+      <button class="ms-bdet-like-btn">❤️ 좋아요 12</button>
+      <div class="ms-bdet-btn-group">
+        <a href="{{bdet_board_url | default: '/board'}}" class="ms-bdet-btn">목록</a>
+        <a href="#" class="ms-bdet-btn">수정</a>
+        <a href="#" class="ms-bdet-btn">삭제</a>
+        <a href="{{bdet_board_write_url | default: '/board/write'}}" class="ms-bdet-btn primary">글쓰기</a>
+      </div>
+    </div>
+    <div class="ms-bdet-comments">
+      <div class="ms-bdet-comments-title">댓글 5개</div>
+      <div class="ms-comment">
+        <div class="ms-comment-avatar">이</div>
+        <div class="ms-comment-body">
+          <div class="ms-comment-head">
+            <span class="ms-comment-name">이*진</span>
+            <span class="ms-comment-date">2025.04.09 15:10</span>
+          </div>
+          <div class="ms-comment-text">저도 같은 상품 구매했는데 정말 좋더라고요! 좋은 후기 감사해요 😊</div>
+        </div>
+      </div>
+      <div class="ms-comment">
+        <div class="ms-comment-avatar">박</div>
+        <div class="ms-comment-body">
+          <div class="ms-comment-head">
+            <span class="ms-comment-name">박*영</span>
+            <span class="ms-comment-date">2025.04.09 16:44</span>
+          </div>
+          <div class="ms-comment-text">색상이 어떤 게 제일 예쁜가요? 저는 베이지 고민 중인데요!</div>
+        </div>
+      </div>
+      <div class="ms-comment-write">
+        <textarea rows="3" placeholder="{{bdet_comment_placeholder | default: '댓글을 남겨주세요.'}}"></textarea>
+        <div class="ms-comment-write-footer">
+          <button class="ms-comment-submit">{{bdet_comment_submit | default: '댓글 등록'}}</button>
+        </div>
+      </div>
+    </div>
+    <div class="ms-bdet-nav">
+      <div class="ms-bdet-nav-row">
+        <span class="ms-bdet-nav-label">▲ 이전</span>
+        <a href="#">사이즈 문의드립니다</a>
+      </div>
+      <div class="ms-bdet-nav-row">
+        <span class="ms-bdet-nav-label">▼ 다음</span>
+        <a href="#">봄맞이 코디 추천해주세요!</a>
+      </div>
+    </div>
+  </div>
+</section>

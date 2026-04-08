@@ -1,0 +1,262 @@
+<!-- default-shop / checkout.html -->
+<style>
+.ds-checkout {
+  background: {{checkout_bg | default: '#f8fafc'}};
+  padding: 48px 0 80px;
+  font-family: var(--ds-font, 'Pretendard', sans-serif);
+  min-height: 70vh;
+}
+.ds-checkout-inner {
+  max-width: var(--ds-max-width, 1280px);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.ds-checkout-title {
+  font-size: clamp(20px, 3vw, 28px);
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 32px;
+  font-family: var(--ds-font-heading, inherit);
+}
+.ds-checkout-steps {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 40px;
+  overflow-x: auto;
+}
+.ds-checkout-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.ds-checkout-step-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ds-checkout-step.active .ds-checkout-step-num {
+  background: var(--ds-primary, #1a56db);
+  color: #fff;
+}
+.ds-checkout-step.done .ds-checkout-step-num {
+  background: #10b981;
+  color: #fff;
+}
+.ds-checkout-step-label { font-size: 13px; font-weight: 600; color: #64748b; }
+.ds-checkout-step.active .ds-checkout-step-label { color: var(--ds-primary, #1a56db); }
+.ds-checkout-step.done .ds-checkout-step-label { color: #10b981; }
+.ds-checkout-step-line { flex: 1; height: 1px; background: #e2e8f0; margin: 0 12px; min-width: 24px; }
+.ds-checkout-layout {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 900px) { .ds-checkout-layout { grid-template-columns: 1fr; } }
+.ds-co-block {
+  background: #fff;
+  border-radius: var(--ds-card-radius, 16px);
+  border: 1px solid #e2e8f0;
+  padding: 24px;
+  margin-bottom: 16px;
+}
+.ds-co-block-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 18px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.ds-co-field { margin-bottom: 14px; }
+.ds-co-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 6px;
+}
+.ds-co-field input, .ds-co-field select, .ds-co-field textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #1e293b;
+  background: #fff;
+  outline: none;
+  transition: border-color .15s;
+  box-sizing: border-box;
+}
+.ds-co-field input:focus, .ds-co-field select:focus, .ds-co-field textarea:focus {
+  border-color: var(--ds-primary, #1a56db);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.08);
+}
+.ds-co-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ds-pay-methods { display: flex; flex-direction: column; gap: 10px; }
+.ds-pay-method {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.ds-pay-method:hover { border-color: var(--ds-primary, #1a56db); background: rgba(37,99,235,.03); }
+.ds-pay-method.selected { border-color: var(--ds-primary, #1a56db); background: rgba(37,99,235,.06); }
+.ds-pay-method input[type=radio] { accent-color: var(--ds-primary, #1a56db); }
+.ds-pay-label { font-size: 14px; font-weight: 600; color: #1e293b; }
+.ds-pay-sub { font-size: 11px; color: #64748b; margin-top: 1px; }
+/* 요약 패널 */
+.ds-co-summary {
+  background: #fff;
+  border-radius: var(--ds-card-radius, 16px);
+  border: 1px solid #e2e8f0;
+  padding: 24px;
+  position: sticky;
+  top: 80px;
+}
+.ds-co-sum-title { font-size: 15px; font-weight: 800; color: #0f172a; margin: 0 0 16px; }
+.ds-co-item { display: flex; gap: 12px; margin-bottom: 12px; align-items: center; }
+.ds-co-item-img {
+  width: 52px; height: 52px;
+  background: #f1f5f9;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; flex-shrink: 0;
+}
+.ds-co-item-name { font-size: 13px; font-weight: 600; color: #1e293b; }
+.ds-co-item-opt { font-size: 11px; color: #64748b; }
+.ds-co-item-price { font-size: 13px; font-weight: 700; color: #0f172a; margin-left: auto; white-space: nowrap; }
+.ds-co-sum-row {
+  display: flex; justify-content: space-between;
+  font-size: 13px; color: #374151; margin-top: 10px;
+  padding-top: 10px; border-top: 1px solid #f1f5f9;
+}
+.ds-co-sum-total {
+  display: flex; justify-content: space-between;
+  font-size: 16px; font-weight: 800; color: #0f172a;
+  margin-top: 12px; padding-top: 14px;
+  border-top: 2px solid #e2e8f0;
+}
+.ds-co-submit {
+  width: 100%; padding: 15px;
+  background: var(--ds-primary, #1a56db); color: #fff;
+  border: none; border-radius: var(--ds-btn-radius, 10px);
+  font-size: 15px; font-weight: 700; cursor: pointer; margin-top: 20px;
+  transition: opacity .15s;
+}
+.ds-co-submit:hover { opacity: .88; }
+</style>
+
+<section class="ms-checkout">
+  <div class="ms-checkout-inner">
+    <h1 class="ms-checkout-title">{{checkout_title | default: '주문하기'}}</h1>
+    <div class="ms-checkout-steps">
+      <div class="ms-checkout-step done">
+        <div class="ms-checkout-step-num">✓</div>
+        <span class="ms-checkout-step-label">장바구니</span>
+      </div>
+      <div class="ms-checkout-step-line"></div>
+      <div class="ms-checkout-step active">
+        <div class="ms-checkout-step-num">2</div>
+        <span class="ms-checkout-step-label">배송/결제</span>
+      </div>
+      <div class="ms-checkout-step-line"></div>
+      <div class="ms-checkout-step">
+        <div class="ms-checkout-step-num">3</div>
+        <span class="ms-checkout-step-label">주문 완료</span>
+      </div>
+    </div>
+    <div class="ms-checkout-layout">
+      <div>
+        <div class="ms-co-block">
+          <div class="ms-co-block-title">배송 정보</div>
+          <div class="ms-co-row">
+            <div class="ms-co-field"><label>받는 분</label><input type="text" placeholder="이름" /></div>
+            <div class="ms-co-field"><label>연락처</label><input type="tel" placeholder="010-0000-0000" /></div>
+          </div>
+          <div class="ms-co-field">
+            <label>배송 주소</label>
+            <div style="display:flex;gap:8px;margin-bottom:8px;">
+              <input type="text" placeholder="우편번호" style="width:140px;" />
+              <button style="padding:10px 16px;background:var(--ds-primary,#1a56db);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;">주소 찾기</button>
+            </div>
+            <input type="text" placeholder="기본 주소" style="margin-bottom:8px;" />
+            <input type="text" placeholder="상세 주소 (동, 호수 등)" />
+          </div>
+          <div class="ms-co-field"><label>배송 메모</label><input type="text" placeholder="배송 시 요청사항 (선택)" /></div>
+        </div>
+        <div class="ms-co-block">
+          <div class="ms-co-block-title">결제 수단</div>
+          <div class="ms-pay-methods">
+            <label class="ms-pay-method selected">
+              <input type="radio" name="pay" checked />
+              <div>
+                <div class="ms-pay-label">💳 카드 결제</div>
+                <div class="ms-pay-sub">신용카드 / 체크카드</div>
+              </div>
+            </label>
+            <label class="ms-pay-method">
+              <input type="radio" name="pay" />
+              <div>
+                <div class="ms-pay-label">🏦 무통장 입금</div>
+                <div class="ms-pay-sub">3영업일 이내 입금 확인 후 배송</div>
+              </div>
+            </label>
+            <label class="ms-pay-method">
+              <input type="radio" name="pay" />
+              <div>
+                <div class="ms-pay-label">📱 카카오페이</div>
+                <div class="ms-pay-sub">카카오페이 간편결제</div>
+              </div>
+            </label>
+            <label class="ms-pay-method">
+              <input type="radio" name="pay" />
+              <div>
+                <div class="ms-pay-label">🔵 네이버페이</div>
+                <div class="ms-pay-sub">네이버페이 포인트 적립</div>
+              </div>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="ms-co-summary">
+        <div class="ms-co-sum-title">주문 상품</div>
+        <div class="ms-co-item">
+          <div class="ms-co-item-img">👗</div>
+          <div>
+            <div class="ms-co-item-name">프리미엄 린넨 셔츠</div>
+            <div class="ms-co-item-opt">화이트 / M × 1</div>
+          </div>
+          <div class="ms-co-item-price">39,000원</div>
+        </div>
+        <div class="ms-co-item">
+          <div class="ms-co-item-img">👟</div>
+          <div>
+            <div class="ms-co-item-name">경량 러닝화</div>
+            <div class="ms-co-item-opt">블랙 / 260 × 1</div>
+          </div>
+          <div class="ms-co-item-price">89,000원</div>
+        </div>
+        <div class="ms-co-sum-row"><span>상품 합계</span><span>128,000원</span></div>
+        <div class="ms-co-sum-row"><span>배송비</span><span>무료</span></div>
+        <div class="ms-co-sum-row"><span>할인</span><span style="color:#ef4444">-20,000원</span></div>
+        <div class="ms-co-sum-total"><span>최종 결제금액</span><span>108,000원</span></div>
+        <button class="ms-co-submit">{{checkout_pay_text | default: '결제하기'}}</button>
+        <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:10px;">결제 시 이용약관 및 개인정보처리방침에 동의합니다.</p>
+      </div>
+    </div>
+  </div>
+</section>

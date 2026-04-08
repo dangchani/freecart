@@ -1,0 +1,79 @@
+<!-- modern-store / features.html -->
+<style>
+.ms-features {
+  background: {{features_bg | default: '#f8fafc'}};
+  padding: 64px 24px;
+  font-family: var(--theme-font, 'Pretendard', sans-serif);
+}
+.ms-features-inner {
+  max-width: var(--theme-max-width, 1280px);
+  margin: 0 auto;
+}
+.ms-features-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+}
+.ms-feature-card {
+  background: #fff;
+  border-radius: var(--theme-card-radius, 16px);
+  padding: 32px 24px;
+  text-align: center;
+  border: 1px solid #f1f5f9;
+  transition: box-shadow .2s, transform .2s;
+}
+.ms-feature-card:hover {
+  box-shadow: 0 8px 32px rgba(0,0,0,.08);
+  transform: translateY(-2px);
+}
+.ms-feature-icon {
+  font-size: 36px;
+  margin-bottom: 16px;
+  display: block;
+}
+.ms-feature-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 8px;
+}
+.ms-feature-desc {
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.6;
+  margin: 0;
+}
+@media (max-width: 768px) {
+  .ms-features-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .ms-features-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+<section class="ms-features">
+  <div class="ms-features-inner">
+    <div class="ms-features-grid">
+      <div class="ms-feature-card">
+        <span class="ms-feature-icon">{{feature1_icon | default: '🚚'}}</span>
+        <h3 class="ms-feature-title">{{feature1_title | default: '무료 배송'}}</h3>
+        <p class="ms-feature-desc">{{feature1_desc | default: '5만원 이상 구매 시\n전국 무료 배송'}}</p>
+      </div>
+      <div class="ms-feature-card">
+        <span class="ms-feature-icon">{{feature2_icon | default: '🔄'}}</span>
+        <h3 class="ms-feature-title">{{feature2_title | default: '30일 반품'}}</h3>
+        <p class="ms-feature-desc">{{feature2_desc | default: '구매 후 30일 이내\n무료 반품 보장'}}</p>
+      </div>
+      <div class="ms-feature-card">
+        <span class="ms-feature-icon">{{feature3_icon | default: '🛡️'}}</span>
+        <h3 class="ms-feature-title">{{feature3_title | default: '안전 결제'}}</h3>
+        <p class="ms-feature-desc">{{feature3_desc | default: 'SSL 암호화로\n안전한 결제 환경'}}</p>
+      </div>
+      <div class="ms-feature-card">
+        <span class="ms-feature-icon">{{feature4_icon | default: '💬'}}</span>
+        <h3 class="ms-feature-title">{{feature4_title | default: '1:1 상담'}}</h3>
+        <p class="ms-feature-desc">{{feature4_desc | default: '평일 09:00~18:00\n카카오 채널 상담'}}</p>
+      </div>
+    </div>
+  </div>
+</section>

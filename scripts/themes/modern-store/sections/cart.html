@@ -1,0 +1,251 @@
+<!-- modern-store / cart.html -->
+<style>
+.ms-cart {
+  background: {{cart_bg | default: '#f8fafc'}};
+  padding: 48px 0 80px;
+  font-family: var(--theme-font, 'Pretendard', sans-serif);
+  min-height: 60vh;
+}
+.ms-cart-inner {
+  max-width: var(--theme-max-width, 1280px);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.ms-cart-title {
+  font-size: clamp(20px, 3vw, 28px);
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 32px;
+  font-family: var(--theme-font-heading, inherit);
+}
+.ms-cart-layout {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 900px) { .ms-cart-layout { grid-template-columns: 1fr; } }
+.ms-cart-items {
+  background: #fff;
+  border-radius: var(--theme-card-radius, 16px);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+.ms-cart-header {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.ms-cart-item {
+  display: grid;
+  grid-template-columns: 80px 1fr auto auto auto;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  align-items: center;
+}
+.ms-cart-item:last-child { border-bottom: none; }
+.ms-cart-item-img {
+  width: 80px;
+  height: 80px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.ms-cart-item-info { min-width: 0; }
+.ms-cart-item-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ms-cart-item-opt { font-size: 12px; color: #64748b; }
+.ms-cart-item-price { font-size: 15px; font-weight: 700; color: #0f172a; white-space: nowrap; }
+.ms-cart-qty-ctrl {
+  display: flex;
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.ms-cart-qty-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: #f8fafc;
+  font-size: 16px;
+  cursor: pointer;
+  color: #374151;
+}
+.ms-cart-qty-val {
+  width: 36px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-left: 1px solid #e2e8f0;
+  border-right: 1px solid #e2e8f0;
+  color: #1e293b;
+  outline: none;
+}
+.ms-cart-del {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 16px;
+  border-radius: 6px;
+  transition: background .15s, color .15s;
+}
+.ms-cart-del:hover { background: #fee2e2; color: #ef4444; }
+/* 요약 */
+.ms-cart-summary {
+  background: #fff;
+  border-radius: var(--theme-card-radius, 16px);
+  border: 1px solid #e2e8f0;
+  padding: 24px;
+  position: sticky;
+  top: 80px;
+}
+.ms-cart-sum-title { font-size: 16px; font-weight: 800; color: #0f172a; margin: 0 0 20px; }
+.ms-cart-sum-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  margin-bottom: 10px;
+  color: #374151;
+}
+.ms-cart-sum-row.total {
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-top: 6px;
+}
+.ms-cart-coupon {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
+}
+.ms-cart-coupon input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #374151;
+  outline: none;
+}
+.ms-cart-coupon input:focus { border-color: var(--theme-primary, #2563eb); }
+.ms-cart-coupon button {
+  padding: 10px 16px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ms-cart-checkout-btn {
+  width: 100%;
+  padding: 15px;
+  background: var(--theme-primary, #2563eb);
+  color: #fff;
+  border: none;
+  border-radius: var(--theme-btn-radius, 10px);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 16px;
+  transition: opacity .15s;
+}
+.ms-cart-checkout-btn:hover { opacity: .88; }
+.ms-cart-empty {
+  text-align: center;
+  padding: 80px 24px;
+  color: #94a3b8;
+}
+.ms-cart-empty-icon { font-size: 64px; margin-bottom: 16px; }
+.ms-cart-empty h2 { font-size: 20px; font-weight: 700; color: #374151; margin: 0 0 8px; }
+.ms-cart-empty p { font-size: 14px; margin: 0 0 24px; }
+.ms-cart-empty-btn {
+  display: inline-block;
+  padding: 12px 28px;
+  background: var(--theme-primary, #2563eb);
+  color: #fff;
+  border-radius: var(--theme-btn-radius, 10px);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 700;
+}
+</style>
+
+<section class="ms-cart">
+  <div class="ms-cart-inner">
+    <h1 class="ms-cart-title">{{cart_title | default: '장바구니'}}</h1>
+    <div class="ms-cart-layout">
+      <div class="ms-cart-items">
+        <div class="ms-cart-item">
+          <div class="ms-cart-item-img">👗</div>
+          <div class="ms-cart-item-info">
+            <div class="ms-cart-item-name">프리미엄 린넨 셔츠</div>
+            <div class="ms-cart-item-opt">화이트 / M</div>
+          </div>
+          <div class="ms-cart-item-price">39,000원</div>
+          <div class="ms-cart-qty-ctrl">
+            <button class="ms-cart-qty-btn">−</button>
+            <input class="ms-cart-qty-val" value="1" type="number" min="1" />
+            <button class="ms-cart-qty-btn">+</button>
+          </div>
+          <button class="ms-cart-del">✕</button>
+        </div>
+        <div class="ms-cart-item">
+          <div class="ms-cart-item-img">👟</div>
+          <div class="ms-cart-item-info">
+            <div class="ms-cart-item-name">경량 러닝화 에어쿠션</div>
+            <div class="ms-cart-item-opt">블랙 / 260</div>
+          </div>
+          <div class="ms-cart-item-price">89,000원</div>
+          <div class="ms-cart-qty-ctrl">
+            <button class="ms-cart-qty-btn">−</button>
+            <input class="ms-cart-qty-val" value="1" type="number" min="1" />
+            <button class="ms-cart-qty-btn">+</button>
+          </div>
+          <button class="ms-cart-del">✕</button>
+        </div>
+      </div>
+      <div class="ms-cart-summary">
+        <div class="ms-cart-sum-title">주문 요약</div>
+        <div class="ms-cart-sum-row"><span>상품 금액</span><span>128,000원</span></div>
+        <div class="ms-cart-sum-row"><span>배송비</span><span>무료</span></div>
+        <div class="ms-cart-sum-row"><span>할인</span><span style="color:#ef4444">-20,000원</span></div>
+        <div class="ms-cart-coupon">
+          <input type="text" placeholder="{{cart_coupon_placeholder | default: '쿠폰 코드 입력'}}" />
+          <button>적용</button>
+        </div>
+        <div class="ms-cart-sum-row total"><span>총 결제 금액</span><span>108,000원</span></div>
+        <button class="ms-cart-checkout-btn">{{cart_checkout_text | default: '주문하기'}}</button>
+      </div>
+    </div>
+  </div>
+</section>

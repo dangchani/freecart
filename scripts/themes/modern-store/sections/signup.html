@@ -1,0 +1,202 @@
+<!-- modern-store / signup.html -->
+<style>
+.ms-signup {
+  background: {{signup_bg | default: '#f8fafc'}};
+  min-height: 70vh;
+  display: flex;
+  align-items: flex-start;
+  padding: 60px 24px;
+  font-family: var(--theme-font, 'Pretendard', sans-serif);
+}
+.ms-signup-inner {
+  width: 100%;
+  max-width: 500px;
+  margin: 0 auto;
+}
+.ms-signup-logo {
+  text-align: center;
+  margin-bottom: 24px;
+}
+.ms-signup-logo-text {
+  font-size: 26px;
+  font-weight: 900;
+  color: var(--theme-primary, #2563eb);
+  font-family: var(--theme-font-heading, inherit);
+  letter-spacing: -1px;
+}
+.ms-signup-card {
+  background: #fff;
+  border-radius: var(--theme-card-radius, 20px);
+  border: 1px solid #e2e8f0;
+  padding: 36px;
+  box-shadow: 0 4px 24px rgba(15,23,42,.06);
+}
+.ms-signup-card-title { font-size: 22px; font-weight: 800; color: #0f172a; margin: 0 0 8px; }
+.ms-signup-card-sub { font-size: 13px; color: #64748b; margin-bottom: 28px; }
+.ms-su-field { margin-bottom: 16px; }
+.ms-su-field label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+}
+.ms-su-field label span { color: #ef4444; }
+.ms-su-field input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 15px;
+  color: #1e293b;
+  background: #fff;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+  box-sizing: border-box;
+}
+.ms-su-field input:focus {
+  border-color: var(--theme-primary, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+}
+.ms-su-field .ms-su-hint { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+.ms-su-field .ms-su-hint.ok { color: #10b981; }
+.ms-su-field .ms-su-hint.err { color: #ef4444; }
+.ms-su-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ms-su-verify-row { display: flex; gap: 8px; }
+.ms-su-verify-row input { flex: 1; }
+.ms-su-verify-btn {
+  padding: 12px 16px;
+  background: #f1f5f9;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #374151;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .15s;
+}
+.ms-su-verify-btn:hover { background: var(--theme-primary, #2563eb); border-color: var(--theme-primary, #2563eb); color: #fff; }
+.ms-su-agree {
+  margin: 20px 0 24px;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+}
+.ms-su-agree-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.ms-su-agree-all label { font-size: 14px; font-weight: 700; color: #1e293b; cursor: pointer; }
+.ms-su-agree-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+}
+.ms-su-agree-item label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+}
+.ms-su-agree-item span { color: #ef4444; font-size: 11px; }
+.ms-su-agree-item a { font-size: 12px; color: #94a3b8; text-decoration: none; }
+.ms-su-agree-item a:hover { color: var(--theme-primary, #2563eb); }
+input[type=checkbox] { accent-color: var(--theme-primary, #2563eb); width: 16px; height: 16px; }
+.ms-su-submit {
+  width: 100%;
+  padding: 15px;
+  background: var(--theme-primary, #2563eb);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.ms-su-submit:hover { opacity: .88; }
+.ms-signup-footer {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 13px;
+  color: #64748b;
+}
+.ms-signup-footer a { color: var(--theme-primary, #2563eb); text-decoration: none; font-weight: 700; }
+</style>
+
+<section class="ms-signup">
+  <div class="ms-signup-inner">
+    <div class="ms-signup-logo">
+      <div class="ms-signup-logo-text">{{brand_name | default: 'STORE'}}</div>
+    </div>
+    <div class="ms-signup-card">
+      <h1 class="ms-signup-card-title">{{signup_title | default: '회원가입'}}</h1>
+      <p class="ms-signup-card-sub">{{signup_subtitle | default: '가입 후 다양한 혜택을 누리세요!'}}</p>
+      <div class="ms-su-field">
+        <label>이메일 <span>*</span></label>
+        <div class="ms-su-verify-row">
+          <input type="email" placeholder="이메일 주소" />
+          <button class="ms-su-verify-btn">인증하기</button>
+        </div>
+      </div>
+      <div class="ms-su-field">
+        <label>이름 <span>*</span></label>
+        <input type="text" placeholder="실명" />
+      </div>
+      <div class="ms-su-field">
+        <label>휴대폰 번호</label>
+        <div class="ms-su-verify-row">
+          <input type="tel" placeholder="010-0000-0000" />
+          <button class="ms-su-verify-btn">인증</button>
+        </div>
+      </div>
+      <div class="ms-su-field">
+        <label>비밀번호 <span>*</span></label>
+        <input type="password" placeholder="8자 이상, 영문+숫자+특수문자" />
+        <div class="ms-su-hint">영문, 숫자, 특수문자를 포함해 8자 이상 입력하세요.</div>
+      </div>
+      <div class="ms-su-field">
+        <label>비밀번호 확인 <span>*</span></label>
+        <input type="password" placeholder="비밀번호를 다시 입력하세요" />
+      </div>
+      <div class="ms-su-field">
+        <label>생년월일</label>
+        <div class="ms-su-row">
+          <input type="text" placeholder="YYYY-MM-DD" />
+        </div>
+      </div>
+      <div class="ms-su-agree">
+        <div class="ms-su-agree-all">
+          <input type="checkbox" id="agreeAll" />
+          <label for="agreeAll">전체 동의</label>
+        </div>
+        <div class="ms-su-agree-item">
+          <label><input type="checkbox" /> [필수] 이용약관 동의 <span>필수</span></label>
+          <a href="{{signup_terms_url | default: '/terms'}}">보기</a>
+        </div>
+        <div class="ms-su-agree-item">
+          <label><input type="checkbox" /> [필수] 개인정보처리방침 동의 <span>필수</span></label>
+          <a href="{{signup_privacy_url | default: '/privacy'}}">보기</a>
+        </div>
+        <div class="ms-su-agree-item">
+          <label><input type="checkbox" /> [선택] 마케팅 정보 수신 동의</label>
+        </div>
+      </div>
+      <button class="ms-su-submit">{{signup_btn_text | default: '회원가입'}}</button>
+    </div>
+    <div class="ms-signup-footer">
+      이미 계정이 있으신가요? <a href="{{signup_login_url | default: '/login'}}">로그인</a>
+    </div>
+  </div>
+</section>

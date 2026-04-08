@@ -56,9 +56,11 @@ export default function PreviewPanel({ config }: Props) {
   return (
     <div className="transform scale-50 origin-top-left w-[200%]">
       {/* 헤더 미리보기 */}
-      <Suspense fallback={<div className="h-16 bg-gray-100 animate-pulse" />}>
-        <HeaderComponent siteName="Preview" />
-      </Suspense>
+      {HeaderComponent && (
+        <Suspense fallback={<div className="h-16 bg-gray-100 animate-pulse" />}>
+          <HeaderComponent siteName="Preview" />
+        </Suspense>
+      )}
 
       {/* 상품 카드 미리보기 */}
       <div className="p-8 bg-white">
@@ -73,9 +75,11 @@ export default function PreviewPanel({ config }: Props) {
       </div>
 
       {/* 푸터 미리보기 */}
-      <Suspense fallback={<div className="h-48 bg-gray-100 animate-pulse" />}>
-        <FooterComponent siteName="Preview" />
-      </Suspense>
+      {FooterComponent && (
+        <Suspense fallback={<div className="h-48 bg-gray-100 animate-pulse" />}>
+          <FooterComponent siteName="Preview" />
+        </Suspense>
+      )}
     </div>
   );
 }

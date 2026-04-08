@@ -1,0 +1,72 @@
+<!-- default-shop / cta.html -->
+<style>
+.ds-cta {
+  background: {{cta_bg | default: '#111827'}};
+  padding: 64px 24px;
+  text-align: center;
+  font-family: var(--ds-font, 'Pretendard', sans-serif);
+  position: relative;
+  overflow: hidden;
+}
+.ds-cta::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 60% 50%, rgba(26,86,219,.25), transparent 70%);
+  pointer-events: none;
+}
+.ds-cta-inner { position: relative; max-width: 600px; margin: 0 auto; }
+.ds-cta-badge {
+  display: inline-block;
+  background: rgba(26,86,219,.25);
+  border: 1px solid rgba(26,86,219,.4);
+  color: #93c5fd;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 14px;
+  border-radius: 100px;
+  margin-bottom: 16px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.ds-cta-title { font-size: clamp(24px, 4vw, 40px); font-weight: 900; color: #fff; margin-bottom: 12px; line-height: 1.2; }
+.ds-cta-desc { font-size: 16px; color: #9ca3af; margin-bottom: 28px; line-height: 1.7; }
+.ds-cta-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.ds-cta-btn-p {
+  padding: 13px 28px;
+  background: var(--ds-primary, #1a56db);
+  color: #fff;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: opacity .15s;
+}
+.ds-cta-btn-p:hover { opacity: .88; }
+.ds-cta-btn-g {
+  padding: 13px 28px;
+  background: transparent;
+  color: #d1d5db;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  border: 1px solid rgba(255,255,255,.2);
+  cursor: pointer;
+  text-decoration: none;
+  transition: border-color .15s, color .15s;
+}
+.ds-cta-btn-g:hover { border-color: rgba(255,255,255,.4); color: #fff; }
+</style>
+<section class="ds-cta">
+  <div class="ds-cta-inner">
+    <span class="ds-cta-badge">{{cta_badge | default: 'Special Offer'}}</span>
+    <h2 class="ds-cta-title">{{cta_title | default: '지금 바로 시작하세요'}}</h2>
+    <p class="ds-cta-desc">{{cta_desc | default: '오늘 가입하면 첫 주문 10% 할인 쿠폰을 즉시 드립니다.'}}</p>
+    <div class="ds-cta-actions">
+      <a href="{{cta_btn1_url | default: '/signup'}}" class="ds-cta-btn-p">{{cta_btn1_text | default: '무료 회원가입'}} →</a>
+      <a href="{{cta_btn2_url | default: '/products'}}" class="ds-cta-btn-g">{{cta_btn2_text | default: '쇼핑 구경하기'}}</a>
+    </div>
+  </div>
+</section>

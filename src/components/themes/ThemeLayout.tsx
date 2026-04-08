@@ -1,19 +1,16 @@
 /**
  * ThemeLayout - 테마 레이아웃 래퍼
- * Config 기반으로 헤더/푸터/레이아웃을 동적으로 렌더링합니다.
+ * sectionHtmlUrls에 header/footer.html이 있으면 HTML 템플릿 우선 렌더링.
+ * 없으면 layout_config 기반 React 컴포넌트 폴백.
  */
 
 import { Suspense, ReactNode } from 'react';
-import {
-  ThemeLayoutConfig,
-  DEFAULT_THEME_CONFIG,
-  getHeaderComponent,
-  getFooterComponent,
-} from '@/lib/theme/component-registry';
+import { useThemeConfig } from '@/lib/theme/theme-context';
+import { getHeaderComponent, getFooterComponent } from '@/lib/theme/component-registry';
+import { ThemeSection } from '@/components/theme/ThemeSection';
 
 interface Props {
   children: ReactNode;
-  config?: Partial<ThemeLayoutConfig>;
   siteName?: string;
   logo?: string;
   companyInfo?: {
@@ -26,63 +23,42 @@ interface Props {
   };
 }
 
-// 로딩 폴백
-const HeaderSkeleton = () => (
-  <div className="h-16 bg-white border-b animate-pulse" />
-);
+const HeaderSkeleton = () => <div className="h-16 bg-white border-b animate-pulse" />;
+const FooterSkeleton = () => <div className="h-48 bg-gray-100 animate-pulse" />;
 
-const FooterSkeleton = () => (
-  <div className="h-48 bg-gray-100 animate-pulse" />
-);
+export default function ThemeLayout({ children, siteName = 'Freecart', logo, companyInfo }: Props) {
+  const { layoutConfig, activeTheme } = useThemeConfig();
 
-export default function ThemeLayout({
-  children,
-  config,
-  siteName = 'Freecart',
-  logo,
-  companyInfo,
-}: Props) {
-  // Config 병합
-  const mergedConfig: ThemeLayoutConfig = {
-    ...DEFAULT_THEME_CONFIG,
-    ...config,
-    settings: {
-      ...DEFAULT_THEME_CONFIG.settings,
-      ...config?.settings,
-    },
-  };
+  const htmlUrls = activeTheme?.sectionHtmlUrls ?? {};
+  const settings = activeTheme?.themeSettings ?? {};
 
-  // 컴포넌트 가져오기
-  const HeaderComponent = getHeaderComponent(mergedConfig.header);
-  const FooterComponent = getFooterComponent(mergedConfig.footer);
+  const HeaderComponent = getHeaderComponent(layoutConfig.header);
+  const FooterComponent = getFooterComponent(layoutConfig.footer);
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* 헤더 */}
-      <Suspense fallback={<HeaderSkeleton />}>
-        <HeaderComponent
-          siteName={siteName}
-          logo={logo}
-        />
-      </Suspense>
+      {/* 헤더: HTML 템플릿 우선, 없으면 React 컴포넌트 */}
+      {htmlUrls['header'] ? (
+        <ThemeSection htmlUrl={htmlUrls['header']} settings={settings} />
+      ) : HeaderComponent ? (
+        <Suspense fallback={<HeaderSkeleton />}>
+          <HeaderComponent siteName={siteName} logo={logo} />
+        </Suspense>
+      ) : null}
 
       {/* 메인 콘텐츠 */}
       <main className="flex-1">
-        {mergedConfig.settings.showBreadcrumb && (
-          <div className="max-w-7xl mx-auto px-4 py-2">
-            {/* Breadcrumb은 별도 컴포넌트로 구현 */}
-          </div>
-        )}
         {children}
       </main>
 
-      {/* 푸터 */}
-      <Suspense fallback={<FooterSkeleton />}>
-        <FooterComponent
-          siteName={siteName}
-          companyInfo={companyInfo}
-        />
-      </Suspense>
+      {/* 푸터: HTML 템플릿 우선, 없으면 React 컴포넌트 */}
+      {htmlUrls['footer'] ? (
+        <ThemeSection htmlUrl={htmlUrls['footer']} settings={settings} />
+      ) : FooterComponent ? (
+        <Suspense fallback={<FooterSkeleton />}>
+          <FooterComponent siteName={siteName} companyInfo={companyInfo} />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

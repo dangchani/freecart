@@ -1,0 +1,63 @@
+<!-- default-shop / features.html -->
+<style>
+.ds-features {
+  background: {{feat_bg | default: '#f9fafb'}};
+  border-top: 1px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 24px 0;
+  font-family: var(--ds-font, 'Pretendard', sans-serif);
+}
+.ds-features-inner {
+  max-width: var(--ds-max-width, 1280px);
+  margin: 0 auto;
+  padding: 0 20px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+}
+@media (max-width: 768px) { .ds-features-inner { grid-template-columns: repeat(2, 1fr); gap: 1px; background: #e5e7eb; } }
+.ds-feature-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-right: 1px solid #e5e7eb;
+}
+.ds-feature-item:last-child { border-right: none; }
+.ds-feature-icon { font-size: 28px; flex-shrink: 0; }
+.ds-feature-title { font-size: 13px; font-weight: 700; color: #111827; margin-bottom: 2px; }
+.ds-feature-desc { font-size: 12px; color: #6b7280; line-height: 1.4; }
+</style>
+
+<div class="ds-features">
+  <div class="ds-features-inner">
+    <div class="ds-feature-item">
+      <div class="ds-feature-icon">🚚</div>
+      <div>
+        <div class="ds-feature-title">{{feat1_title | default: '무료 배송'}}</div>
+        <div class="ds-feature-desc">{{feat1_desc | default: '5만원 이상 구매 시'}}</div>
+      </div>
+    </div>
+    <div class="ds-feature-item">
+      <div class="ds-feature-icon">🔄</div>
+      <div>
+        <div class="ds-feature-title">{{feat2_title | default: '30일 반품'}}</div>
+        <div class="ds-feature-desc">{{feat2_desc | default: '무료 반품 보장'}}</div>
+      </div>
+    </div>
+    <div class="ds-feature-item">
+      <div class="ds-feature-icon">🛡️</div>
+      <div>
+        <div class="ds-feature-title">{{feat3_title | default: '안전 결제'}}</div>
+        <div class="ds-feature-desc">{{feat3_desc | default: 'SSL 암호화 보안'}}</div>
+      </div>
+    </div>
+    <div class="ds-feature-item">
+      <div class="ds-feature-icon">💬</div>
+      <div>
+        <div class="ds-feature-title">{{feat4_title | default: '1:1 고객 상담'}}</div>
+        <div class="ds-feature-desc">{{feat4_desc | default: '평일 09:00~18:00'}}</div>
+      </div>
+    </div>
+  </div>
+</div>

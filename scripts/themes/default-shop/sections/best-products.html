@@ -1,0 +1,181 @@
+<!-- default-shop / best-products.html — 베스트셀러 슬라이더 스타일 -->
+<style>
+.ds-bestprod {
+  padding: 56px 0;
+  background: {{bestprod_bg | default: '#f9fafb'}};
+  font-family: var(--ds-font, 'Pretendard', sans-serif);
+}
+.ds-bestprod-inner { max-width: var(--ds-max-width, 1280px); margin: 0 auto; padding: 0 20px; }
+.ds-bestprod-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 24px;
+}
+.ds-bestprod-tab {
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #6b7280;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+  white-space: nowrap;
+}
+.ds-bestprod-tab:hover { color: #111827; }
+.ds-bestprod-tab.active { color: var(--ds-primary, #1a56db); border-bottom-color: var(--ds-primary, #1a56db); }
+.ds-bestprod-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+}
+.ds-best-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid #f3f4f6;
+  text-decoration: none;
+  transition: background .15s;
+}
+.ds-best-item:last-child { border-bottom: none; }
+.ds-best-item:hover { background: #f9fafb; }
+.ds-best-rank {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.ds-best-rank.r1 { background: #f59e0b; color: #fff; }
+.ds-best-rank.r2 { background: #9ca3af; color: #fff; }
+.ds-best-rank.r3 { background: #b45309; color: #fff; }
+.ds-best-rank.other { background: #f3f4f6; color: #374151; }
+.ds-best-img {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.ds-best-info { flex: 1; min-width: 0; }
+.ds-best-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ds-best-sub { font-size: 12px; color: #6b7280; }
+.ds-best-price { text-align: right; flex-shrink: 0; }
+.ds-best-price-main { font-size: 15px; font-weight: 800; color: #111827; }
+.ds-best-price-old { font-size: 11px; color: #9ca3af; text-decoration: line-through; }
+.ds-best-price-pct { font-size: 11px; font-weight: 700; color: #ef4444; }
+.ds-best-trend {
+  font-size: 11px;
+  flex-shrink: 0;
+  width: 32px;
+  text-align: center;
+}
+.ds-best-trend.up { color: #ef4444; }
+.ds-best-trend.down { color: #3b82f6; }
+.ds-best-trend.same { color: #9ca3af; }
+</style>
+
+<section class="ds-bestprod">
+  <div class="ds-bestprod-inner">
+    <div class="ds-section-head">
+      <h2 class="ds-section-title">{{bestprod_title | default: '베스트셀러'}}</h2>
+      <a href="/products?tag=best" class="ds-more-link">전체 보기 ›</a>
+    </div>
+    <div class="ds-bestprod-tabs">
+      <div class="ds-bestprod-tab active">전체</div>
+      <div class="ds-bestprod-tab">패션</div>
+      <div class="ds-bestprod-tab">뷰티</div>
+      <div class="ds-bestprod-tab">리빙</div>
+      <div class="ds-bestprod-tab">식품</div>
+    </div>
+    <div class="ds-bestprod-list">
+      <a href="#" class="ds-best-item">
+        <div class="ds-best-rank r1">1</div>
+        <div class="ds-best-img">👗</div>
+        <div class="ds-best-info">
+          <div class="ds-best-name">프리미엄 린넨 셔츠 화이트</div>
+          <div class="ds-best-sub">⭐ 4.9 · 후기 312개</div>
+        </div>
+        <div class="ds-best-price">
+          <div class="ds-best-price-main">39,000원</div>
+          <div class="ds-best-price-old">59,000원</div>
+          <div class="ds-best-price-pct">34% ↓</div>
+        </div>
+        <div class="ds-best-trend up">▲2</div>
+      </a>
+      <a href="#" class="ds-best-item">
+        <div class="ds-best-rank r2">2</div>
+        <div class="ds-best-img">🧴</div>
+        <div class="ds-best-info">
+          <div class="ds-best-name">히알루론산 수분 세럼 50ml</div>
+          <div class="ds-best-sub">⭐ 4.8 · 후기 203개</div>
+        </div>
+        <div class="ds-best-price">
+          <div class="ds-best-price-main">34,000원</div>
+        </div>
+        <div class="ds-best-trend same">–</div>
+      </a>
+      <a href="#" class="ds-best-item">
+        <div class="ds-best-rank r3">3</div>
+        <div class="ds-best-img">👟</div>
+        <div class="ds-best-info">
+          <div class="ds-best-name">경량 런닝화 쿠셔닝 에디션</div>
+          <div class="ds-best-sub">⭐ 4.9 · 후기 178개</div>
+        </div>
+        <div class="ds-best-price">
+          <div class="ds-best-price-main">79,000원</div>
+          <div class="ds-best-price-old">110,000원</div>
+          <div class="ds-best-price-pct">28% ↓</div>
+        </div>
+        <div class="ds-best-trend up">▲1</div>
+      </a>
+      <a href="#" class="ds-best-item">
+        <div class="ds-best-rank other">4</div>
+        <div class="ds-best-img">☕</div>
+        <div class="ds-best-info">
+          <div class="ds-best-name">핸드드립 원두 에티오피아 예가체프</div>
+          <div class="ds-best-sub">⭐ 4.7 · 후기 97개</div>
+        </div>
+        <div class="ds-best-price">
+          <div class="ds-best-price-main">18,000원</div>
+        </div>
+        <div class="ds-best-trend down">▼1</div>
+      </a>
+      <a href="#" class="ds-best-item">
+        <div class="ds-best-rank other">5</div>
+        <div class="ds-best-img">🏠</div>
+        <div class="ds-best-info">
+          <div class="ds-best-name">북유럽 스타일 원목 수납함</div>
+          <div class="ds-best-sub">⭐ 4.6 · 후기 64개</div>
+        </div>
+        <div class="ds-best-price">
+          <div class="ds-best-price-main">28,000원</div>
+        </div>
+        <div class="ds-best-trend up">▲3</div>
+      </a>
+    </div>
+  </div>
+</section>

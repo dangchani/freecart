@@ -1,0 +1,93 @@
+<!-- default-shop / categories.html -->
+<style>
+.ds-cats {
+  padding: 56px 0;
+  background: #fff;
+  font-family: var(--ds-font, 'Pretendard', sans-serif);
+}
+.ds-cats-inner { max-width: var(--ds-max-width, 1280px); margin: 0 auto; padding: 0 20px; }
+.ds-cats-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 12px;
+  margin-top: 24px;
+}
+@media (max-width: 1024px) { .ds-cats-grid { grid-template-columns: repeat(5, 1fr); } }
+@media (max-width: 640px)  { .ds-cats-grid { grid-template-columns: repeat(4, 1fr); gap: 8px; } }
+.ds-cat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.ds-cat-icon-wrap {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #f3f4f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  transition: background .15s, transform .15s;
+  border: 2px solid transparent;
+}
+.ds-cat-item:hover .ds-cat-icon-wrap {
+  background: #dbeafe;
+  border-color: var(--ds-primary, #1a56db);
+  transform: translateY(-2px);
+}
+.ds-cat-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  text-align: center;
+  line-height: 1.3;
+}
+.ds-cat-item:hover .ds-cat-name { color: var(--ds-primary, #1a56db); }
+</style>
+
+<section class="ds-cats">
+  <div class="ds-cats-inner">
+    <div class="ds-section-head" style="max-width:var(--ds-max-width,1280px)">
+      <h2 class="ds-section-title">{{cats_title | default: '카테고리'}}</h2>
+      <a href="/categories" class="ds-more-link">전체 보기 ›</a>
+    </div>
+    <div class="ds-cats-grid">
+      <a href="{{cat1_url | default: '/products?category=fashion'}}" class="ds-cat-item">
+        <div class="ds-cat-icon-wrap">{{cat1_icon | default: '👗'}}</div>
+        <span class="ds-cat-name">{{cat1_name | default: '패션'}}</span>
+      </a>
+      <a href="{{cat2_url | default: '/products?category=shoes'}}" class="ds-cat-item">
+        <div class="ds-cat-icon-wrap">{{cat2_icon | default: '👟'}}</div>
+        <span class="ds-cat-name">{{cat2_name | default: '신발'}}</span>
+      </a>
+      <a href="{{cat3_url | default: '/products?category=bag'}}" class="ds-cat-item">
+        <div class="ds-cat-icon-wrap">{{cat3_icon | default: '👜'}}</div>
+        <span class="ds-cat-name">{{cat3_name | default: '가방'}}</span>
+      </a>
+      <a href="{{cat4_url | default: '/products?category=beauty'}}" class="ds-cat-item">
+        <div class="ds-cat-icon-wrap">{{cat4_icon | default: '💄'}}</div>
+        <span class="ds-cat-name">{{cat4_name | default: '뷰티'}}</span>
+      </a>
+      <a href="{{cat5_url | default: '/products?category=living'}}" class="ds-cat-item">
+        <div class="ds-cat-icon-wrap">{{cat5_icon | default: '🏠'}}</div>
+        <span class="ds-cat-name">{{cat5_name | default: '리빙'}}</span>
+      </a>
+      <a href="{{cat6_url | default: '/products?category=food'}}" class="ds-cat-item">
+        <div class="ds-cat-icon-wrap">{{cat6_icon | default: '🍎'}}</div>
+        <span class="ds-cat-name">{{cat6_name | default: '식품'}}</span>
+      </a>
+      <a href="{{cat7_url | default: '/products?category=sports'}}" class="ds-cat-item">
+        <div class="ds-cat-icon-wrap">{{cat7_icon | default: '⚽'}}</div>
+        <span class="ds-cat-name">{{cat7_name | default: '스포츠'}}</span>
+      </a>
+      <a href="{{cat8_url | default: '/products?category=digital'}}" class="ds-cat-item">
+        <div class="ds-cat-icon-wrap">{{cat8_icon | default: '💻'}}</div>
+        <span class="ds-cat-name">{{cat8_name | default: '디지털'}}</span>
+      </a>
+    </div>
+  </div>
+</section>

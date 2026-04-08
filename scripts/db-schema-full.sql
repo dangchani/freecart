@@ -13,6 +13,10 @@
 DROP POLICY IF EXISTS "products_storage_select" ON storage.objects;
 DROP POLICY IF EXISTS "products_storage_insert" ON storage.objects;
 DROP POLICY IF EXISTS "products_storage_delete" ON storage.objects;
+DROP POLICY IF EXISTS "themes_storage_select" ON storage.objects;
+DROP POLICY IF EXISTS "themes_storage_insert" ON storage.objects;
+DROP POLICY IF EXISTS "themes_storage_update" ON storage.objects;
+DROP POLICY IF EXISTS "themes_storage_delete" ON storage.objects;
 -- ※ 버킷 삭제는 Supabase 대시보드 → Storage에서 직접 삭제
 DROP FUNCTION IF EXISTS public.admin_create_user CASCADE;
 DROP FUNCTION IF EXISTS public.handle_new_user CASCADE;
@@ -1489,13 +1493,20 @@ CREATE INDEX IF NOT EXISTS idx_visitor_logs_user_id    ON visitor_logs(user_id);
 CREATE TABLE IF NOT EXISTS skins (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name           VARCHAR(100) NOT NULL,
-  slug           VARCHAR(100) NOT NULL UNIQUE,
+  slug           VARCHAR(100) NOT NULL,
   type           VARCHAR(30) NOT NULL,
   description    TEXT,
   version        VARCHAR(20) NOT NULL,
   thumbnail_url  VARCHAR(500),
   preview_url    VARCHAR(500),
   file_path      VARCHAR(500),
+  -- 테마 연결 (type='theme-skin'인 경우) — FK는 installed_themes 생성 후 ALTER TABLE로 추가
+  theme_id       UUID,
+  -- Supabase Storage URL (themes/{slug}/skins/{skinSlug}.css)
+  css_url        VARCHAR(500),
+  -- 출처: builtin | store | upload
+  source         VARCHAR(20) NOT NULL DEFAULT 'builtin',
+  license_key    VARCHAR(255),
   is_system      BOOLEAN NOT NULL DEFAULT false,
   is_active      BOOLEAN NOT NULL DEFAULT true,
   settings       JSONB,
@@ -1504,8 +1515,13 @@ CREATE TABLE IF NOT EXISTS skins (
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_skins_slug ON skins(slug);
-CREATE INDEX IF NOT EXISTS idx_skins_type ON skins(type, is_active);
+CREATE INDEX IF NOT EXISTS idx_skins_slug    ON skins(slug);
+CREATE INDEX IF NOT EXISTS idx_skins_type    ON skins(type, is_active);
+CREATE INDEX IF NOT EXISTS idx_skins_theme   ON skins(theme_id);
+-- 테마 스킨: 테마 내 slug 유일성 (theme_id + slug 조합)
+CREATE UNIQUE INDEX IF NOT EXISTS skins_theme_slug_unique  ON skins(theme_id, slug) WHERE theme_id IS NOT NULL;
+-- 페이지 스킨: 전역 slug 유일성 (theme_id IS NULL인 경우만)
+CREATE UNIQUE INDEX IF NOT EXISTS skins_page_slug_unique   ON skins(slug) WHERE theme_id IS NULL;
 
 DROP TRIGGER IF EXISTS trg_skins_updated_at ON skins;
 CREATE TRIGGER trg_skins_updated_at
@@ -1737,38 +1753,62 @@ CREATE INDEX IF NOT EXISTS idx_stock_history_product_id ON stock_history(product
 
 -- 15.1 installed_themes (설치된 테마)
 CREATE TABLE IF NOT EXISTS installed_themes (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  slug            VARCHAR(100) NOT NULL UNIQUE,
-  theme_slug      VARCHAR(100),
-  name            VARCHAR(100) NOT NULL,
-  version         VARCHAR(20) NOT NULL,
-  description     TEXT,
-  source          VARCHAR(20) NOT NULL DEFAULT 'builtin',
-  license_key     VARCHAR(255),
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug             VARCHAR(100) NOT NULL UNIQUE,
+  theme_slug       VARCHAR(100),
+  name             VARCHAR(100) NOT NULL,
+  version          VARCHAR(20) NOT NULL,
+  description      TEXT,
+  source           VARCHAR(20) NOT NULL DEFAULT 'builtin',
+  license_key      VARCHAR(255),
   -- Supabase Storage URLs
-  css_url         VARCHAR(500),
-  thumbnail_url   VARCHAR(500),
-  -- Theme configuration (colors, layout, etc.)
-  config          JSONB DEFAULT '{}',
+  css_url          VARCHAR(500),
+  thumbnail_url    VARCHAR(500),
+  -- 레이아웃 구성 (header/footer/productCard/productGrid/homeSections/settings)
+  layout_config    JSONB DEFAULT '{}',
+  -- 관리자 커스텀 CSS (인라인 스타일 — 최우선 적용)
+  custom_css       TEXT,
+  -- CSS 변수 오버라이드 {primary, secondary, font, ...}
+  css_variables    JSONB DEFAULT '{}',
+  -- 테마 스크립트 목록 [{id,name,src,content,position,enabled}]
+  scripts          JSONB DEFAULT '[]',
+  -- 현재 활성 스킨 slug
+  active_skin_slug VARCHAR(100),
+  -- HTML 템플릿 섹션 URL 맵 {sectionId: storageUrl}
+  section_html_urls JSONB DEFAULT '{}',
+  -- 관리자 입력 콘텐츠 설정값 {variableId: value}
+  theme_settings   JSONB DEFAULT '{}',
+  -- settings.json 파싱 결과 (콘텐츠 편집 스키마)
+  settings_schema  JSONB DEFAULT '{}',
   -- Legacy fields
-  file_path       VARCHAR(500),
-  commit_sha      VARCHAR(40),
-  deployment_id   VARCHAR(100),
-  is_active       BOOLEAN NOT NULL DEFAULT false,
-  installed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  activated_at    TIMESTAMPTZ,
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  config           JSONB DEFAULT '{}',
+  file_path        VARCHAR(500),
+  commit_sha       VARCHAR(40),
+  deployment_id    VARCHAR(100),
+  is_active        BOOLEAN NOT NULL DEFAULT false,
+  installed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  activated_at     TIMESTAMPTZ,
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_installed_themes_active ON installed_themes(is_active);
+-- 동시에 하나의 테마만 활성화 가능
+CREATE UNIQUE INDEX IF NOT EXISTS installed_themes_single_active
+  ON installed_themes (is_active)
+  WHERE is_active = true;
 
 DROP TRIGGER IF EXISTS trg_installed_themes_updated_at ON installed_themes;
 CREATE TRIGGER trg_installed_themes_updated_at
   BEFORE UPDATE ON installed_themes
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- 15.2 installed_skins (설치된 스킨)
+-- skins.theme_id FK (installed_themes 생성 후 추가)
+ALTER TABLE skins
+  ADD CONSTRAINT IF NOT EXISTS skins_theme_id_fkey
+  FOREIGN KEY (theme_id) REFERENCES installed_themes(id) ON DELETE CASCADE;
+
+-- 15.2 installed_skins (레거시 — 현재 미사용. 스킨은 skins 테이블에서 관리)
+-- theme_id 컬럼으로 테마 스킨/페이지 스킨 구분
 CREATE TABLE IF NOT EXISTS installed_skins (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   skin_slug      VARCHAR(100) NOT NULL UNIQUE,
@@ -2007,18 +2047,86 @@ VALUES
   ('default_product_skin',    '"grid-basic"',                                '기본 상품 리스트 스킨')
 ON CONFLICT (key) DO NOTHING;
 
--- Default basic board skin
-INSERT INTO skins (name, slug, type, description, version, is_system, is_active)
+-- Default basic board/product skins (theme_id IS NULL → page skins, slug 전역 유일)
+INSERT INTO skins (name, slug, type, description, version, is_system, is_active, source)
 VALUES
-  ('기본 리스트 스킨',     'list-basic',    'board_list',    '기본 게시판 리스트 스킨',     '1.0.0', true, true),
-  ('기본 뷰 스킨',         'view-basic',    'board_view',    '기본 게시판 상세 스킨',       '1.0.0', true, true),
-  ('기본 그리드 스킨',     'grid-basic',    'product_list',  '기본 상품 그리드 스킨',       '1.0.0', true, true),
-  ('기본 상품 카드 스킨',  'card-basic',    'product_card',  '기본 상품 카드 스킨',         '1.0.0', true, true)
-ON CONFLICT (slug) DO NOTHING;
+  ('기본 리스트 스킨',       'list-basic',         'board_list',    '기본 게시판 리스트 스킨',        '1.0.0', true, true, 'builtin'),
+  ('기본 뷰 스킨',           'view-basic',         'board_view',    '기본 게시판 상세 스킨',          '1.0.0', true, true, 'builtin'),
+  ('기본 그리드 스킨',       'grid-basic',         'product_list',  '기본 상품 그리드 스킨',          '1.0.0', true, true, 'builtin'),
+  ('기본 상품 카드 스킨',    'card-basic',         'product_card',  '기본 상품 카드 스킨',            '1.0.0', true, true, 'builtin'),
+  ('기본 상품 상세 스킨',    'product-view-basic', 'product_view',  '기본 상품 상세 페이지 스킨',     '1.0.0', true, true, 'builtin'),
+  ('기본 장바구니 스킨',     'cart-basic',         'cart',          '기본 장바구니 페이지 스킨',      '1.0.0', true, true, 'builtin'),
+  ('기본 주문/결제 스킨',    'checkout-basic',     'checkout',      '기본 주문·결제 페이지 스킨',     '1.0.0', true, true, 'builtin'),
+  ('기본 마이페이지 스킨',   'mypage-basic',       'mypage',        '기본 마이페이지 스킨',           '1.0.0', true, true, 'builtin')
+ON CONFLICT DO NOTHING;
 
 -- Default installed_themes (기본 테마)
-INSERT INTO installed_themes (slug, name, version, source, is_active, installed_at)
-VALUES ('default-shop', '기본 쇼핑몰 테마', '1.0.0', 'builtin', true, NOW())
+INSERT INTO installed_themes (slug, name, version, source, is_active, installed_at, layout_config)
+VALUES (
+  'default-shop',
+  '기본 쇼핑몰 테마',
+  '1.0.0',
+  'builtin',
+  true,
+  NOW(),
+  '{
+    "header": "mega-menu",
+    "footer": "simple",
+    "productCard": "magazine",
+    "productGrid": "slider",
+    "homeSections": [
+      {"id": "hero",          "type": "custom", "style": "html", "title": "메인 배너",    "enabled": true},
+      {"id": "features",      "type": "custom", "style": "html", "title": "특징 아이콘",  "enabled": true},
+      {"id": "categories",    "type": "custom", "style": "html", "title": "카테고리",     "enabled": true},
+      {"id": "new-products",  "type": "custom", "style": "html", "title": "신상품",       "enabled": true},
+      {"id": "best-products", "type": "custom", "style": "html", "title": "베스트셀러",   "enabled": true},
+      {"id": "reviews",       "type": "custom", "style": "html", "title": "고객 후기",    "enabled": true},
+      {"id": "newsletter",    "type": "custom", "style": "html", "title": "뉴스레터",     "enabled": true},
+      {"id": "cta",           "type": "custom", "style": "html", "title": "CTA 배너",    "enabled": false}
+    ],
+    "settings": {
+      "headerFixed": true,
+      "showBreadcrumb": true,
+      "sidebarPosition": "none",
+      "productImageRatio": "1:1",
+      "showTopBar": true
+    }
+  }'::jsonb
+)
+ON CONFLICT (slug) DO NOTHING;
+
+-- modern-store 테마 (HTML 템플릿 기반 — 업로드 스크립트로 파일 URL 채워짐)
+INSERT INTO installed_themes (slug, name, version, source, is_active, installed_at, layout_config)
+VALUES (
+  'modern-store',
+  'Modern Store',
+  '1.0.0',
+  'builtin',
+  false,
+  NOW(),
+  '{
+    "header": null,
+    "footer": null,
+    "productCard": "basic",
+    "productGrid": "grid-4",
+    "homeSections": [
+      {"id": "hero",         "type": "custom", "style": "html", "title": "히어로 배너",  "enabled": true},
+      {"id": "features",     "type": "custom", "style": "html", "title": "특징 아이콘",  "enabled": true},
+      {"id": "products",     "type": "custom", "style": "html", "title": "추천 상품",    "enabled": true},
+      {"id": "banner",       "type": "custom", "style": "html", "title": "배너 2분할",   "enabled": true},
+      {"id": "reviews",      "type": "custom", "style": "html", "title": "고객 후기",    "enabled": true},
+      {"id": "newsletter",   "type": "custom", "style": "html", "title": "뉴스레터",     "enabled": true},
+      {"id": "categories",   "type": "custom", "style": "html", "title": "카테고리",     "enabled": false},
+      {"id": "cta",          "type": "custom", "style": "html", "title": "CTA 배너",    "enabled": false}
+    ],
+    "settings": {
+      "headerFixed": true,
+      "showBreadcrumb": false,
+      "sidebarPosition": "none",
+      "productImageRatio": "3:4"
+    }
+  }'::jsonb
+)
 ON CONFLICT (slug) DO NOTHING;
 
 -- =============================================================================
@@ -2641,6 +2749,33 @@ CREATE POLICY "products_storage_insert" ON storage.objects
 
 CREATE POLICY "products_storage_delete" ON storage.objects
   FOR DELETE USING (bucket_id = 'products' AND auth.role() = 'authenticated');
+
+-- 테마 에셋 버킷 (CSS, 썸네일, 스킨 CSS 등 — 공개)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'themes',
+  'themes',
+  true,
+  5242880,  -- 5MB
+  ARRAY['text/css', 'image/jpeg', 'image/png', 'image/webp', 'application/zip']
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- 테마 버킷 RLS: 누구나 조회 (CSS, 썸네일 공개 접근)
+CREATE POLICY "themes_storage_select" ON storage.objects
+  FOR SELECT USING (bucket_id = 'themes');
+
+-- 테마 버킷 RLS: 인증된 사용자만 업로드 (관리자 업로드)
+CREATE POLICY "themes_storage_insert" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'themes' AND auth.role() = 'authenticated');
+
+-- 테마 버킷 RLS: 인증된 사용자만 업데이트
+CREATE POLICY "themes_storage_update" ON storage.objects
+  FOR UPDATE USING (bucket_id = 'themes' AND auth.role() = 'authenticated');
+
+-- 테마 버킷 RLS: 인증된 사용자만 삭제
+CREATE POLICY "themes_storage_delete" ON storage.objects
+  FOR DELETE USING (bucket_id = 'themes' AND auth.role() = 'authenticated');
 
 -- =============================================================================
 -- SEED DATA: 기본 카테고리 / 브랜드 / 상품

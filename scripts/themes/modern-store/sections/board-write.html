@@ -1,0 +1,186 @@
+<!-- modern-store / board-write.html -->
+<style>
+.ms-bwrite {
+  background: {{bwrite_bg | default: '#f8fafc'}};
+  padding: 48px 0 80px;
+  font-family: var(--theme-font, 'Pretendard', sans-serif);
+  min-height: 60vh;
+}
+.ms-bwrite-inner {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.ms-bwrite-title {
+  font-size: clamp(18px, 3vw, 24px);
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 28px;
+  font-family: var(--theme-font-heading, inherit);
+}
+.ms-bwrite-form {
+  background: #fff;
+  border-radius: var(--theme-card-radius, 16px);
+  border: 1px solid #e2e8f0;
+  padding: 28px;
+}
+.ms-bwrite-field { margin-bottom: 18px; }
+.ms-bwrite-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 6px;
+}
+.ms-bwrite-field label span { color: #ef4444; }
+.ms-bwrite-field input, .ms-bwrite-field select {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #1e293b;
+  background: #fff;
+  outline: none;
+  transition: border-color .15s;
+  box-sizing: border-box;
+}
+.ms-bwrite-field input:focus, .ms-bwrite-field select:focus {
+  border-color: var(--theme-primary, #2563eb);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.08);
+}
+.ms-bwrite-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: #f8fafc;
+  flex-wrap: wrap;
+}
+.ms-bwrite-tool-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #374151;
+  font-weight: 600;
+  transition: background .15s, border-color .15s;
+}
+.ms-bwrite-tool-btn:hover { background: #fff; border-color: #e2e8f0; }
+.ms-bwrite-tool-sep { width: 1px; background: #e2e8f0; margin: 4px 2px; }
+.ms-bwrite-editor {
+  width: 100%;
+  min-height: 320px;
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 0 0 8px 8px;
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.75;
+  background: #fff;
+  outline: none;
+  resize: vertical;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+.ms-bwrite-editor:focus { border-color: var(--theme-primary, #2563eb); }
+.ms-bwrite-file-area {
+  border: 2px dashed #e2e8f0;
+  border-radius: 10px;
+  padding: 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.ms-bwrite-file-area:hover { border-color: var(--theme-primary, #2563eb); background: rgba(37,99,235,.02); }
+.ms-bwrite-file-icon { font-size: 28px; margin-bottom: 6px; }
+.ms-bwrite-file-label { font-size: 13px; color: #64748b; }
+.ms-bwrite-file-label strong { color: var(--theme-primary, #2563eb); }
+.ms-bwrite-file-limit { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+.ms-bwrite-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 20px;
+  border-top: 1px solid #f1f5f9;
+  margin-top: 4px;
+}
+.ms-bwrite-btn {
+  padding: 10px 24px;
+  border-radius: var(--theme-btn-radius, 8px);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #374151;
+  transition: all .15s;
+  text-decoration: none;
+}
+.ms-bwrite-btn:hover { background: #f8fafc; }
+.ms-bwrite-btn.primary {
+  background: var(--theme-primary, #2563eb);
+  border-color: var(--theme-primary, #2563eb);
+  color: #fff;
+}
+.ms-bwrite-btn.primary:hover { opacity: .88; }
+</style>
+
+<section class="ms-bwrite">
+  <div class="ms-bwrite-inner">
+    <h1 class="ms-bwrite-title">{{bwrite_title | default: '글쓰기'}}</h1>
+    <div class="ms-bwrite-form">
+      <div class="ms-bwrite-field">
+        <label>게시판 <span>*</span></label>
+        <select>
+          <option>게시판을 선택하세요</option>
+          <option>자유게시판</option>
+          <option>구매 후기</option>
+          <option>Q&A</option>
+        </select>
+      </div>
+      <div class="ms-bwrite-field">
+        <label>제목 <span>*</span></label>
+        <input type="text" placeholder="{{bwrite_subject_placeholder | default: '제목을 입력하세요'}}" />
+      </div>
+      <div class="ms-bwrite-field">
+        <label>내용 <span>*</span></label>
+        <div class="ms-bwrite-toolbar">
+          <button class="ms-bwrite-tool-btn" title="굵게"><b>B</b></button>
+          <button class="ms-bwrite-tool-btn" title="기울임"><i>I</i></button>
+          <button class="ms-bwrite-tool-btn" title="밑줄"><u>U</u></button>
+          <div class="ms-bwrite-tool-sep"></div>
+          <button class="ms-bwrite-tool-btn" title="정렬">≡</button>
+          <button class="ms-bwrite-tool-btn" title="링크">🔗</button>
+          <button class="ms-bwrite-tool-btn" title="이미지">🖼</button>
+          <div class="ms-bwrite-tool-sep"></div>
+          <button class="ms-bwrite-tool-btn" title="취소선"><s>S</s></button>
+          <button class="ms-bwrite-tool-btn" title="인용">❝</button>
+          <button class="ms-bwrite-tool-btn" title="코드">⌨</button>
+        </div>
+        <textarea class="ms-bwrite-editor" placeholder="{{bwrite_content_placeholder | default: '내용을 입력하세요'}}"></textarea>
+      </div>
+      <div class="ms-bwrite-field">
+        <label>파일 첨부</label>
+        <div class="ms-bwrite-file-area">
+          <div class="ms-bwrite-file-icon">📎</div>
+          <div class="ms-bwrite-file-label">파일을 드래그하거나 <strong>클릭하여 업로드</strong></div>
+          <div class="ms-bwrite-file-limit">최대 5개 · 각 10MB 이하 · jpg, png, gif, pdf</div>
+        </div>
+      </div>
+      <div class="ms-bwrite-footer">
+        <a href="{{bwrite_cancel_url | default: '/board'}}" class="ms-bwrite-btn">취소</a>
+        <button class="ms-bwrite-btn">임시저장</button>
+        <button class="ms-bwrite-btn primary">{{bwrite_submit_text | default: '등록하기'}}</button>
+      </div>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,107 @@
+{
+  "global": [
+    { "id": "brand_name",      "type": "text",     "label": "브랜드명",         "default": "SHOP" },
+    { "id": "top_bar_text",    "type": "text",     "label": "상단바 문구",       "default": "🎉 신규 회원 첫 주문 10% 할인 쿠폰 지급!" },
+    { "id": "top_bar_show",    "type": "checkbox", "label": "상단바 표시",        "default": "true" },
+    { "id": "footer_desc",     "type": "textarea", "label": "푸터 회사 설명",    "default": "고객 만족을 최우선으로 하는 쇼핑몰입니다." },
+    { "id": "biz_name",        "type": "text",     "label": "상호명",            "default": "(주)쇼핑몰" },
+    { "id": "biz_ceo",         "type": "text",     "label": "대표자명",          "default": "홍길동" },
+    { "id": "biz_reg",         "type": "text",     "label": "사업자번호",        "default": "000-00-00000" },
+    { "id": "biz_address",     "type": "text",     "label": "사업장 주소",       "default": "서울특별시 강남구 테헤란로 123" },
+    { "id": "biz_mail",        "type": "text",     "label": "통신판매업 신고번호","default": "제2025-서울강남-0000호" },
+    { "id": "biz_year",        "type": "text",     "label": "저작권 연도",       "default": "2025" },
+    { "id": "cs_phone",        "type": "text",     "label": "고객센터 번호",     "default": "1588-0000" },
+    { "id": "cs_hours",        "type": "textarea", "label": "운영 시간",         "default": "평일 09:00~18:00 (점심 12:00~13:00)" },
+    { "id": "sns_instagram",   "type": "url",      "label": "인스타그램",        "default": "#" },
+    { "id": "sns_facebook",    "type": "url",      "label": "페이스북",          "default": "#" },
+    { "id": "sns_youtube",     "type": "url",      "label": "유튜브",            "default": "#" },
+    { "id": "sns_blog",        "type": "url",      "label": "블로그",            "default": "#" }
+  ],
+  "sections": [
+    {
+      "id": "header",
+      "name": "헤더",
+      "settings": [
+        { "id": "header_bg",       "type": "color", "label": "헤더 배경",    "default": "#ffffff" },
+        { "id": "header_text",     "type": "color", "label": "헤더 텍스트",  "default": "#111827" },
+        { "id": "top_bar_bg",      "type": "color", "label": "상단바 배경",  "default": "#1a56db" },
+        { "id": "top_bar_color",   "type": "color", "label": "상단바 텍스트","default": "#ffffff" }
+      ]
+    },
+    {
+      "id": "hero",
+      "name": "메인 배너",
+      "settings": [
+        { "id": "hero_title",      "type": "text",     "label": "제목",       "default": "이번 시즌 최고의 상품" },
+        { "id": "hero_subtitle",   "type": "text",     "label": "부제목",     "default": "지금 바로 쇼핑하세요" },
+        { "id": "hero_desc",       "type": "textarea", "label": "설명",       "default": "최대 70% 할인된 특가 상품을 만나보세요." },
+        { "id": "hero_image",      "type": "image",    "label": "배너 이미지","default": "" },
+        { "id": "hero_bg",         "type": "color",    "label": "배경색",     "default": "#f0f4ff" },
+        { "id": "hero_cta_text",   "type": "text",     "label": "버튼 텍스트","default": "지금 쇼핑하기" },
+        { "id": "hero_cta_url",    "type": "url",      "label": "버튼 링크",  "default": "/products" }
+      ]
+    },
+    {
+      "id": "categories",
+      "name": "카테고리",
+      "settings": [
+        { "id": "cats_title", "type": "text", "label": "섹션 제목", "default": "카테고리" }
+      ]
+    },
+    {
+      "id": "new-products",
+      "name": "신상품",
+      "settings": [
+        { "id": "newprod_title", "type": "text", "label": "섹션 제목", "default": "신상품" },
+        { "id": "newprod_bg",    "type": "color","label": "배경색",    "default": "#ffffff" }
+      ]
+    },
+    {
+      "id": "best-products",
+      "name": "베스트셀러",
+      "settings": [
+        { "id": "bestprod_title", "type": "text", "label": "섹션 제목", "default": "베스트셀러" },
+        { "id": "bestprod_bg",    "type": "color","label": "배경색",    "default": "#f9fafb" }
+      ]
+    },
+    {
+      "id": "features",
+      "name": "특징 아이콘",
+      "settings": [
+        { "id": "feat_bg", "type": "color", "label": "배경색", "default": "#f9fafb" }
+      ]
+    },
+    {
+      "id": "reviews",
+      "name": "고객 후기",
+      "settings": [
+        { "id": "rev_bg",    "type": "color", "label": "배경색",   "default": "#ffffff" },
+        { "id": "rev_title", "type": "text",  "label": "섹션 제목","default": "고객 후기" }
+      ]
+    },
+    {
+      "id": "newsletter",
+      "name": "뉴스레터",
+      "settings": [
+        { "id": "nl_bg",    "type": "color", "label": "배경색",  "default": "#1a56db" },
+        { "id": "nl_title", "type": "text",  "label": "제목",    "default": "할인 소식을 가장 먼저 받아보세요" }
+      ]
+    },
+    {
+      "id": "cta",
+      "name": "CTA 배너",
+      "settings": [
+        { "id": "cta_bg",    "type": "color", "label": "배경색","default": "#111827" },
+        { "id": "cta_title", "type": "text",  "label": "제목",  "default": "지금 바로 시작하세요" }
+      ]
+    },
+    {
+      "id": "footer",
+      "name": "푸터",
+      "settings": [
+        { "id": "footer_bg",   "type": "color", "label": "푸터 배경",   "default": "#111827" },
+        { "id": "footer_text", "type": "color", "label": "푸터 텍스트", "default": "#9ca3af" }
+      ]
+    }
+  ]
+}

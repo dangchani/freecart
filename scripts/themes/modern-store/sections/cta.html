@@ -1,0 +1,94 @@
+<!-- modern-store / cta.html -->
+<style>
+.ms-cta {
+  background: {{cta_bg | default: '#0f172a'}};
+  padding: 80px 24px;
+  text-align: center;
+  font-family: var(--theme-font, 'Pretendard', sans-serif);
+  position: relative;
+  overflow: hidden;
+}
+.ms-cta::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 0%, rgba(37,99,235,.3) 0%, transparent 70%);
+  pointer-events: none;
+}
+.ms-cta-inner {
+  position: relative;
+  max-width: 640px;
+  margin: 0 auto;
+}
+.ms-cta-badge {
+  display: inline-block;
+  background: rgba(37,99,235,.2);
+  border: 1px solid rgba(37,99,235,.4);
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 5px 14px;
+  border-radius: 100px;
+  margin-bottom: 20px;
+}
+.ms-cta-title {
+  font-size: clamp(28px, 5vw, 48px);
+  font-weight: 900;
+  color: #fff;
+  margin: 0 0 16px;
+  line-height: 1.15;
+  font-family: var(--theme-font-heading, inherit);
+}
+.ms-cta-desc {
+  font-size: 17px;
+  color: #94a3b8;
+  margin: 0 0 36px;
+  line-height: 1.7;
+}
+.ms-cta-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.ms-cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 32px;
+  border-radius: var(--theme-btn-radius, 10px);
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: opacity .15s, transform .15s;
+}
+.ms-cta-btn:hover { opacity: .88; transform: translateY(-1px); }
+.ms-cta-btn-primary {
+  background: var(--theme-primary, #2563eb);
+  color: #fff;
+  box-shadow: 0 4px 20px rgba(37,99,235,.4);
+}
+.ms-cta-btn-ghost {
+  background: transparent;
+  color: #cbd5e1;
+  border: 1px solid rgba(255,255,255,.2);
+}
+</style>
+
+<section class="ms-cta">
+  <div class="ms-cta-inner">
+    <span class="ms-cta-badge">{{cta_badge | default: 'Limited Offer'}}</span>
+    <h2 class="ms-cta-title">{{cta_title | default: '지금 바로 시작하세요'}}</h2>
+    <p class="ms-cta-desc">{{cta_desc | default: '오늘 가입하면 첫 주문 10% 할인 쿠폰을 즉시 드립니다.'}}</p>
+    <div class="ms-cta-actions">
+      <a href="{{cta_btn1_url | default: '/signup'}}" class="ms-cta-btn ms-cta-btn-primary">
+        {{cta_btn1_text | default: '무료 회원가입'}} →
+      </a>
+      <a href="{{cta_btn2_url | default: '/products'}}" class="ms-cta-btn ms-cta-btn-ghost">
+        {{cta_btn2_text | default: '쇼핑 구경하기'}}
+      </a>
+    </div>
+  </div>
+</section>

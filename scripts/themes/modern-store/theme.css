@@ -1,0 +1,61 @@
+/* modern-store / theme.css */
+
+/* ─── CSS 변수 기본값 ─── */
+:root {
+  --theme-primary: #2563eb;
+  --theme-secondary: #7c3aed;
+  --theme-accent: #ef4444;
+  --theme-bg: #ffffff;
+  --theme-bg-secondary: #f8fafc;
+  --theme-text: #111827;
+  --theme-text-muted: #6b7280;
+  --theme-header-bg: #ffffff;
+  --theme-header-text: #111827;
+  --theme-header-height: 64px;
+  --theme-btn-bg: #2563eb;
+  --theme-btn-text: #ffffff;
+  --theme-btn-radius: 10px;
+  --theme-card-radius: 16px;
+  --theme-font: 'Pretendard', 'Apple SD Gothic Neo', -apple-system, BlinkMacSystemFont, sans-serif;
+  --theme-font-heading: 'Pretendard', 'Apple SD Gothic Neo', -apple-system, BlinkMacSystemFont, sans-serif;
+  --theme-max-width: 1280px;
+}
+
+/* ─── 리셋 ─── */
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: var(--theme-font);
+  color: var(--theme-text);
+  background: var(--theme-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+img { max-width: 100%; display: block; }
+a { text-decoration: none; }
+button { cursor: pointer; }
+
+/* ─── 스크롤바 ─── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+/* ─── 공통 유틸 ─── */
+.ms-container {
+  max-width: var(--theme-max-width, 1280px);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ─── 포커스 링 ─── */
+:focus-visible {
+  outline: 2px solid var(--theme-primary);
+  outline-offset: 2px;
+}
+
+/* ─── 선택 색상 ─── */
+::selection {
+  background: var(--theme-primary);
+  color: #fff;
+}

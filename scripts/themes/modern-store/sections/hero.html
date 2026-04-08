@@ -1,0 +1,171 @@
+<!-- modern-store / hero.html -->
+<style>
+.ms-hero {
+  position: relative;
+  min-height: {{hero_height | default: '520px'}};
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  background: {{hero_bg | default: '#0f172a'}};
+  font-family: var(--theme-font, 'Pretendard', sans-serif);
+}
+.ms-hero-bg {
+  position: absolute;
+  inset: 0;
+  background-image: url('{{hero_image | default: ''}}');
+  background-size: cover;
+  background-position: center;
+  opacity: {{hero_overlay_opacity | default: '0.45'}};
+}
+.ms-hero-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(15,23,42,.8) 0%, rgba(15,23,42,.2) 100%);
+}
+.ms-hero-inner {
+  position: relative;
+  z-index: 1;
+  max-width: var(--theme-max-width, 1280px);
+  margin: 0 auto;
+  padding: 80px 24px;
+  width: 100%;
+}
+.ms-hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255,255,255,.12);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 100px;
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  margin-bottom: 24px;
+}
+.ms-hero-eyebrow::before { content: '✦'; color: var(--theme-accent, #f59e0b); }
+.ms-hero-title {
+  font-size: clamp(36px, 6vw, 72px);
+  font-weight: 900;
+  color: #ffffff;
+  line-height: 1.1;
+  letter-spacing: -1px;
+  margin: 0 0 20px;
+  font-family: var(--theme-font-heading, inherit);
+}
+.ms-hero-title em {
+  font-style: normal;
+  color: var(--theme-primary, #3b82f6);
+  position: relative;
+}
+.ms-hero-desc {
+  font-size: 17px;
+  color: #cbd5e1;
+  line-height: 1.7;
+  max-width: 520px;
+  margin: 0 0 40px;
+}
+.ms-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.ms-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--theme-primary, #2563eb);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 14px 32px;
+  border-radius: var(--theme-btn-radius, 10px);
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: opacity .15s, transform .15s;
+  box-shadow: 0 4px 20px rgba(37,99,235,.4);
+}
+.ms-btn-primary:hover { opacity: .88; transform: translateY(-1px); }
+.ms-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255,255,255,.1);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 13px 28px;
+  border-radius: var(--theme-btn-radius, 10px);
+  text-decoration: none;
+  border: 1px solid rgba(255,255,255,.25);
+  cursor: pointer;
+  transition: background .15s;
+}
+.ms-btn-secondary:hover { background: rgba(255,255,255,.18); }
+.ms-hero-stats {
+  display: flex;
+  gap: 40px;
+  margin-top: 56px;
+  padding-top: 32px;
+  border-top: 1px solid rgba(255,255,255,.1);
+}
+.ms-stat-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: #fff;
+  display: block;
+  line-height: 1;
+}
+.ms-stat-label {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 4px;
+  display: block;
+}
+@media (max-width: 640px) {
+  .ms-hero-stats { gap: 24px; }
+  .ms-stat-value { font-size: 22px; }
+  .ms-hero-actions { flex-direction: column; align-items: flex-start; }
+}
+</style>
+
+<section class="ms-hero">
+  <div class="ms-hero-bg"></div>
+  <div class="ms-hero-gradient"></div>
+  <div class="ms-hero-inner">
+    <div class="ms-hero-eyebrow">{{hero_eyebrow | default: 'New Collection 2025'}}</div>
+    <h1 class="ms-hero-title">
+      {{hero_title_line1 | default: '트렌드를 앞서가는'}}<br>
+      <em>{{hero_title_line2 | default: '스타일의 시작'}}</em>
+    </h1>
+    <p class="ms-hero-desc">{{hero_description | default: '매 시즌 엄선된 프리미엄 컬렉션. 당신의 개성을 표현할 수 있는 최고의 아이템을 만나보세요.'}}</p>
+    <div class="ms-hero-actions">
+      <a href="{{hero_cta_url | default: '/products'}}" class="ms-btn-primary">
+        {{hero_cta_text | default: '지금 쇼핑하기'}} →
+      </a>
+      <a href="{{hero_cta2_url | default: '/products?category=new'}}" class="ms-btn-secondary">
+        {{hero_cta2_text | default: '신상품 보기'}}
+      </a>
+    </div>
+    <div class="ms-hero-stats">
+      <div>
+        <span class="ms-stat-value">{{stat1_value | default: '12K+'}}</span>
+        <span class="ms-stat-label">{{stat1_label | default: '누적 고객'}}</span>
+      </div>
+      <div>
+        <span class="ms-stat-value">{{stat2_value | default: '4.9★'}}</span>
+        <span class="ms-stat-label">{{stat2_label | default: '평균 평점'}}</span>
+      </div>
+      <div>
+        <span class="ms-stat-value">{{stat3_value | default: '무료배송'}}</span>
+        <span class="ms-stat-label">{{stat3_label | default: '5만원 이상'}}</span>
+      </div>
+    </div>
+  </div>
+</section>

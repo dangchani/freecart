@@ -1,0 +1,178 @@
+<!-- modern-store / privacy.html -->
+<style>
+.ms-privacy {
+  background: {{privacy_bg | default: '#ffffff'}};
+  padding: 48px 0 80px;
+  font-family: var(--theme-font, 'Pretendard', sans-serif);
+}
+.ms-privacy-inner {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+.ms-privacy-header { margin-bottom: 36px; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; }
+.ms-privacy-label {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #10b981;
+  margin-bottom: 8px;
+}
+.ms-privacy-title {
+  font-size: clamp(20px, 3vw, 28px);
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 8px;
+  font-family: var(--theme-font-heading, inherit);
+}
+.ms-privacy-effective { font-size: 13px; color: #64748b; }
+.ms-privacy-summary {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 36px;
+}
+.ms-privacy-summary-title { font-size: 14px; font-weight: 700; color: #166534; margin-bottom: 10px; }
+.ms-privacy-summary-list { list-style: none; padding: 0; margin: 0; }
+.ms-privacy-summary-list li {
+  font-size: 13px;
+  color: #15803d;
+  padding: 4px 0;
+  padding-left: 20px;
+  position: relative;
+}
+.ms-privacy-summary-list li::before { content: '✓'; position: absolute; left: 0; font-weight: 700; }
+.ms-privacy-section { margin-bottom: 36px; }
+.ms-privacy-section-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.ms-privacy-body {
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.85;
+}
+.ms-privacy-body p { margin: 0 0 12px; }
+.ms-privacy-body ol, .ms-privacy-body ul { padding-left: 20px; margin: 0 0 14px; }
+.ms-privacy-body li { margin-bottom: 6px; }
+.ms-privacy-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 12px 0;
+}
+.ms-privacy-table th {
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  font-weight: 700;
+  color: #374151;
+  text-align: left;
+}
+.ms-privacy-table td {
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  color: #374151;
+  vertical-align: top;
+}
+.ms-privacy-contact {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-top: 40px;
+}
+.ms-privacy-contact-title { font-size: 14px; font-weight: 700; color: #374151; margin-bottom: 10px; }
+.ms-privacy-contact-info { font-size: 13px; color: #64748b; line-height: 1.8; }
+</style>
+
+<section class="ms-privacy">
+  <div class="ms-privacy-inner">
+    <div class="ms-privacy-header">
+      <div class="ms-privacy-label">Privacy</div>
+      <h1 class="ms-privacy-title">{{privacy_title | default: '개인정보처리방침'}}</h1>
+      <div class="ms-privacy-effective">{{privacy_effective | default: '시행일: 2025년 1월 1일'}}</div>
+    </div>
+    <div class="ms-privacy-summary">
+      <div class="ms-privacy-summary-title">개인정보 보호 요약</div>
+      <ul class="ms-privacy-summary-list">
+        <li>수집하는 개인정보: 이름, 이메일, 연락처, 주소, 결제정보</li>
+        <li>수집 목적: 회원 관리, 주문 처리, 배송, 고객 서비스</li>
+        <li>보유 기간: 회원 탈퇴 후 즉시 삭제 (단, 법령에 따라 일정 기간 보존)</li>
+        <li>제3자 제공: 배송사, 결제사에 한해 최소한으로 제공</li>
+        <li>개인정보 열람·삭제·동의 철회 언제든지 가능</li>
+      </ul>
+    </div>
+    <div class="ms-privacy-section">
+      <h2 class="ms-privacy-section-title">제1조 수집하는 개인정보 항목 및 수집 방법</h2>
+      <div class="ms-privacy-body">
+        <table class="ms-privacy-table">
+          <thead>
+            <tr>
+              <th>구분</th>
+              <th>수집 항목</th>
+              <th>수집 목적</th>
+              <th>보유 기간</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>필수</td>
+              <td>이름, 이메일, 비밀번호, 휴대폰번호</td>
+              <td>회원 식별 및 서비스 제공</td>
+              <td>탈퇴 후 즉시 삭제</td>
+            </tr>
+            <tr>
+              <td>주문</td>
+              <td>수령인, 배송주소, 연락처</td>
+              <td>상품 배송</td>
+              <td>5년</td>
+            </tr>
+            <tr>
+              <td>결제</td>
+              <td>결제수단(카드사, 계좌 등)</td>
+              <td>대금 결제 및 환불</td>
+              <td>5년</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="ms-privacy-section">
+      <h2 class="ms-privacy-section-title">제2조 개인정보의 처리 목적</h2>
+      <div class="ms-privacy-body">
+        <ol>
+          <li>회원 가입 의사 확인, 회원 자격 유지·관리</li>
+          <li>물품 또는 서비스 공급에 따른 계약의 이행, 요금 정산</li>
+          <li>고객 문의 처리, 불만 처리, 분쟁 조정</li>
+          <li>마케팅 및 광고에의 활용 (동의한 경우에 한함)</li>
+        </ol>
+      </div>
+    </div>
+    <div class="ms-privacy-section">
+      <h2 class="ms-privacy-section-title">제3조 개인정보의 제3자 제공</h2>
+      <div class="ms-privacy-body">
+        <p>회사는 원칙적으로 이용자의 개인정보를 제3자에게 제공하지 않습니다. 다만, 아래의 경우에는 예외로 합니다.</p>
+        <ul>
+          <li>이용자가 사전에 동의한 경우</li>
+          <li>법령의 규정에 의거하거나, 수사 목적으로 법령에 정해진 절차와 방법에 따라 수사기관의 요구가 있는 경우</li>
+          <li>배송 처리를 위해 택배사에 이름, 주소, 연락처 제공</li>
+        </ul>
+      </div>
+    </div>
+    <div class="ms-privacy-contact">
+      <div class="ms-privacy-contact-title">개인정보 보호 담당자</div>
+      <div class="ms-privacy-contact-info">
+        • 담당자: {{biz_ceo | default: '홍길동'}}<br>
+        • 이메일: {{biz_mail | default: 'privacy@store.com'}}<br>
+        • 전화: {{cs_phone | default: '1234-5678'}}
+      </div>
+    </div>
+  </div>
+</section>

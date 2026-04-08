@@ -1,0 +1,319 @@
+<!-- default-shop / header.html — mega-menu -->
+<style>
+.ds-header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  font-family: var(--ds-font, 'Pretendard', sans-serif);
+}
+/* 상단바 */
+.ds-topbar {
+  background: {{top_bar_bg | default: '#1a56db'}};
+  color: {{top_bar_color | default: '#ffffff'}};
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  padding: 7px 20px;
+  display: {{top_bar_show | default: 'true'| when_true: 'block' | default: 'none'}};
+}
+.ds-topbar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: var(--ds-max-width, 1280px);
+  margin: 0 auto;
+}
+.ds-topbar-links { display: flex; gap: 16px; }
+.ds-topbar-links a { color: inherit; opacity: .85; font-size: 11px; }
+.ds-topbar-links a:hover { opacity: 1; }
+/* 메인 헤더 */
+.ds-header-main {
+  background: {{header_bg | default: '#ffffff'}};
+  border-bottom: 1px solid #e5e7eb;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+.ds-header-inner {
+  max-width: var(--ds-max-width, 1280px);
+  margin: 0 auto;
+  padding: 0 20px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+.ds-logo {
+  font-size: 22px;
+  font-weight: 900;
+  color: var(--ds-primary, #1a56db);
+  letter-spacing: -1px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+/* 검색 */
+.ds-search {
+  flex: 1;
+  max-width: 520px;
+  position: relative;
+}
+.ds-search input {
+  width: 100%;
+  height: 40px;
+  padding: 0 44px 0 16px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #111827;
+  background: #f9fafb;
+  outline: none;
+  transition: border-color .15s, background .15s;
+  box-sizing: border-box;
+}
+.ds-search input:focus { border-color: var(--ds-primary, #1a56db); background: #fff; }
+.ds-search input::placeholder { color: #9ca3af; }
+.ds-search-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6b7280;
+  font-size: 17px;
+  padding: 4px;
+}
+.ds-search-btn:hover { color: var(--ds-primary, #1a56db); }
+/* 헤더 유틸 */
+.ds-header-utils {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.ds-util-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: {{header_text | default: '#111827'}};
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 6px;
+  transition: background .15s;
+  position: relative;
+}
+.ds-util-btn:hover { background: #f3f4f6; }
+.ds-util-btn .icon { font-size: 20px; line-height: 1; }
+.ds-util-cart-count {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  min-width: 16px;
+  height: 16px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+}
+/* 내비게이션 */
+.ds-nav {
+  background: {{header_bg | default: '#ffffff'}};
+  border-bottom: 2px solid var(--ds-primary, #1a56db);
+}
+.ds-nav-inner {
+  max-width: var(--ds-max-width, 1280px);
+  margin: 0 auto;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+.ds-nav-item {
+  position: relative;
+}
+.ds-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: {{header_text | default: '#111827'}};
+  white-space: nowrap;
+  transition: color .15s, background .15s;
+}
+.ds-nav-link:hover { color: var(--ds-primary, #1a56db); background: #f9fafb; }
+.ds-nav-link.active { color: var(--ds-primary, #1a56db); }
+.ds-nav-link .arrow { font-size: 10px; opacity: .6; }
+/* 메가 메뉴 */
+.ds-megamenu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 600px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-top: 2px solid var(--ds-primary, #1a56db);
+  box-shadow: 0 8px 32px rgba(0,0,0,.12);
+  z-index: 999;
+  padding: 20px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+.ds-nav-item:hover .ds-megamenu { display: grid; }
+.ds-mega-group-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ds-primary, #1a56db);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #f3f4f6;
+}
+.ds-mega-link {
+  display: block;
+  font-size: 13px;
+  color: #374151;
+  padding: 5px 0;
+  transition: color .15s;
+}
+.ds-mega-link:hover { color: var(--ds-primary, #1a56db); }
+@media (max-width: 768px) {
+  .ds-topbar-links { display: none; }
+  .ds-search { max-width: 200px; }
+  .ds-nav { display: none; }
+}
+</style>
+
+<header class="ds-header">
+  <div class="ds-topbar">
+    <div class="ds-topbar-inner">
+      <span>{{top_bar_text | default: '🎉 신규 회원 첫 주문 10% 할인 쿠폰 지급!'}}</span>
+      <div class="ds-topbar-links">
+        <a href="/notices">공지사항</a>
+        <a href="/faqs">FAQ</a>
+        <a href="/mypage">마이페이지</a>
+        <a href="/login">로그인</a>
+      </div>
+    </div>
+  </div>
+  <div class="ds-header-main">
+    <div class="ds-header-inner">
+      <a href="/" class="ds-logo">{{brand_name | default: 'SHOP'}}</a>
+      <div class="ds-search">
+        <input type="text" placeholder="{{search_placeholder | default: '상품명, 브랜드, 카테고리 검색'}}" />
+        <button class="ds-search-btn">🔍</button>
+      </div>
+      <div class="ds-header-utils">
+        <button class="ds-util-btn"><span class="icon">🔖</span>찜</button>
+        <button class="ds-util-btn">
+          <span class="icon">🛒</span>장바구니
+          <span class="ds-util-cart-count">3</span>
+        </button>
+        <button class="ds-util-btn"><span class="icon">👤</span>내 계정</button>
+      </div>
+    </div>
+  </div>
+  <nav class="ds-nav">
+    <div class="ds-nav-inner">
+      <div class="ds-nav-item">
+        <a href="/products" class="ds-nav-link active">전체 상품</a>
+      </div>
+      <div class="ds-nav-item">
+        <a href="#" class="ds-nav-link">패션 <span class="arrow">▾</span></a>
+        <div class="ds-megamenu">
+          <div>
+            <div class="ds-mega-group-title">여성</div>
+            <a class="ds-mega-link" href="#">상의</a>
+            <a class="ds-mega-link" href="#">하의</a>
+            <a class="ds-mega-link" href="#">원피스</a>
+            <a class="ds-mega-link" href="#">아우터</a>
+            <a class="ds-mega-link" href="#">속옷/잠옷</a>
+          </div>
+          <div>
+            <div class="ds-mega-group-title">남성</div>
+            <a class="ds-mega-link" href="#">상의</a>
+            <a class="ds-mega-link" href="#">하의</a>
+            <a class="ds-mega-link" href="#">아우터</a>
+            <a class="ds-mega-link" href="#">정장</a>
+            <a class="ds-mega-link" href="#">속옷/잠옷</a>
+          </div>
+          <div>
+            <div class="ds-mega-group-title">신발</div>
+            <a class="ds-mega-link" href="#">스니커즈</a>
+            <a class="ds-mega-link" href="#">구두/로퍼</a>
+            <a class="ds-mega-link" href="#">샌들/슬리퍼</a>
+            <a class="ds-mega-link" href="#">부츠</a>
+            <a class="ds-mega-link" href="#">스포츠화</a>
+          </div>
+          <div>
+            <div class="ds-mega-group-title">가방/잡화</div>
+            <a class="ds-mega-link" href="#">숄더백</a>
+            <a class="ds-mega-link" href="#">크로스백</a>
+            <a class="ds-mega-link" href="#">백팩</a>
+            <a class="ds-mega-link" href="#">지갑/소품</a>
+            <a class="ds-mega-link" href="#">벨트/넥타이</a>
+          </div>
+        </div>
+      </div>
+      <div class="ds-nav-item">
+        <a href="#" class="ds-nav-link">뷰티 <span class="arrow">▾</span></a>
+        <div class="ds-megamenu">
+          <div>
+            <div class="ds-mega-group-title">스킨케어</div>
+            <a class="ds-mega-link" href="#">세안</a>
+            <a class="ds-mega-link" href="#">토너/에센스</a>
+            <a class="ds-mega-link" href="#">로션/크림</a>
+            <a class="ds-mega-link" href="#">선케어</a>
+          </div>
+          <div>
+            <div class="ds-mega-group-title">메이크업</div>
+            <a class="ds-mega-link" href="#">베이스</a>
+            <a class="ds-mega-link" href="#">아이</a>
+            <a class="ds-mega-link" href="#">립</a>
+            <a class="ds-mega-link" href="#">네일</a>
+          </div>
+          <div>
+            <div class="ds-mega-group-title">헤어케어</div>
+            <a class="ds-mega-link" href="#">샴푸/린스</a>
+            <a class="ds-mega-link" href="#">트리트먼트</a>
+            <a class="ds-mega-link" href="#">스타일링</a>
+          </div>
+          <div>
+            <div class="ds-mega-group-title">향수/바디</div>
+            <a class="ds-mega-link" href="#">향수</a>
+            <a class="ds-mega-link" href="#">바디워시</a>
+            <a class="ds-mega-link" href="#">바디로션</a>
+          </div>
+        </div>
+      </div>
+      <div class="ds-nav-item">
+        <a href="/products?category=living" class="ds-nav-link">리빙</a>
+      </div>
+      <div class="ds-nav-item">
+        <a href="/products?category=food" class="ds-nav-link">식품</a>
+      </div>
+      <div class="ds-nav-item">
+        <a href="/products?category=sports" class="ds-nav-link">스포츠</a>
+      </div>
+      <div class="ds-nav-item">
+        <a href="/products?tag=sale" class="ds-nav-link" style="color:#ef4444;font-weight:700;">SALE</a>
+      </div>
+      <div class="ds-nav-item" style="margin-left:auto;">
+        <a href="/board/list" class="ds-nav-link">커뮤니티</a>
+      </div>
+    </div>
+  </nav>
+</header>

@@ -1,0 +1,584 @@
+{
+  "global": [
+    {
+      "id": "brand_name",
+      "type": "text",
+      "label": "브랜드명",
+      "default": "STORE",
+      "placeholder": "쇼핑몰 이름"
+    },
+    {
+      "id": "search_placeholder",
+      "type": "text",
+      "label": "검색창 placeholder",
+      "default": "상품 검색"
+    },
+    {
+      "id": "footer_desc",
+      "type": "textarea",
+      "label": "푸터 브랜드 설명",
+      "default": "트렌드를 앞서가는 라이프스타일 브랜드. 매 시즌 엄선된 프리미엄 컬렉션을 합리적인 가격으로 제공합니다."
+    },
+    {
+      "id": "biz_name",
+      "type": "text",
+      "label": "상호명",
+      "default": "(주)스토어"
+    },
+    {
+      "id": "biz_ceo",
+      "type": "text",
+      "label": "대표자명",
+      "default": "홍길동"
+    },
+    {
+      "id": "biz_reg",
+      "type": "text",
+      "label": "사업자번호",
+      "default": "000-00-00000"
+    },
+    {
+      "id": "biz_address",
+      "type": "text",
+      "label": "사업장 주소",
+      "default": "서울특별시 강남구 테헤란로 123"
+    },
+    {
+      "id": "biz_mail",
+      "type": "text",
+      "label": "통신판매업 신고번호",
+      "default": "제2025-서울강남-0000호"
+    },
+    {
+      "id": "biz_year",
+      "type": "text",
+      "label": "저작권 연도",
+      "default": "2025"
+    },
+    {
+      "id": "cs_phone",
+      "type": "text",
+      "label": "고객센터 전화번호",
+      "default": "1234-5678"
+    },
+    {
+      "id": "cs_hours",
+      "type": "textarea",
+      "label": "고객센터 운영시간",
+      "default": "평일 09:00 ~ 18:00\n(점심 12:00 ~ 13:00)"
+    },
+    {
+      "id": "cs_kakao_url",
+      "type": "url",
+      "label": "카카오 채널 URL",
+      "default": "#"
+    },
+    {
+      "id": "sns_instagram",
+      "type": "url",
+      "label": "인스타그램 URL",
+      "default": "#"
+    },
+    {
+      "id": "sns_kakao",
+      "type": "url",
+      "label": "카카오채널 URL",
+      "default": "#"
+    },
+    {
+      "id": "sns_youtube",
+      "type": "url",
+      "label": "유튜브 URL",
+      "default": "#"
+    },
+    {
+      "id": "sns_blog",
+      "type": "url",
+      "label": "블로그 URL",
+      "default": "#"
+    }
+  ],
+  "sections": [
+    {
+      "id": "header",
+      "name": "헤더",
+      "settings": [
+        {
+          "id": "header_bg",
+          "type": "color",
+          "label": "헤더 배경색",
+          "default": "#ffffff"
+        },
+        {
+          "id": "header_text",
+          "type": "color",
+          "label": "헤더 텍스트색",
+          "default": "#111827"
+        }
+      ]
+    },
+    {
+      "id": "hero",
+      "name": "히어로 배너",
+      "settings": [
+        {
+          "id": "hero_eyebrow",
+          "type": "text",
+          "label": "상단 태그 텍스트",
+          "default": "New Collection 2025"
+        },
+        {
+          "id": "hero_title_line1",
+          "type": "text",
+          "label": "제목 첫 번째 줄",
+          "default": "트렌드를 앞서가는"
+        },
+        {
+          "id": "hero_title_line2",
+          "type": "text",
+          "label": "제목 두 번째 줄 (강조)",
+          "default": "스타일의 시작"
+        },
+        {
+          "id": "hero_description",
+          "type": "textarea",
+          "label": "히어로 설명 텍스트",
+          "default": "매 시즌 엄선된 프리미엄 컬렉션. 당신의 개성을 표현할 수 있는 최고의 아이템을 만나보세요."
+        },
+        {
+          "id": "hero_image",
+          "type": "image",
+          "label": "히어로 배경 이미지",
+          "placeholder": "https://... 이미지 URL",
+          "default": ""
+        },
+        {
+          "id": "hero_bg",
+          "type": "color",
+          "label": "배경색 (이미지 없을 때)",
+          "default": "#0f172a"
+        },
+        {
+          "id": "hero_height",
+          "type": "text",
+          "label": "히어로 최소 높이",
+          "default": "520px"
+        },
+        {
+          "id": "hero_cta_text",
+          "type": "text",
+          "label": "버튼1 텍스트",
+          "default": "지금 쇼핑하기"
+        },
+        {
+          "id": "hero_cta_url",
+          "type": "url",
+          "label": "버튼1 링크",
+          "default": "/products"
+        },
+        {
+          "id": "hero_cta2_text",
+          "type": "text",
+          "label": "버튼2 텍스트",
+          "default": "신상품 보기"
+        },
+        {
+          "id": "hero_cta2_url",
+          "type": "url",
+          "label": "버튼2 링크",
+          "default": "/products?category=new"
+        },
+        {
+          "id": "stat1_value",
+          "type": "text",
+          "label": "통계1 수치",
+          "default": "12K+"
+        },
+        {
+          "id": "stat1_label",
+          "type": "text",
+          "label": "통계1 라벨",
+          "default": "누적 고객"
+        },
+        {
+          "id": "stat2_value",
+          "type": "text",
+          "label": "통계2 수치",
+          "default": "4.9★"
+        },
+        {
+          "id": "stat2_label",
+          "type": "text",
+          "label": "통계2 라벨",
+          "default": "평균 평점"
+        },
+        {
+          "id": "stat3_value",
+          "type": "text",
+          "label": "통계3 수치",
+          "default": "무료배송"
+        },
+        {
+          "id": "stat3_label",
+          "type": "text",
+          "label": "통계3 라벨",
+          "default": "5만원 이상"
+        }
+      ]
+    },
+    {
+      "id": "features",
+      "name": "특징 아이콘",
+      "settings": [
+        {
+          "id": "features_bg",
+          "type": "color",
+          "label": "배경색",
+          "default": "#f8fafc"
+        },
+        {
+          "id": "feature1_icon",
+          "type": "text",
+          "label": "특징1 아이콘 (이모지)",
+          "default": "🚚"
+        },
+        {
+          "id": "feature1_title",
+          "type": "text",
+          "label": "특징1 제목",
+          "default": "무료 배송"
+        },
+        {
+          "id": "feature1_desc",
+          "type": "textarea",
+          "label": "특징1 설명",
+          "default": "5만원 이상 구매 시\n전국 무료 배송"
+        },
+        {
+          "id": "feature2_icon",
+          "type": "text",
+          "label": "특징2 아이콘 (이모지)",
+          "default": "🔄"
+        },
+        {
+          "id": "feature2_title",
+          "type": "text",
+          "label": "특징2 제목",
+          "default": "30일 반품"
+        },
+        {
+          "id": "feature2_desc",
+          "type": "textarea",
+          "label": "특징2 설명",
+          "default": "구매 후 30일 이내\n무료 반품 보장"
+        },
+        {
+          "id": "feature3_icon",
+          "type": "text",
+          "label": "특징3 아이콘 (이모지)",
+          "default": "🛡️"
+        },
+        {
+          "id": "feature3_title",
+          "type": "text",
+          "label": "특징3 제목",
+          "default": "안전 결제"
+        },
+        {
+          "id": "feature3_desc",
+          "type": "textarea",
+          "label": "특징3 설명",
+          "default": "SSL 암호화로\n안전한 결제 환경"
+        },
+        {
+          "id": "feature4_icon",
+          "type": "text",
+          "label": "특징4 아이콘 (이모지)",
+          "default": "💬"
+        },
+        {
+          "id": "feature4_title",
+          "type": "text",
+          "label": "특징4 제목",
+          "default": "1:1 상담"
+        },
+        {
+          "id": "feature4_desc",
+          "type": "textarea",
+          "label": "특징4 설명",
+          "default": "평일 09:00~18:00\n카카오 채널 상담"
+        }
+      ]
+    },
+    {
+      "id": "products",
+      "name": "추천 상품",
+      "settings": [
+        {
+          "id": "products_bg",
+          "type": "color",
+          "label": "배경색",
+          "default": "#ffffff"
+        },
+        {
+          "id": "products_label",
+          "type": "text",
+          "label": "섹션 라벨",
+          "default": "Featured"
+        },
+        {
+          "id": "products_title",
+          "type": "text",
+          "label": "섹션 제목",
+          "default": "이번 주 추천 상품"
+        },
+        {
+          "id": "products_link",
+          "type": "url",
+          "label": "전체보기 링크",
+          "default": "/products"
+        }
+      ]
+    },
+    {
+      "id": "banner",
+      "name": "배너 2분할",
+      "settings": [
+        {
+          "id": "banner_bg",
+          "type": "color",
+          "label": "섹션 배경색",
+          "default": "#0f172a"
+        },
+        {
+          "id": "banner1_emoji",
+          "type": "text",
+          "label": "배너1 배경 이모지",
+          "default": "👗"
+        },
+        {
+          "id": "banner1_tag",
+          "type": "text",
+          "label": "배너1 태그",
+          "default": "New Season"
+        },
+        {
+          "id": "banner1_title",
+          "type": "text",
+          "label": "배너1 제목",
+          "default": "2025 SS 컬렉션"
+        },
+        {
+          "id": "banner1_desc",
+          "type": "textarea",
+          "label": "배너1 설명",
+          "default": "봄/여름 신상품 대거 입고\n지금 만나보세요"
+        },
+        {
+          "id": "banner1_cta",
+          "type": "text",
+          "label": "배너1 버튼 텍스트",
+          "default": "쇼핑하기"
+        },
+        {
+          "id": "banner1_url",
+          "type": "url",
+          "label": "배너1 링크",
+          "default": "/products?season=ss25"
+        },
+        {
+          "id": "banner2_emoji",
+          "type": "text",
+          "label": "배너2 배경 이모지",
+          "default": "⚡"
+        },
+        {
+          "id": "banner2_tag",
+          "type": "text",
+          "label": "배너2 태그",
+          "default": "Flash Sale"
+        },
+        {
+          "id": "banner2_title",
+          "type": "text",
+          "label": "배너2 제목",
+          "default": "한정 특가 세일"
+        },
+        {
+          "id": "banner2_desc",
+          "type": "textarea",
+          "label": "배너2 설명",
+          "default": "최대 70% 할인\n오늘만 이 가격"
+        },
+        {
+          "id": "banner2_cta",
+          "type": "text",
+          "label": "배너2 버튼 텍스트",
+          "default": "지금 구매"
+        },
+        {
+          "id": "banner2_url",
+          "type": "url",
+          "label": "배너2 링크",
+          "default": "/products?category=sale"
+        }
+      ]
+    },
+    {
+      "id": "reviews",
+      "name": "고객 후기",
+      "settings": [
+        {
+          "id": "reviews_bg",
+          "type": "color",
+          "label": "배경색",
+          "default": "#f8fafc"
+        },
+        {
+          "id": "reviews_label",
+          "type": "text",
+          "label": "섹션 라벨",
+          "default": "Customer Reviews"
+        },
+        {
+          "id": "reviews_title",
+          "type": "text",
+          "label": "섹션 제목",
+          "default": "고객 후기"
+        },
+        {
+          "id": "review1_text",
+          "type": "textarea",
+          "label": "후기1 내용",
+          "default": "퀄리티가 정말 좋아요. 소재가 부드럽고 핏도 딱 맞습니다. 배송도 빠르고 포장도 꼼꼼하게 되어 있어서 만족스러워요!"
+        },
+        {
+          "id": "review1_name",
+          "type": "text",
+          "label": "후기1 작성자",
+          "default": "김*수"
+        },
+        {
+          "id": "review1_initial",
+          "type": "text",
+          "label": "후기1 아바타 글자",
+          "default": "김"
+        },
+        {
+          "id": "review1_product",
+          "type": "text",
+          "label": "후기1 구매 상품",
+          "default": "캐시미어 코트 구매"
+        },
+        {
+          "id": "review2_text",
+          "type": "textarea",
+          "label": "후기2 내용",
+          "default": "생각보다 훨씬 예쁘게 나왔어요. 사진이랑 실제 색상이 거의 같고, 사이즈도 정확해요. 다음에도 꼭 여기서 살 것 같아요."
+        },
+        {
+          "id": "review2_name",
+          "type": "text",
+          "label": "후기2 작성자",
+          "default": "이*진"
+        },
+        {
+          "id": "review2_initial",
+          "type": "text",
+          "label": "후기2 아바타 글자",
+          "default": "이"
+        },
+        {
+          "id": "review2_product",
+          "type": "text",
+          "label": "후기2 구매 상품",
+          "default": "와이드 팬츠 구매"
+        },
+        {
+          "id": "review3_text",
+          "type": "textarea",
+          "label": "후기3 내용",
+          "default": "전반적으로 만족해요. 디자인이 심플해서 여러 옷이랑 매치하기 좋고, 가성비도 좋은 편입니다."
+        },
+        {
+          "id": "review3_name",
+          "type": "text",
+          "label": "후기3 작성자",
+          "default": "박*영"
+        },
+        {
+          "id": "review3_initial",
+          "type": "text",
+          "label": "후기3 아바타 글자",
+          "default": "박"
+        },
+        {
+          "id": "review3_product",
+          "type": "text",
+          "label": "후기3 구매 상품",
+          "default": "스니커즈 구매"
+        }
+      ]
+    },
+    {
+      "id": "newsletter",
+      "name": "뉴스레터 구독",
+      "settings": [
+        {
+          "id": "newsletter_bg",
+          "type": "color",
+          "label": "배경색",
+          "default": "#2563eb"
+        },
+        {
+          "id": "newsletter_badge",
+          "type": "text",
+          "label": "배지 텍스트",
+          "default": "Newsletter"
+        },
+        {
+          "id": "newsletter_title",
+          "type": "text",
+          "label": "제목",
+          "default": "신상품 소식을 가장 먼저 받아보세요"
+        },
+        {
+          "id": "newsletter_desc",
+          "type": "textarea",
+          "label": "설명",
+          "default": "구독하시면 신상품 알림, 할인 쿠폰, 시즌 세일 소식을 이메일로 보내드립니다."
+        },
+        {
+          "id": "newsletter_placeholder",
+          "type": "text",
+          "label": "입력창 placeholder",
+          "default": "이메일 주소를 입력하세요"
+        },
+        {
+          "id": "newsletter_cta",
+          "type": "text",
+          "label": "버튼 텍스트",
+          "default": "구독하기"
+        },
+        {
+          "id": "newsletter_note",
+          "type": "text",
+          "label": "하단 안내 문구",
+          "default": "개인정보는 안전하게 보호되며, 언제든지 구독을 취소하실 수 있습니다."
+        }
+      ]
+    },
+    {
+      "id": "footer",
+      "name": "푸터",
+      "settings": [
+        {
+          "id": "footer_bg",
+          "type": "color",
+          "label": "푸터 배경색",
+          "default": "#0f172a"
+        }
+      ]
+    }
+  ]
+}

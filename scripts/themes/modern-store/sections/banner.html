@@ -1,0 +1,110 @@
+<!-- modern-store / banner.html -->
+<style>
+.ms-banner {
+  padding: 48px 24px;
+  background: {{banner_bg | default: '#0f172a'}};
+  font-family: var(--theme-font, 'Pretendard', sans-serif);
+}
+.ms-banner-inner {
+  max-width: var(--theme-max-width, 1280px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+.ms-banner-card {
+  border-radius: var(--theme-card-radius, 20px);
+  overflow: hidden;
+  position: relative;
+  min-height: 280px;
+  display: flex;
+  align-items: flex-end;
+  padding: 32px;
+  cursor: pointer;
+  transition: transform .2s;
+}
+.ms-banner-card:hover { transform: scale(1.01); }
+.ms-banner-card-1 { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+.ms-banner-card-2 { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+.ms-banner-bg {
+  position: absolute;
+  inset: 0;
+  font-size: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: .15;
+  pointer-events: none;
+}
+.ms-banner-content { position: relative; z-index: 1; }
+.ms-banner-tag {
+  display: inline-block;
+  background: rgba(255,255,255,.2);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 100px;
+  margin-bottom: 12px;
+}
+.ms-banner-title {
+  font-size: 26px;
+  font-weight: 800;
+  color: #fff;
+  margin: 0 0 8px;
+  line-height: 1.2;
+  font-family: var(--theme-font-heading, inherit);
+}
+.ms-banner-desc {
+  font-size: 13px;
+  color: rgba(255,255,255,.8);
+  margin: 0 0 20px;
+  line-height: 1.5;
+}
+.ms-banner-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 20px;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: opacity .15s;
+}
+.ms-banner-btn:hover { opacity: .9; }
+@media (max-width: 640px) {
+  .ms-banner-inner { grid-template-columns: 1fr; }
+}
+</style>
+
+<section class="ms-banner">
+  <div class="ms-banner-inner">
+    <div class="ms-banner-card ms-banner-card-1">
+      <div class="ms-banner-bg">{{banner1_emoji | default: '👗'}}</div>
+      <div class="ms-banner-content">
+        <span class="ms-banner-tag">{{banner1_tag | default: 'New Season'}}</span>
+        <h3 class="ms-banner-title">{{banner1_title | default: '2025 SS 컬렉션'}}</h3>
+        <p class="ms-banner-desc">{{banner1_desc | default: '봄/여름 신상품 대거 입고\n지금 만나보세요'}}</p>
+        <a href="{{banner1_url | default: '/products?season=ss25'}}" class="ms-banner-btn">
+          {{banner1_cta | default: '쇼핑하기'}} →
+        </a>
+      </div>
+    </div>
+    <div class="ms-banner-card ms-banner-card-2">
+      <div class="ms-banner-bg">{{banner2_emoji | default: '⚡'}}</div>
+      <div class="ms-banner-content">
+        <span class="ms-banner-tag">{{banner2_tag | default: 'Flash Sale'}}</span>
+        <h3 class="ms-banner-title">{{banner2_title | default: '한정 특가 세일'}}</h3>
+        <p class="ms-banner-desc">{{banner2_desc | default: '최대 70% 할인\n오늘만 이 가격'}}</p>
+        <a href="{{banner2_url | default: '/products?category=sale'}}" class="ms-banner-btn">
+          {{banner2_cta | default: '지금 구매'}} →
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
