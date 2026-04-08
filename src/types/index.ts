@@ -19,6 +19,7 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
 export interface User {
   id: string;
   email: string;
+  loginId?: string;
   name: string;
   nickname?: string;
   phone?: string | null;
@@ -685,12 +686,26 @@ export interface Setting {
 // =============================================================================
 // 메뉴
 // =============================================================================
+export type MenuType =
+  | 'category'
+  | 'board'
+  | 'notice'
+  | 'faq'
+  | 'inquiry'
+  | 'product_qna'
+  | 'review'
+  | 'link';
+
 export interface Menu {
   id: string;
   parentId?: string;
   position: 'header' | 'footer' | 'sidebar';
+  menuType: MenuType;
   name: string;
   url?: string;
+  categoryId?: string;
+  boardId?: string;
+  isSystem: boolean;
   sortOrder: number;
   isVisible: boolean;
   target: '_self' | '_blank';

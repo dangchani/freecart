@@ -33,7 +33,6 @@ import {
   ShieldBan,
   Eye,
   KeyRound,
-  ToggleRight,
   FormInput,
   ChevronDown,
   ChevronUp,
@@ -55,7 +54,7 @@ type NavItem = {
   exact?: boolean;       // 정확 일치 매칭 (예: /admin/users)
   children?: NavItem[];
   // joy: system_settings 토글 키. 해당 설정이 true일 때만 메뉴 노출
-  featureFlag?: 'require_signup_approval' | 'enable_user_assignment';
+  featureFlag?: 'require_signup_approval' | 'enable_user_assignment' | 'use_user_levels';
 };
 
 // joy: 업무 흐름 기준 그룹화 (기존 아이콘 재사용)
@@ -69,7 +68,7 @@ const navItems: NavItem[] = [
     children: [
       { href: '/admin/users', label: '전체 회원', icon: Users, permission: 'users.read', exact: true },
       { href: '/admin/users/pending', label: '가입 승인', icon: UserPlus, permission: 'users.approve', featureFlag: 'require_signup_approval' },
-      { href: '/admin/user-levels', label: '회원 등급', icon: Award, permission: 'users.read' },
+      { href: '/admin/user-levels', label: '회원 등급', icon: Award, permission: 'users.read', featureFlag: 'use_user_levels' },
     ],
   },
 
@@ -157,7 +156,6 @@ const navItems: NavItem[] = [
       { href: '/admin/external-connections', label: '외부 연동', icon: Link2, permission: 'settings.write' },
       { href: '/admin/webhooks', label: '웹훅', icon: Webhook, permission: 'settings.write' },
       { href: '/admin/ip-blocks', label: 'IP 차단', icon: ShieldBan, permission: 'settings.write' },
-      { href: '/admin/settings/system', label: '시스템 설정', icon: ToggleRight, superAdminOnly: true },
       { href: '/admin/settings/roles', label: '역할 관리', icon: KeyRound, superAdminOnly: true },
     ],
   },
@@ -227,13 +225,15 @@ export default function AdminLayout() {
   const [flags, setFlags] = useState<Record<string, boolean>>({});
   useEffect(() => {
     (async () => {
-      const [approval, assignment] = await Promise.all([
+      const [approval, assignment, userLevels] = await Promise.all([
         getSystemSetting<boolean>('require_signup_approval'),
         getSystemSetting<boolean>('enable_user_assignment'),
+        getSystemSetting<boolean>('use_user_levels'),
       ]);
       setFlags({
         require_signup_approval: approval === true,
         enable_user_assignment: assignment === true,
+        use_user_levels: userLevels !== false,
       });
     })();
   }, []);

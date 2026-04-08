@@ -62,6 +62,9 @@ export function DynamicSignupForm({ onSuccess, previewOnly, previewDefinitions }
           continue;
         }
       }
+      if (d.field_key === 'login_id' && typeof v === 'string' && v) {
+        if (!/^[a-zA-Z0-9]{5,}$/.test(v)) errs[d.field_key] = '영문, 숫자 5자 이상으로 입력해주세요';
+      }
       if (d.field_type === 'email' && typeof v === 'string' && v) {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) errs[d.field_key] = '이메일 형식이 올바르지 않습니다';
       }
@@ -79,6 +82,16 @@ export function DynamicSignupForm({ onSuccess, previewOnly, previewDefinitions }
     try {
       const email = String(values['email'] ?? '');
       const password = String(values['password'] ?? '');
+
+      // login_id 중복 체크
+      const loginIdValue = String(values['login_id'] ?? '');
+      if (loginIdValue) {
+        const { count } = await supabase
+          .from('users')
+          .select('id', { count: 'exact', head: true })
+          .eq('login_id', loginIdValue);
+        if (count && count > 0) throw new Error('이미 사용 중인 아이디입니다.');
+      }
 
       // users 컬럼 필드들을 metadata로 묶어서 handle_new_user 트리거가 쓰도록
       const usersMeta: Record<string, unknown> = {};
@@ -115,7 +128,7 @@ export function DynamicSignupForm({ onSuccess, previewOnly, previewDefinitions }
 
       // 2) users 컬럼 업데이트
       const usersUpdate: Record<string, unknown> = {};
-      for (const k of ['name', 'phone', 'nickname']) {
+      for (const k of ['name', 'phone', 'nickname', 'login_id']) {
         if (usersMeta[k] != null) usersUpdate[k] = usersMeta[k];
       }
       if (usersMeta['privacy_agreed_at']) usersUpdate['privacy_agreed_at'] = usersMeta['privacy_agreed_at'];

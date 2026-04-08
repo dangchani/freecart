@@ -1300,8 +1300,13 @@ CREATE TABLE IF NOT EXISTS menus (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   parent_id   UUID REFERENCES menus(id) ON DELETE CASCADE,
   position    VARCHAR(30) NOT NULL DEFAULT 'header',
+  menu_type   VARCHAR(20) NOT NULL DEFAULT 'link',
+  -- menu_type: 'category' | 'board' | 'notice' | 'faq' | 'inquiry' | 'product_qna' | 'review' | 'link'
   name        VARCHAR(100) NOT NULL,
   url         VARCHAR(500),
+  category_id UUID REFERENCES product_categories(id) ON DELETE CASCADE,
+  board_id    UUID REFERENCES boards(id) ON DELETE CASCADE,
+  is_system   BOOLEAN NOT NULL DEFAULT false,
   sort_order  INTEGER NOT NULL DEFAULT 0,
   is_visible  BOOLEAN NOT NULL DEFAULT true,
   target      VARCHAR(10) NOT NULL DEFAULT '_self',
@@ -1309,7 +1314,30 @@ CREATE TABLE IF NOT EXISTS menus (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_menus_parent_id ON menus(parent_id);
+CREATE INDEX IF NOT EXISTS idx_menus_parent_id   ON menus(parent_id);
+CREATE INDEX IF NOT EXISTS idx_menus_category_id ON menus(category_id);
+CREATE INDEX IF NOT EXISTS idx_menus_board_id    ON menus(board_id);
+
+-- 시스템 고정 메뉴 항목 (삭제 불가, 숨김만 가능)
+INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
+SELECT 'notice',      '공지사항', true, true, 100, 'header'
+WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'notice' AND is_system = true);
+
+INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
+SELECT 'faq',         'FAQ',      true, true, 110, 'header'
+WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'faq' AND is_system = true);
+
+INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
+SELECT 'inquiry',     '1:1 문의', true, true, 120, 'header'
+WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'inquiry' AND is_system = true);
+
+INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
+SELECT 'product_qna', '상품 Q&A', true, true, 130, 'header'
+WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'product_qna' AND is_system = true);
+
+INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
+SELECT 'review',      '리뷰',     true, true, 140, 'header'
+WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'review' AND is_system = true);
 
 DROP TRIGGER IF EXISTS trg_menus_updated_at ON menus;
 CREATE TRIGGER trg_menus_updated_at
@@ -2499,7 +2527,8 @@ CREATE OR REPLACE FUNCTION public.admin_create_user(
   p_email       TEXT,
   p_password    TEXT,
   p_name        TEXT,
-  p_phone       TEXT DEFAULT NULL
+  p_phone       TEXT DEFAULT NULL,
+  p_login_id    TEXT DEFAULT NULL
 )
 RETURNS uuid
 LANGUAGE plpgsql
@@ -2532,6 +2561,11 @@ BEGIN
     now(),
     now()
   );
+
+  -- joy: login_id가 전달된 경우 users 테이블에 반영
+  IF p_login_id IS NOT NULL AND p_login_id != '' THEN
+    UPDATE public.users SET login_id = p_login_id WHERE id = new_id;
+  END IF;
 
   RETURN new_id;
 END;
@@ -2773,6 +2807,12 @@ ALTER TABLE users
   ADD COLUMN IF NOT EXISTS approved_at   TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS approved_by   UUID REFERENCES users(id) ON DELETE SET NULL;
 
+-- joy: 아이디 기반 로그인을 위한 login_id 컬럼 추가
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS login_id VARCHAR(50) UNIQUE;
+
+CREATE INDEX IF NOT EXISTS idx_users_login_id ON users(login_id);
+
 -- role 값 표준화: super_admin / admin / user
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users
@@ -2946,23 +2986,54 @@ ALTER TABLE signup_field_definitions
 
 -- joy: 회원가입 기본 필드 시드. is_system=true로 삭제 방지.
 --   이메일/비밀번호는 field_key로 UI에서 비활성화 토글 차단 (항상 필수)
+--   순서: 아이디(10) → 비밀번호(20) → 이름(30) → 휴대폰(40) → 이메일(50) → 주소(60) → 동의(70)
 INSERT INTO signup_field_definitions
   (field_key, label, field_type, is_required, is_active, sort_order,
-   placeholder, help_text, target_role, is_system, storage_target, storage_column)
+   placeholder, help_text, validation_rule, target_role, is_system, storage_target, storage_column)
 VALUES
-  ('email',             '이메일',                 'email',    true, true, 10,
-   'example@domain.com', null, 'all', true, 'auth',  null),
+  ('login_id',          '아이디',                 'text',     true, true, 10,
+   '영문/숫자 5자 이상', '영문, 숫자만 사용 가능 (5자 이상)',
+   '{"pattern": "^[a-zA-Z0-9]{5,}$", "message": "영문, 숫자 5자 이상으로 입력해주세요"}',
+   'all', true, 'users', 'login_id'),
+  ('email',             '이메일',                 'email',    true, true, 50,
+   'example@domain.com', null, null, 'all', true, 'auth',  null),
   ('password',          '비밀번호',               'text',     true, true, 20,
-   '비밀번호를 입력하세요', '영문/숫자/특수문자 조합 권장', 'all', true, 'auth', null),
+   '비밀번호를 입력하세요', '영문/숫자/특수문자 조합 권장', null, 'all', true, 'auth', null),
   ('name',              '이름',                   'text',     true, true, 30,
-   '홍길동', null, 'all', true, 'users', 'name'),
+   '홍길동', null, null, 'all', true, 'users', 'name'),
   ('phone',             '휴대폰 번호',             'phone',    true, true, 40,
-   '010-0000-0000', null, 'all', true, 'users', 'phone'),
-  ('address',           '주소',                   'address',  false, true, 50,
-   null, '다음 우편번호 검색으로 입력됩니다', 'all', true, 'users', null),
-  ('privacy_agreement', '개인정보 처리 방침 동의', 'checkbox', true, true, 60,
-   null, '개인정보 수집·이용에 동의합니다', 'all', true, 'users', 'privacy_agreed_at')
+   '010-0000-0000', null, null, 'all', true, 'users', 'phone'),
+  ('address',           '주소',                   'address',  false, true, 60,
+   null, '다음 우편번호 검색으로 입력됩니다', null, 'all', true, 'users', null),
+  ('privacy_agreement', '개인정보 처리 방침 동의', 'checkbox', true, true, 70,
+   null, '개인정보 수집·이용에 동의합니다', null, 'all', true, 'users', 'privacy_agreed_at')
 ON CONFLICT (field_key) DO NOTHING;
+
+-- joy: 기존 DB에 이미 시드가 들어간 경우를 위한 sort_order 업데이트 + login_id 필드 upsert
+UPDATE signup_field_definitions SET sort_order = 50 WHERE field_key = 'email';
+UPDATE signup_field_definitions SET sort_order = 20 WHERE field_key = 'password';
+UPDATE signup_field_definitions SET sort_order = 30 WHERE field_key = 'name';
+UPDATE signup_field_definitions SET sort_order = 40 WHERE field_key = 'phone';
+UPDATE signup_field_definitions SET sort_order = 60 WHERE field_key = 'address';
+UPDATE signup_field_definitions SET sort_order = 70 WHERE field_key = 'privacy_agreement';
+
+INSERT INTO signup_field_definitions
+  (field_key, label, field_type, is_required, is_active, sort_order,
+   placeholder, help_text, validation_rule, target_role, is_system, storage_target, storage_column)
+VALUES
+  ('login_id', '아이디', 'text', true, true, 10,
+   '영문/숫자 5자 이상', '영문, 숫자만 사용 가능 (5자 이상)',
+   '{"pattern": "^[a-zA-Z0-9]{5,}$", "message": "영문, 숫자 5자 이상으로 입력해주세요"}',
+   'all', true, 'users', 'login_id')
+ON CONFLICT (field_key) DO UPDATE SET
+  label          = EXCLUDED.label,
+  sort_order     = EXCLUDED.sort_order,
+  placeholder    = EXCLUDED.placeholder,
+  help_text      = EXCLUDED.help_text,
+  validation_rule = EXCLUDED.validation_rule,
+  storage_target = EXCLUDED.storage_target,
+  storage_column = EXCLUDED.storage_column,
+  is_system      = EXCLUDED.is_system;
 
 -- 10) user_field_values : 회원이 입력한 동적 필드 값 -- joy 작성
 CREATE TABLE IF NOT EXISTS user_field_values (
@@ -2991,6 +3062,26 @@ CREATE TRIGGER trg_user_field_values_updated_at
 -- ---------------------------------------------------------------------------
 -- 11) 헬퍼 함수 (SECURITY DEFINER로 RLS 재귀 회피) -- joy 작성
 -- ---------------------------------------------------------------------------
+
+-- joy: 아이디 기반 로그인/비밀번호 찾기용 RPC.
+--   익명 사용자가 login_id로 email을 조회할 수 있도록 SECURITY DEFINER로 RLS 우회.
+--   이메일만 반환하여 개인정보 노출 최소화.
+CREATE OR REPLACE FUNCTION get_email_by_login_id(p_login_id TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_email TEXT;
+BEGIN
+  SELECT email INTO v_email
+  FROM users
+  WHERE login_id = p_login_id
+  LIMIT 1;
+  RETURN v_email;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION is_super_admin(uid UUID)
 RETURNS BOOLEAN
 LANGUAGE sql STABLE SECURITY DEFINER AS $$
