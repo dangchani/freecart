@@ -14,7 +14,8 @@ export type FieldType =
   | 'time'
   | 'datetime'
   | 'address'
-  | 'file';
+  | 'file'
+  | 'terms';
 
 export type StorageTarget = 'auth' | 'users' | 'custom';
 
@@ -35,6 +36,8 @@ export interface FieldDefinition {
   is_system: boolean;
   storage_target: StorageTarget;
   storage_column: string | null;
+  terms_id: string | null;
+  terms?: { id: string; title: string; content: string } | null;
 }
 
 // 필드 값(입력 상태) — 타입별로 다양한 형태 가능

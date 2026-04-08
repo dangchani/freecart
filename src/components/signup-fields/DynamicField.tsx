@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { openDaumPostcode } from '@/lib/daum-postcode';
+import { TermsField } from './TermsField';
 import type { FieldDefinition, FieldValue, AddressValue } from './types';
 
 interface Props {
@@ -227,6 +228,24 @@ export function DynamicField({ definition, value, onChange, error, disabled }: P
 
   if (field_type === 'file') {
     return <FileFieldInner definition={definition} value={value} onChange={onChange} error={error} disabled={disabled} />;
+  }
+
+  if (field_type === 'terms') {
+    const t = definition.terms;
+    if (!t) return null;
+    return (
+      <TermsField
+        fieldKey={field_key}
+        label={definition.label}
+        isRequired={definition.is_required}
+        helpText={definition.help_text}
+        termsTitle={t.title}
+        termsContent={t.content}
+        value={value === true}
+        onChange={(checked) => onChange(checked)}
+        error={error}
+      />
+    );
   }
 
   return null;

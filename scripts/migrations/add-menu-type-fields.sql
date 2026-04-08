@@ -10,6 +10,11 @@ ALTER TABLE menus
 CREATE INDEX IF NOT EXISTS idx_menus_category_id ON menus(category_id);
 CREATE INDEX IF NOT EXISTS idx_menus_board_id    ON menus(board_id);
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_menus_unique_category_id
+  ON menus(category_id) WHERE category_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_menus_unique_board_id
+  ON menus(board_id) WHERE board_id IS NOT NULL;
+
 -- 기존 레코드는 모두 'link' 타입으로 유지
 
 -- 시스템 고정 메뉴 항목 삽입 (없을 때만)

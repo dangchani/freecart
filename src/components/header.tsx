@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { ShoppingCart, User, Menu, Search, X, Shield, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -22,27 +22,6 @@ const SYSTEM_URL_MAP: Record<string, string> = {
   product_qna: '/product-qna',
   review:      '/reviews',
 };
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function resolveMenuItem(m: any): MenuItem {
-  let label: string = m.name;
-  let url: string   = m.url || '/';
-
-  const cat   = Array.isArray(m.product_categories) ? m.product_categories[0] : m.product_categories;
-  const board = Array.isArray(m.boards)             ? m.boards[0]             : m.boards;
-
-  if (m.menu_type === 'category' && cat) {
-    label = cat.name;
-    url   = `/categories/${cat.slug}`;
-  } else if (m.menu_type === 'board' && board) {
-    label = board.name;
-    url   = `/boards/${board.slug}`;
-  } else if (SYSTEM_URL_MAP[m.menu_type]) {
-    url = SYSTEM_URL_MAP[m.menu_type];
-  }
-
-  return { id: m.id, label, url, sortOrder: m.sort_order, children: [] };
-}
 
 function DesktopMenuItem({ item }: { item: MenuItem }) {
   const [open, setOpen] = useState(false);
@@ -105,38 +84,96 @@ export function Header() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [expandedMobileIds, setExpandedMobileIds] = useState<Set<string>>(new Set());
 
+  const location = useLocation();
+
   useEffect(() => {
     getSetting('site_name', 'Freecart').then(setSiteName);
-    loadMenus();
   }, []);
+
+  // 라우트 변경 시마다 메뉴 재조회 (어드민에서 변경 후 메인으로 돌아올 때 반영)
+  useEffect(() => {
+    loadMenus();
+  }, [location.pathname]);
 
   async function loadMenus() {
     try {
       const supabase = createClient();
-      const { data } = await supabase
-        .from('menus')
-        .select('id, menu_type, name, url, sort_order, category_id, board_id, product_categories(name, slug), boards(name, slug)')
-        .eq('is_visible', true)
-        .eq('position', 'header')
-        .order('sort_order', { ascending: true });
 
-      if (!data) return;
+      // menus(순서·숨김 설정) + categories + boards 병렬 조회
+      const [menusRes, catsRes, boardsRes] = await Promise.all([
+        supabase
+          .from('menus')
+          .select('id, menu_type, name, url, sort_order, is_visible, category_id, board_id')
+          .eq('position', 'header'),
+        supabase
+          .from('product_categories')
+          .select('id, name, slug, sort_order')
+          .eq('is_visible', true)
+          .is('parent_id', null)
+          .order('sort_order'),
+        supabase
+          .from('boards')
+          .select('id, name, slug, sort_order')
+          .eq('is_active', true)
+          .order('sort_order'),
+      ]);
 
-      // category_id / board_id 기준 중복 제거
-      const seenCatIds   = new Set<string>();
-      const seenBoardIds = new Set<string>();
-      const deduped = data.filter((m: any) => {
+      const menus   = menusRes.data  || [];
+      const cats    = catsRes.data   || [];
+      const boards  = boardsRes.data || [];
+
+      // menus 테이블에서 카테고리·게시판의 is_visible / sort_order 맵 구축
+      const catMenuMap   = new Map<string, { isVisible: boolean; sortOrder: number }>();
+      const boardMenuMap = new Map<string, { isVisible: boolean; sortOrder: number }>();
+      const otherItems: MenuItem[] = [];
+
+      for (const m of menus) {
         if (m.menu_type === 'category' && m.category_id) {
-          if (seenCatIds.has(m.category_id)) return false;
-          seenCatIds.add(m.category_id);
+          catMenuMap.set(m.category_id, { isVisible: m.is_visible, sortOrder: m.sort_order });
         } else if (m.menu_type === 'board' && m.board_id) {
-          if (seenBoardIds.has(m.board_id)) return false;
-          seenBoardIds.add(m.board_id);
+          boardMenuMap.set(m.board_id, { isVisible: m.is_visible, sortOrder: m.sort_order });
+        } else if (m.is_visible) {
+          // 시스템·직접링크 항목
+          otherItems.push({
+            id: m.id,
+            label: m.name,
+            url: m.url || (SYSTEM_URL_MAP[m.menu_type] ?? '/'),
+            sortOrder: m.sort_order,
+            children: [],
+          });
         }
-        return true;
-      });
+      }
 
-      setMenuItems(deduped.map(resolveMenuItem));
+      const result: MenuItem[] = [...otherItems];
+
+      // 카테고리: menus 에 없으면 기본 표시 / is_visible=false 이면 숨김
+      for (const c of cats) {
+        const entry = catMenuMap.get(c.id);
+        if (entry && !entry.isVisible) continue;
+        result.push({
+          id: `cat_${c.id}`,
+          label: c.name,
+          url: `/categories/${c.slug}`,
+          sortOrder: entry?.sortOrder ?? c.sort_order,
+          children: [],
+        });
+      }
+
+      // 게시판: menus 에 없으면 기본 표시 / is_visible=false 이면 숨김
+      for (const b of boards) {
+        const entry = boardMenuMap.get(b.id);
+        if (entry && !entry.isVisible) continue;
+        result.push({
+          id: `board_${b.id}`,
+          label: b.name,
+          url: `/boards/${b.slug}`,
+          sortOrder: entry?.sortOrder ?? b.sort_order,
+          children: [],
+        });
+      }
+
+      result.sort((a, b) => a.sortOrder - b.sortOrder);
+      setMenuItems(result);
     } catch {
       // 메뉴 없으면 그냥 빈 상태 유지
     }

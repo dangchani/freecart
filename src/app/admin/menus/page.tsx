@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   DndContext,
   DragEndEvent,
@@ -186,13 +187,17 @@ export default function AdminMenusPage() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const loadingRef = useRef(false); // StrictMode 이중 실행 방지
+  const location = useLocation();
 
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
   }
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadingRef.current = false; // 페이지 진입마다 가드 초기화
+    loadData();
+  }, [location.pathname]);
 
   async function loadData() {
     if (loadingRef.current) return;
@@ -222,7 +227,7 @@ export default function AdminMenusPage() {
 
       if (menusRes.error) throw menusRes.error;
 
-      const existingCatIds  = new Set(menusRes.data?.filter(m => m.menu_type === 'category').map(m => m.category_id));
+      const existingCatIds   = new Set(menusRes.data?.filter(m => m.menu_type === 'category').map(m => m.category_id));
       const existingBoardIds = new Set(menusRes.data?.filter(m => m.menu_type === 'board').map(m => m.board_id));
 
       // menus 테이블에 없는 카테고리·게시판 자동 삽입
@@ -379,7 +384,8 @@ export default function AdminMenusPage() {
   async function handleToggle(id: string, val: boolean) {
     try {
       const supabase = createClient();
-      await supabase.from('menus').update({ is_visible: val }).eq('id', id);
+      const { error } = await supabase.from('menus').update({ is_visible: val }).eq('id', id);
+      if (error) throw error;
       setItems((prev) => prev.map((i) => (i.id === id ? { ...i, isVisible: val } : i)));
     } catch {
       showToast('상태 변경에 실패했습니다.');
