@@ -38,6 +38,7 @@ import { addToRecentlyViewed } from '@/services/recentlyViewed';
 import { RecentlyViewed } from '@/components/recently-viewed';
 import { useAuth } from '@/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
+import { getSystemSetting } from '@/lib/permissions';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
 import { Minus, Plus, ShoppingCart, Zap, ArrowLeft, Check, Star, ChevronDown, ChevronUp, Heart, AlertCircle, Crown } from 'lucide-react';
@@ -107,6 +108,7 @@ export default function ProductDetailPage() {
   const [optionsLoading, setOptionsLoading] = useState(false);
 
   // 회원 등급 가격 관련 state
+  const [useLevels, setUseLevels] = useState(true);
   const [userLevel, setUserLevel] = useState<UserLevel | null>(null);
   const [levelPrices, setLevelPrices] = useState<ProductLevelPrice[]>([]);
 
@@ -152,20 +154,29 @@ export default function ProductDetailPage() {
       .then(({ data }) => setIsWishlisted(!!data));
   }, [user, product]);
 
+  useEffect(() => {
+    getSystemSetting<boolean>('use_user_levels').then(val => {
+      setUseLevels(val !== false);
+    });
+  }, []);
+
   // 회원 등급 정보 로드
   useEffect(() => {
-    if (!user) {
+    if (!useLevels || !user) {
       setUserLevel(null);
       return;
     }
     getUserLevel(user.id).then(setUserLevel);
-  }, [user]);
+  }, [user, useLevels]);
 
   // 상품 등급별 가격 로드
   useEffect(() => {
-    if (!product) return;
+    if (!product || !useLevels) {
+      setLevelPrices([]);
+      return;
+    }
     getProductLevelPrices(product.id).then(setLevelPrices);
-  }, [product]);
+  }, [product, useLevels]);
 
   // 수량별 할인 및 타임세일 로드
   useEffect(() => {
@@ -549,7 +560,7 @@ export default function ProductDetailPage() {
             )}
 
             {/* 회원 등급 할인 표시 */}
-            {levelDiscountApplied && userLevel && (
+            {useLevels && levelDiscountApplied && userLevel && (
               <div className="mt-2 flex items-center gap-2 rounded-lg bg-purple-50 px-3 py-2">
                 <Crown className="h-4 w-4 text-purple-600" />
                 <span className="text-sm text-purple-700">
@@ -560,7 +571,7 @@ export default function ProductDetailPage() {
                 </span>
               </div>
             )}
-            {!user && (
+            {useLevels && !user && (
               <p className="mt-2 text-sm text-gray-500">
                 <Link to="/auth/login" className="text-blue-600 hover:underline">로그인</Link>하시면 회원 등급 혜택을 받으실 수 있습니다.
               </p>

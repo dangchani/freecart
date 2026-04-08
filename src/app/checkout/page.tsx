@@ -16,6 +16,7 @@ import { getUserAddresses, type UserAddress } from '@/services/addresses';
 import { useAuth } from '@/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 import { getShippingSettings, getPointSettings, getBankTransferSettings } from '@/services/settings';
+import { getSystemSetting } from '@/lib/permissions';
 import type { CartItem } from '@/types';
 import { Ticket, Coins, Check, X, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
 
@@ -176,6 +177,7 @@ export default function CheckoutPage() {
   const [showCouponList, setShowCouponList] = useState(false);
 
   // 포인트 관련 state
+  const [usePointsEnabled, setUsePointsEnabled] = useState(true);
   const [userPoints, setUserPoints] = useState(0);
   const [usePointsAmount, setUsePointsAmount] = useState(0);
   const [pointsError, setPointsError] = useState<string | null>(null);
@@ -217,10 +219,16 @@ export default function CheckoutPage() {
           if (!pg && !bt.enabled) setPgError(true);
         }),
         loadCoupons(),
-        loadPoints(),
+        getSystemSetting<boolean>('use_points').then((val) => {
+          const enabled = val !== false;
+          setUsePointsEnabled(enabled);
+          if (enabled) {
+            loadPoints();
+            getPointSettings().then((p) => setPointConfig({ minThreshold: p.minThreshold, unitAmount: p.unitAmount, maxUsagePercent: p.maxUsagePercent }));
+          }
+        }),
         loadAddresses(),
         getShippingSettings().then(setShippingConfig),
-        getPointSettings().then((p) => setPointConfig({ minThreshold: p.minThreshold, unitAmount: p.unitAmount, maxUsagePercent: p.maxUsagePercent })),
       ]);
     }
   }, [user, authLoading, navigate]);
@@ -694,7 +702,7 @@ export default function CheckoutPage() {
             </Card>
 
             {/* 포인트 */}
-            <Card className="p-6">
+            {usePointsEnabled && <Card className="p-6">
               <h2 className="mb-4 flex items-center gap-2 text-xl font-bold">
                 <Coins className="h-5 w-5" />
                 포인트
@@ -736,7 +744,7 @@ export default function CheckoutPage() {
                   1,000포인트 이상 보유 시 사용 가능합니다.
                 </p>
               )}
-            </Card>
+            </Card>}
           </div>
 
           {/* 결제 금액 + 결제 수단 */}

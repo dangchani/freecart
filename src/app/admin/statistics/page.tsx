@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
+import { getSystemSetting } from '@/lib/permissions';
 import { format, subDays, subWeeks, subMonths, startOfDay, startOfWeek, startOfMonth } from 'date-fns';
 
 type Period = 'daily' | 'weekly' | 'monthly';
@@ -48,6 +49,7 @@ export default function AdminStatisticsPage() {
   const [userLevels, setUserLevels] = useState<UserLevel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [useLevels, setUseLevels] = useState(true);
 
   useEffect(() => {
     if (!authLoading) {
@@ -63,6 +65,10 @@ export default function AdminStatisticsPage() {
     try {
       setLoading(true);
       const supabase = createClient();
+
+      const ul = await getSystemSetting<boolean>('use_user_levels');
+      const levelsEnabled = ul !== false;
+      setUseLevels(levelsEnabled);
 
       // Sales data by period
       const salesResult: SalesData[] = [];
@@ -138,24 +144,28 @@ export default function AdminStatisticsPage() {
         }))
       );
 
-      // User levels distribution
-      const { data: levelsData } = await supabase
-        .from('user_levels')
-        .select('id, name');
+      // User levels distribution (등급 기능 ON일 때만 조회)
+      if (levelsEnabled) {
+        const { data: levelsData } = await supabase
+          .from('user_levels')
+          .select('id, name');
 
-      const levelCounts: UserLevel[] = [];
-      for (const level of levelsData || []) {
-        const { count } = await supabase
-          .from('users')
-          .select('id', { count: 'exact', head: true })
-          .eq('level_id', level.id);
+        const levelCounts: UserLevel[] = [];
+        for (const level of levelsData || []) {
+          const { count } = await supabase
+            .from('users')
+            .select('id', { count: 'exact', head: true })
+            .eq('level_id', level.id);
 
-        levelCounts.push({
-          level: level.name,
-          count: count || 0,
-        });
+          levelCounts.push({
+            level: level.name,
+            count: count || 0,
+          });
+        }
+        setUserLevels(levelCounts);
+      } else {
+        setUserLevels([]);
       }
-      setUserLevels(levelCounts);
     } catch {
       setError('통계 데이터를 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -232,29 +242,31 @@ export default function AdminStatisticsPage() {
           )}
         </Card>
 
-        <Card className="p-6">
-          <h2 className="mb-4 text-lg font-bold">회원 등급 분포</h2>
-          {userLevels.length === 0 ? (
-            <p className="py-4 text-center text-sm text-gray-500">데이터가 없습니다.</p>
-          ) : (
-            <div className="space-y-3">
-              {userLevels.map((level) => (
-                <div key={level.level}>
-                  <div className="mb-1 flex items-center justify-between text-sm">
-                    <span className="font-medium">{levelLabels[level.level] || level.level}</span>
-                    <span className="text-gray-600">
-                      {level.count}명 ({totalUsers > 0 ? Math.round((level.count / totalUsers) * 100) : 0}%)
-                    </span>
+        {useLevels && (
+          <Card className="p-6">
+            <h2 className="mb-4 text-lg font-bold">회원 등급 분포</h2>
+            {userLevels.length === 0 ? (
+              <p className="py-4 text-center text-sm text-gray-500">데이터가 없습니다.</p>
+            ) : (
+              <div className="space-y-3">
+                {userLevels.map((level) => (
+                  <div key={level.level}>
+                    <div className="mb-1 flex items-center justify-between text-sm">
+                      <span className="font-medium">{levelLabels[level.level] || level.level}</span>
+                      <span className="text-gray-600">
+                        {level.count}명 ({totalUsers > 0 ? Math.round((level.count / totalUsers) * 100) : 0}%)
+                      </span>
+                    </div>
+                    <div className="h-4 overflow-hidden rounded-full bg-gray-100">
+                      <div className="h-full rounded-full bg-purple-500 transition-all duration-500" style={{ width: `${totalUsers > 0 ? (level.count / totalUsers) * 100 : 0}%` }} />
+                    </div>
                   </div>
-                  <div className="h-4 overflow-hidden rounded-full bg-gray-100">
-                    <div className="h-full rounded-full bg-purple-500 transition-all duration-500" style={{ width: `${totalUsers > 0 ? (level.count / totalUsers) * 100 : 0}%` }} />
-                  </div>
-                </div>
-              ))}
-              <p className="mt-2 text-sm text-gray-500">총 회원: {totalUsers}명</p>
-            </div>
-          )}
-        </Card>
+                ))}
+                <p className="mt-2 text-sm text-gray-500">총 회원: {totalUsers}명</p>
+              </div>
+            )}
+          </Card>
+        )}
       </div>
     </div>
   );

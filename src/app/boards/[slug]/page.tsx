@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { format } from 'date-fns';
 import { ArrowLeft, Pin, MessageCircle, Eye, Edit } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { getSystemSetting } from '@/lib/permissions';
 
 interface Post {
   id: string;
@@ -44,6 +45,7 @@ export default function BoardDetailPage() {
   const [categories, setCategories] = useState<BoardCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [userLevel, setUserLevel] = useState<number>(0); // 0 = 비로그인
+  const [useLevels, setUseLevels] = useState(true);
 
   const selectedCategory = searchParams.get('category') || '';
 
@@ -54,6 +56,12 @@ export default function BoardDetailPage() {
   useEffect(() => {
     if (board) loadPosts();
   }, [board, selectedCategory]);
+
+  useEffect(() => {
+    getSystemSetting<boolean>('use_user_levels').then(val => {
+      setUseLevels(val !== false);
+    });
+  }, []);
 
   // 로그인 사용자 레벨 조회
   useEffect(() => {
@@ -148,8 +156,8 @@ export default function BoardDetailPage() {
     }
   }
 
-  // 글쓰기 권한 체크: admin은 항상 허용, 일반 유저는 write_level 비교
-  const canWrite = board ? (isAdmin || userLevel >= board.writeLevel) : false;
+  // 글쓰기 권한 체크: admin은 항상 허용, 등급 기능 ON이면 write_level 비교, OFF면 로그인만 확인
+  const canWrite = board ? (isAdmin || (useLevels ? userLevel >= board.writeLevel : !!user)) : false;
 
   if (loading) {
     return (

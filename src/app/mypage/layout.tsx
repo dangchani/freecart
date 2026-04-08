@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useLocation, Link, Outlet } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { getSystemSetting } from '@/lib/permissions';
 import {
   ShoppingBag,
   Star,
@@ -39,12 +40,19 @@ export default function MypageLayout() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { user, loading } = useAuth();
+  const [usePointsEnabled, setUsePointsEnabled] = useState(true);
 
   useEffect(() => {
     if (!loading && !user) {
       navigate('/auth/login');
     }
   }, [user, loading, navigate]);
+
+  useEffect(() => {
+    getSystemSetting<boolean>('use_points').then(val => {
+      setUsePointsEnabled(val !== false);
+    });
+  }, []);
 
   if (loading) {
     return <div className="container py-8">로딩 중...</div>;
@@ -71,7 +79,7 @@ export default function MypageLayout() {
             </div>
           </div>
           <nav className="space-y-1">
-            {navItems.map(({ href, label, icon: Icon }) => {
+            {navItems.filter(item => item.href !== '/mypage/points' || usePointsEnabled).map(({ href, label, icon: Icon }) => {
               const isActive = pathname === href || pathname.startsWith(href + '/');
               return (
                 <Link

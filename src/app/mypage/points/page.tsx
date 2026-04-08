@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Coins } from 'lucide-react';
 import { format } from 'date-fns';
 import { createClient } from '@/lib/supabase/client';
+import { getSystemSetting } from '@/lib/permissions';
 
 type FilterType = 'all' | 'earn' | 'use' | 'expire';
 
@@ -48,7 +49,13 @@ export default function PointsPage() {
         navigate('/auth/login');
         return;
       }
-      fetchPoints();
+      getSystemSetting<boolean>('use_points').then(val => {
+        if (val === false) {
+          navigate('/mypage');
+          return;
+        }
+        fetchPoints();
+      });
     }
   }, [user, authLoading, filter, page, navigate]);
 
