@@ -91,24 +91,34 @@ export default function AdminProductsPage() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('products')
-        .select('id, name, slug, sale_price, regular_price, stock_quantity, status, category_id, sku, product_images(url)')
+        .select('id, name, slug, sale_price, regular_price, stock_quantity, stock_alert_quantity, has_options, status, category_id, sku, product_images(url), product_variants(stock_quantity, is_active)')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
       setProducts(
-        (data || []).map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          slug: p.slug,
-          price: p.sale_price,
-          regularPrice: p.regular_price,
-          stock: p.stock_quantity,
-          thumbnail: p.product_images?.[0]?.url || '',
-          isActive: p.status === 'active',
-          categoryId: p.category_id,
-          sku: p.sku,
-        }))
+        (data || []).map((p: any) => {
+          const hasOptions = p.has_options;
+          const variantStock = hasOptions
+            ? ((p.product_variants || []) as any[])
+                .filter((v: any) => v.is_active)
+                .reduce((sum: number, v: any) => sum + (v.stock_quantity || 0), 0)
+            : p.stock_quantity;
+          return {
+            id: p.id,
+            name: p.name,
+            slug: p.slug,
+            price: p.sale_price,
+            regularPrice: p.regular_price,
+            stock: variantStock,
+            stockAlertQuantity: p.stock_alert_quantity ?? 10,
+            hasOptions,
+            thumbnail: p.product_images?.[0]?.url || '',
+            isActive: p.status === 'active',
+            categoryId: p.category_id,
+            sku: p.sku,
+          };
+        })
       );
     } catch (error) {
       console.error('Failed to load products:', error);
@@ -720,9 +730,12 @@ export default function AdminProductsPage() {
                 </div>
 
                 <div className="w-20 text-center">
-                  <span className={product.stock <= 10 ? 'text-red-500 font-medium' : ''}>
+                  <span className={product.stock <= (product as any).stockAlertQuantity ? 'text-red-500 font-medium' : ''}>
                     {product.stock}개
                   </span>
+                  {(product as any).hasOptions && (
+                    <p className="text-xs text-gray-400">옵션합산</p>
+                  )}
                 </div>
 
                 <div className="w-20 text-center">

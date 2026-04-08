@@ -57,7 +57,7 @@ function mapOrder(order: any): Order {
 
 export async function createOrder(
   userId: string,
-  items: { productId: string; productName: string; quantity: number; unitPrice: number; productImage?: string }[],
+  items: { productId: string; variantId?: string | null; optionText?: string; productName: string; quantity: number; unitPrice: number; productImage?: string }[],
   shippingInfo: {
     ordererName: string;
     ordererPhone: string;
@@ -117,7 +117,9 @@ export async function createOrder(
   const orderItems = items.map((item) => ({
     order_id: order.id,
     product_id: item.productId,
+    variant_id: item.variantId || null,
     product_name: item.productName,
+    option_text: item.optionText || null,
     product_image: item.productImage || null,
     unit_price: item.unitPrice,
     quantity: item.quantity,
@@ -127,8 +129,22 @@ export async function createOrder(
   }));
 
   const { error: itemsError } = await supabase.from('order_items').insert(orderItems);
-
   if (itemsError) throw itemsError;
+
+  // 재고 차감
+  for (const item of items) {
+    if (item.variantId) {
+      await supabase.rpc('decrement_variant_stock', {
+        p_variant_id: item.variantId,
+        p_quantity: item.quantity,
+      });
+    } else {
+      await supabase.rpc('decrement_product_stock', {
+        p_product_id: item.productId,
+        p_quantity: item.quantity,
+      });
+    }
+  }
 
   return mapOrder({ ...order, items: [] });
 }

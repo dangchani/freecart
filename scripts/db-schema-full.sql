@@ -2697,20 +2697,20 @@ INSERT INTO products (
    45000, 35000, 90, 'active', false, true, false, true, false, 'standard')
 ON CONFLICT (id) DO NOTHING;
 
--- 상품 이미지 (대표 이미지 - picsum.photos 플레이스홀더 사용)
+-- 상품 이미지 (대표 이미지 - Unsplash 실제 상품 이미지)
 INSERT INTO product_images (id, product_id, url, alt, is_primary, sort_order) VALUES
-  ('00000000-0000-0000-0000-000000000401', '00000000-0000-0000-0000-000000000301', 'https://picsum.photos/seed/tshirt/600/600',     '베이직 크루넥 티셔츠',         true, 0),
-  ('00000000-0000-0000-0000-000000000402', '00000000-0000-0000-0000-000000000302', 'https://picsum.photos/seed/pants/600/600',      '슬림핏 치노 팬츠',             true, 0),
-  ('00000000-0000-0000-0000-000000000403', '00000000-0000-0000-0000-000000000303', 'https://picsum.photos/seed/dress/600/600',      '플로럴 미디 원피스',           true, 0),
-  ('00000000-0000-0000-0000-000000000404', '00000000-0000-0000-0000-000000000304', 'https://picsum.photos/seed/tangerine/600/600',  '유기농 제주 감귤',             true, 0),
-  ('00000000-0000-0000-0000-000000000405', '00000000-0000-0000-0000-000000000305', 'https://picsum.photos/seed/beef/600/600',       '국내산 한우 불고기용',         true, 0),
-  ('00000000-0000-0000-0000-000000000406', '00000000-0000-0000-0000-000000000306', 'https://picsum.photos/seed/ginseng/600/600',    '6년근 홍삼정',                 true, 0),
-  ('00000000-0000-0000-0000-000000000407', '00000000-0000-0000-0000-000000000307', 'https://picsum.photos/seed/charger/600/600',    '스마트폰 무선충전 패드',       true, 0),
-  ('00000000-0000-0000-0000-000000000408', '00000000-0000-0000-0000-000000000308', 'https://picsum.photos/seed/earphones/600/600',  '노이즈캔슬링 블루투스 이어폰', true, 0),
-  ('00000000-0000-0000-0000-000000000409', '00000000-0000-0000-0000-000000000309', 'https://picsum.photos/seed/laptop/600/600',     '울트라북 노트북 스탠드',       true, 0),
-  ('00000000-0000-0000-0000-000000000410', '00000000-0000-0000-0000-000000000310', 'https://picsum.photos/seed/potset/600/600',     '스테인리스 냄비 세트',         true, 0),
-  ('00000000-0000-0000-0000-000000000411', '00000000-0000-0000-0000-000000000311', 'https://picsum.photos/seed/dishsoap/600/600',   '천연 주방 세제',               true, 0),
-  ('00000000-0000-0000-0000-000000000412', '00000000-0000-0000-0000-000000000312', 'https://picsum.photos/seed/yogamat/600/600',    '프리미엄 TPE 요가매트',        true, 0)
+  ('00000000-0000-0000-0000-000000000401', '00000000-0000-0000-0000-000000000301', 'https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=600&h=600&fit=crop', '베이직 크루넥 티셔츠',         true, 0),
+  ('00000000-0000-0000-0000-000000000402', '00000000-0000-0000-0000-000000000302', 'https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=600&h=600&fit=crop', '슬림핏 치노 팬츠',             true, 0),
+  ('00000000-0000-0000-0000-000000000403', '00000000-0000-0000-0000-000000000303', 'https://images.unsplash.com/photo-1568252542512-9fe8fe9c87bb?w=600&h=600&fit=crop', '플로럴 미디 원피스',           true, 0),
+  ('00000000-0000-0000-0000-000000000404', '00000000-0000-0000-0000-000000000304', 'https://images.unsplash.com/photo-1547514701-42782101795e?w=600&h=600&fit=crop',    '유기농 제주 감귤',             true, 0),
+  ('00000000-0000-0000-0000-000000000405', '00000000-0000-0000-0000-000000000305', 'https://images.unsplash.com/photo-1546833999-b9f581a1996d?w=600&h=600&fit=crop',    '국내산 한우 불고기용',         true, 0),
+  ('00000000-0000-0000-0000-000000000406', '00000000-0000-0000-0000-000000000306', 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=600&h=600&fit=crop',    '6년근 홍삼정',                 true, 0),
+  ('00000000-0000-0000-0000-000000000407', '00000000-0000-0000-0000-000000000307', 'https://images.unsplash.com/photo-1615526675159-e248c3021d3f?w=600&h=600&fit=crop', '스마트폰 무선충전 패드',       true, 0),
+  ('00000000-0000-0000-0000-000000000408', '00000000-0000-0000-0000-000000000308', 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=600&h=600&fit=crop', '노이즈캔슬링 블루투스 이어폰', true, 0),
+  ('00000000-0000-0000-0000-000000000409', '00000000-0000-0000-0000-000000000309', 'https://images.unsplash.com/photo-1593642632559-0c6d3fc62b89?w=600&h=600&fit=crop', '울트라북 노트북 스탠드',       true, 0),
+  ('00000000-0000-0000-0000-000000000410', '00000000-0000-0000-0000-000000000310', 'https://images.unsplash.com/photo-1556909211-36987daf7b4d?w=600&h=600&fit=crop',    '스테인리스 냄비 세트',         true, 0),
+  ('00000000-0000-0000-0000-000000000411', '00000000-0000-0000-0000-000000000311', 'https://images.unsplash.com/photo-1585386959984-a4155224a1ad?w=600&h=600&fit=crop', '천연 주방 세제',               true, 0),
+  ('00000000-0000-0000-0000-000000000412', '00000000-0000-0000-0000-000000000312', 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=600&h=600&fit=crop',    '프리미엄 TPE 요가매트',        true, 0)
 ON CONFLICT (id) DO NOTHING;
 
 -- =============================================================================
@@ -3152,6 +3152,28 @@ BEGIN
     WHERE id = (SELECT id FROM public.users WHERE role = 'super_admin' LIMIT 1);
   END IF;
 END $$;
+
+-- =============================================================================
+-- 재고 차감 RPC 함수 (주문 시 race condition 방지)
+-- =============================================================================
+
+CREATE OR REPLACE FUNCTION decrement_variant_stock(p_variant_id UUID, p_quantity INTEGER)
+RETURNS void AS $$
+BEGIN
+  UPDATE product_variants
+  SET stock_quantity = GREATEST(0, stock_quantity - p_quantity)
+  WHERE id = p_variant_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION decrement_product_stock(p_product_id UUID, p_quantity INTEGER)
+RETURNS void AS $$
+BEGIN
+  UPDATE products
+  SET stock_quantity = GREATEST(0, stock_quantity - p_quantity)
+  WHERE id = p_product_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- =============================================================================
 -- END OF SCHEMA
