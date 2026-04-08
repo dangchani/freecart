@@ -1318,6 +1318,12 @@ CREATE INDEX IF NOT EXISTS idx_menus_parent_id   ON menus(parent_id);
 CREATE INDEX IF NOT EXISTS idx_menus_category_id ON menus(category_id);
 CREATE INDEX IF NOT EXISTS idx_menus_board_id    ON menus(board_id);
 
+-- 같은 카테고리/게시판이 메뉴에 중복 등록되지 않도록 유니크 제약
+CREATE UNIQUE INDEX IF NOT EXISTS idx_menus_unique_category_id
+  ON menus(category_id) WHERE category_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_menus_unique_board_id
+  ON menus(board_id) WHERE board_id IS NOT NULL;
+
 -- 시스템 고정 메뉴 항목 (삭제 불가, 숨김만 가능)
 INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
 SELECT 'notice',      '공지사항', true, true, 100, 'header'

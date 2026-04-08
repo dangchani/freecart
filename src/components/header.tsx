@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { ShoppingCart, User, Menu, Search, X, Shield, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -105,10 +105,16 @@ export function Header() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [expandedMobileIds, setExpandedMobileIds] = useState<Set<string>>(new Set());
 
+  const location = useLocation();
+
   useEffect(() => {
     getSetting('site_name', 'Freecart').then(setSiteName);
-    loadMenus();
   }, []);
+
+  // 라우트 변경 시마다 메뉴 재조회 (어드민에서 변경 후 메인으로 돌아올 때 반영)
+  useEffect(() => {
+    loadMenus();
+  }, [location.pathname]);
 
   async function loadMenus() {
     try {
