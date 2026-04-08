@@ -11,24 +11,37 @@ interface MenuItem {
   id: string;
   label: string;
   url: string;
-  parentId: string | null;
   sortOrder: number;
   children: MenuItem[];
 }
 
-function buildMenuTree(flat: MenuItem[]): MenuItem[] {
-  const map: Record<string, MenuItem> = {};
-  flat.forEach((m) => { map[m.id] = { ...m, children: [] }; });
-  const roots: MenuItem[] = [];
-  flat.forEach((m) => {
-    if (m.parentId && map[m.parentId]) {
-      map[m.parentId].children.push(map[m.id]);
-    } else {
-      roots.push(map[m.id]);
-    }
-  });
-  roots.forEach((r) => r.children.sort((a, b) => a.sortOrder - b.sortOrder));
-  return roots.sort((a, b) => a.sortOrder - b.sortOrder);
+const SYSTEM_URL_MAP: Record<string, string> = {
+  notice:      '/notices',
+  faq:         '/faq',
+  inquiry:     '/inquiry',
+  product_qna: '/product-qna',
+  review:      '/reviews',
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function resolveMenuItem(m: any): MenuItem {
+  let label: string = m.name;
+  let url: string   = m.url || '/';
+
+  const cat   = Array.isArray(m.product_categories) ? m.product_categories[0] : m.product_categories;
+  const board = Array.isArray(m.boards)             ? m.boards[0]             : m.boards;
+
+  if (m.menu_type === 'category' && cat) {
+    label = cat.name;
+    url   = `/categories/${cat.slug}`;
+  } else if (m.menu_type === 'board' && board) {
+    label = board.name;
+    url   = `/boards/${board.slug}`;
+  } else if (SYSTEM_URL_MAP[m.menu_type]) {
+    url = SYSTEM_URL_MAP[m.menu_type];
+  }
+
+  return { id: m.id, label, url, sortOrder: m.sort_order, children: [] };
 }
 
 function DesktopMenuItem({ item }: { item: MenuItem }) {
@@ -102,20 +115,28 @@ export function Header() {
       const supabase = createClient();
       const { data } = await supabase
         .from('menus')
-        .select('id, name, url, parent_id, sort_order, is_visible')
+        .select('id, menu_type, name, url, sort_order, category_id, board_id, product_categories(name, slug), boards(name, slug)')
         .eq('is_visible', true)
+        .eq('position', 'header')
         .order('sort_order', { ascending: true });
 
       if (!data) return;
-      const flat: MenuItem[] = data.map((m) => ({
-        id: m.id,
-        label: m.name,
-        url: m.url || '/',
-        parentId: m.parent_id,
-        sortOrder: m.sort_order,
-        children: [],
-      }));
-      setMenuItems(buildMenuTree(flat));
+
+      // category_id / board_id 기준 중복 제거
+      const seenCatIds   = new Set<string>();
+      const seenBoardIds = new Set<string>();
+      const deduped = data.filter((m: any) => {
+        if (m.menu_type === 'category' && m.category_id) {
+          if (seenCatIds.has(m.category_id)) return false;
+          seenCatIds.add(m.category_id);
+        } else if (m.menu_type === 'board' && m.board_id) {
+          if (seenBoardIds.has(m.board_id)) return false;
+          seenBoardIds.add(m.board_id);
+        }
+        return true;
+      });
+
+      setMenuItems(deduped.map(resolveMenuItem));
     } catch {
       // 메뉴 없으면 그냥 빈 상태 유지
     }
@@ -243,8 +264,7 @@ export function Header() {
       {mobileMenuOpen && (
         <div className="border-t md:hidden bg-white">
           <nav className="container py-3 space-y-0.5">
-            {menuItems.length > 0 ? (
-              menuItems.map((item) => (
+            {menuItems.map((item) => (
                 <div key={item.id}>
                   {item.children.length > 0 ? (
                     <>
@@ -280,15 +300,7 @@ export function Header() {
                     </Link>
                   )}
                 </div>
-              ))
-            ) : (
-              // DB 메뉴 없을 때 기본 링크
-              <>
-                <Link to="/products" className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" onClick={() => setMobileMenuOpen(false)}>전체 상품</Link>
-                <Link to="/boards" className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" onClick={() => setMobileMenuOpen(false)}>커뮤니티</Link>
-                <Link to="/notices" className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" onClick={() => setMobileMenuOpen(false)}>공지사항</Link>
-              </>
-            )}
+            ))}
           </nav>
         </div>
       )}

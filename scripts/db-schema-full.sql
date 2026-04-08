@@ -1300,8 +1300,13 @@ CREATE TABLE IF NOT EXISTS menus (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   parent_id   UUID REFERENCES menus(id) ON DELETE CASCADE,
   position    VARCHAR(30) NOT NULL DEFAULT 'header',
+  menu_type   VARCHAR(20) NOT NULL DEFAULT 'link',
+  -- menu_type: 'category' | 'board' | 'notice' | 'faq' | 'inquiry' | 'product_qna' | 'review' | 'link'
   name        VARCHAR(100) NOT NULL,
   url         VARCHAR(500),
+  category_id UUID REFERENCES product_categories(id) ON DELETE CASCADE,
+  board_id    UUID REFERENCES boards(id) ON DELETE CASCADE,
+  is_system   BOOLEAN NOT NULL DEFAULT false,
   sort_order  INTEGER NOT NULL DEFAULT 0,
   is_visible  BOOLEAN NOT NULL DEFAULT true,
   target      VARCHAR(10) NOT NULL DEFAULT '_self',
@@ -1309,7 +1314,30 @@ CREATE TABLE IF NOT EXISTS menus (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_menus_parent_id ON menus(parent_id);
+CREATE INDEX IF NOT EXISTS idx_menus_parent_id   ON menus(parent_id);
+CREATE INDEX IF NOT EXISTS idx_menus_category_id ON menus(category_id);
+CREATE INDEX IF NOT EXISTS idx_menus_board_id    ON menus(board_id);
+
+-- 시스템 고정 메뉴 항목 (삭제 불가, 숨김만 가능)
+INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
+SELECT 'notice',      '공지사항', true, true, 100, 'header'
+WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'notice' AND is_system = true);
+
+INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
+SELECT 'faq',         'FAQ',      true, true, 110, 'header'
+WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'faq' AND is_system = true);
+
+INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
+SELECT 'inquiry',     '1:1 문의', true, true, 120, 'header'
+WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'inquiry' AND is_system = true);
+
+INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
+SELECT 'product_qna', '상품 Q&A', true, true, 130, 'header'
+WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'product_qna' AND is_system = true);
+
+INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
+SELECT 'review',      '리뷰',     true, true, 140, 'header'
+WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'review' AND is_system = true);
 
 DROP TRIGGER IF EXISTS trg_menus_updated_at ON menus;
 CREATE TRIGGER trg_menus_updated_at
