@@ -1392,6 +1392,24 @@ CREATE TABLE IF NOT EXISTS admin_logs (
 CREATE INDEX IF NOT EXISTS idx_admin_logs_admin_id   ON admin_logs(admin_id);
 CREATE INDEX IF NOT EXISTS idx_admin_logs_created_at ON admin_logs(created_at DESC);
 
+-- joy: is_admin / is_super_admin 헬퍼 함수 사전 정의
+-- (아래 RLS 정책들이 is_admin(uuid)을 참조하므로, 함수 본 정의(섹션 11)보다 먼저 선언)
+CREATE OR REPLACE FUNCTION is_super_admin(uid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM users WHERE id = uid AND role = 'super_admin'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION is_admin(uid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM users WHERE id = uid AND role IN ('admin', 'super_admin')
+  );
+$$;
+
 -- joy: admin_logs RLS — 관리자만 조회, 본인이 admin_id인 로그만 insert
 ALTER TABLE admin_logs ENABLE ROW LEVEL SECURITY;
 
