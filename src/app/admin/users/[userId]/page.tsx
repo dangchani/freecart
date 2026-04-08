@@ -26,6 +26,7 @@ interface UserDetail {
   isBlocked: boolean;
   memo: string;
   address: string;
+  role: string;
   orders?: Order[];
 }
 
@@ -111,7 +112,7 @@ export default function AdminUserDetailPage() {
 
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('id, name, email, phone, points, is_blocked, created_at, memo, level_id, user_levels(name)')
+        .select('id, name, email, phone, points, is_blocked, created_at, memo, level_id, role, user_levels(name)')
         .eq('id', userId!)
         .single();
 
@@ -144,6 +145,7 @@ export default function AdminUserDetailPage() {
         createdAt: userData.created_at,
         isBlocked: userData.is_blocked,
         memo: userData.memo || '',
+        role: (userData as any).role || 'user',
         address: addressData ? [addressData.address1, addressData.address2].filter(Boolean).join(' ') : '',
         orders: (ordersData || []).map((o) => ({
           id: o.id,
@@ -428,7 +430,7 @@ export default function AdminUserDetailPage() {
       {userId && (
         <div className="mb-6 space-y-4">
           <UserPermissionSection userId={userId} />
-          <UserManagersSection userId={userId} />
+          {userDetail.role === 'user' && <UserManagersSection userId={userId} />}
         </div>
       )}
 
