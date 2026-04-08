@@ -30,6 +30,7 @@ import CheckoutPage from './app/checkout/page';
 import CheckoutSuccessPage from './app/checkout/success/page';
 import CheckoutFailPage from './app/checkout/fail/page';
 import BankTransferPage from './app/checkout/bank-transfer/page';
+import KiwoomMockPage from './app/checkout/kiwoom-mock/page';
 
 // Mypage
 import MypageLayout from './app/mypage/layout';
@@ -118,6 +119,9 @@ import AdminAccountsPage from './app/admin/admins/page';
 import AdminWebhooksPage from './app/admin/webhooks/page';
 import AdminPagesPage from './app/admin/pages/page';
 import ContentPage from './app/pages/[slug]/page';
+import OAuthCallbackPage from './app/admin/oauth/callback/page';
+import PendingApprovalPage from './app/auth/pending-approval/page';
+import { PrivateMallGuard } from './components/private-mall-guard';
 
 function MainLayout() {
   return (
@@ -156,31 +160,40 @@ export default function App() {
 
         {/* 메인 레이아웃 */}
         <Route element={<MainLayout />}>
-          <Route path="/" element={<HomePage />} />
 
-          {/* 인증 */}
+          {/* 인증 (폐쇄몰 여부 무관하게 항상 접근 가능) */}
           <Route path="/auth/login" element={<LoginPage />} />
           <Route path="/auth/signup" element={<SignupPage />} />
           <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
           <Route path="/auth/callback" element={<AuthCallbackPage />} />
+          <Route path="/auth/pending-approval" element={<PendingApprovalPage />} />
+
+          {/* 폐쇄몰 mode='full' 일 때 메인부터 차단 */}
+          <Route element={<PrivateMallGuard scope="site" />}>
+
+          {/* 메인 */}
+          <Route path="/" element={<HomePage />} />
 
           {/* 카테고리 */}
           <Route path="/categories/:slug" element={<CategoryPage />} />
 
-          {/* 상품 */}
+          {/* 상품 목록/검색은 mode='full'만 차단, 상세/구매는 mode='product'도 차단 */}
           <Route path="/products" element={<ProductsPage />} />
           <Route path="/products/search" element={<ProductSearchPage />} />
           <Route path="/products/compare" element={<ProductComparePage />} />
-          <Route path="/products/:slug" element={<ProductDetailPage />} />
-          <Route path="/products/:slug/reviews/new" element={<NewReviewPage />} />
 
-          {/* 장바구니 & 결제 */}
-          <Route path="/cart" element={<CartPage />} />
-          <Route path="/checkout" element={<CheckoutPage />} />
-          <Route path="/checkout/success" element={<CheckoutSuccessPage />} />
-          <Route path="/checkout/fail" element={<CheckoutFailPage />} />
-          <Route path="/checkout/bank-transfer" element={<BankTransferPage />} />
+          {/* 폐쇄몰 mode='product' 이상 차단 영역 */}
+          <Route element={<PrivateMallGuard scope="content" />}>
+            <Route path="/products/:slug" element={<ProductDetailPage />} />
+            <Route path="/products/:slug/reviews/new" element={<NewReviewPage />} />
+            <Route path="/cart" element={<CartPage />} />
+            <Route path="/checkout" element={<CheckoutPage />} />
+            <Route path="/checkout/success" element={<CheckoutSuccessPage />} />
+            <Route path="/checkout/fail" element={<CheckoutFailPage />} />
+            <Route path="/checkout/bank-transfer" element={<BankTransferPage />} />
+            <Route path="/checkout/kiwoom-mock" element={<KiwoomMockPage />} />
+          </Route>
 
           {/* 게시판 */}
           <Route path="/boards" element={<BoardsPage />} />
@@ -224,8 +237,13 @@ export default function App() {
             </Route>
           </Route>
 
+          </Route> {/* /PrivateMallGuard scope="site" */}
+
           <Route path="*" element={<NotFoundPage />} />
         </Route>
+
+        {/* OAuth 콜백 (팝업용, 레이아웃 없음) */}
+        <Route path="/admin/oauth/callback" element={<OAuthCallbackPage />} />
 
         {/* 어드민 (관리자 인증 필요) */}
         <Route element={<RequireAdmin />}>

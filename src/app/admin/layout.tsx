@@ -8,10 +8,13 @@ import {
   LayoutDashboard,
   Users,
   UserPlus,
+  Award,
   Package,
   Tag,
+  PackageSearch,
   ShoppingCart,
   RefreshCcw,
+  Truck,
   Ticket,
   Star,
   HelpCircle,
@@ -20,12 +23,12 @@ import {
   BookOpen,
   Bell,
   Image,
+  Layers,
   Settings,
   BarChart2,
   Repeat,
   CreditCard,
   Palette,
-  Layers,
   ScrollText,
   ShieldBan,
   Eye,
@@ -33,11 +36,15 @@ import {
   KeyRound,
   ToggleRight,
   FormInput,
-  Truck,
   ChevronDown,
   ChevronUp,
   Store,
   LogOut,
+  Link2,
+  Webhook,
+  FileText,
+  Navigation,
+  Megaphone,
 } from 'lucide-react';
 
 type NavItem = {
@@ -61,6 +68,7 @@ const navItems: NavItem[] = [
     children: [
       { href: '/admin/users', label: '전체 회원', icon: Users, permission: 'users.read', exact: true },
       { href: '/admin/users/pending', label: '가입 승인', icon: UserPlus, permission: 'users.approve' },
+      { href: '/admin/user-levels', label: '회원 등급', icon: Award, permission: 'users.read' },
     ],
   },
 
@@ -69,8 +77,9 @@ const navItems: NavItem[] = [
     icon: Package,
     permission: 'products.read',
     children: [
-      { href: '/admin/products', label: '상품 목록', icon: Package, permission: 'products.read' },
+      { href: '/admin/products', label: '상품 목록', icon: Package, permission: 'products.read', exact: true },
       { href: '/admin/categories', label: '카테고리', icon: Tag, permission: 'products.write' },
+      { href: '/admin/products/bulk', label: '일괄 관리', icon: PackageSearch, permission: 'products.write' },
     ],
   },
 
@@ -80,6 +89,7 @@ const navItems: NavItem[] = [
     permission: 'orders.read',
     children: [
       { href: '/admin/orders', label: '전체 주문', icon: ShoppingCart, permission: 'orders.read', exact: true },
+      { href: '/admin/orders/bulk-shipment', label: '일괄 발송', icon: Truck, permission: 'orders.write' },
       { href: '/admin/refunds', label: '환불/반품', icon: RefreshCcw, permission: 'orders.cancel' },
       { href: '/admin/subscriptions', label: '정기배송', icon: Repeat, permission: 'orders.read' },
     ],
@@ -105,7 +115,8 @@ const navItems: NavItem[] = [
     permission: 'coupons.write',
     children: [
       { href: '/admin/coupons', label: '쿠폰', icon: Ticket, permission: 'coupons.write' },
-      { href: '/admin/banners', label: '배너/팝업', icon: Image, permission: 'settings.write' },
+      { href: '/admin/banners', label: '배너', icon: Image, permission: 'settings.write' },
+      { href: '/admin/popups', label: '팝업', icon: Megaphone, permission: 'settings.write' },
     ],
   },
 
@@ -116,6 +127,8 @@ const navItems: NavItem[] = [
     children: [
       { href: '/admin/themes', label: '테마', icon: Palette, permission: 'settings.write' },
       { href: '/admin/skins', label: '스킨', icon: Layers, permission: 'settings.write' },
+      { href: '/admin/menus', label: '메뉴 관리', icon: Navigation, permission: 'settings.write' },
+      { href: '/admin/pages', label: '페이지 관리', icon: FileText, permission: 'settings.write' },
     ],
   },
 
@@ -138,8 +151,11 @@ const navItems: NavItem[] = [
       { href: '/admin/settings', label: '기본 설정', icon: Settings, permission: 'settings.read', exact: true },
       { href: '/admin/settings/shipping', label: '배송 설정', icon: Truck, permission: 'settings.write' },
       { href: '/admin/payment-gateways', label: 'PG사 설정', icon: CreditCard, permission: 'settings.read' },
-      { href: '/admin/ip-blocks', label: 'IP 차단', icon: ShieldBan, permission: 'settings.write' },
+      { href: '/admin/terms', label: '약관 관리', icon: ScrollText, permission: 'settings.write' },
       { href: '/admin/settings/signup-fields', label: '회원가입 필드', icon: FormInput, permission: 'signup_fields.manage' },
+      { href: '/admin/external-connections', label: '외부 연동', icon: Link2, permission: 'settings.write' },
+      { href: '/admin/webhooks', label: '웹훅', icon: Webhook, permission: 'settings.write' },
+      { href: '/admin/ip-blocks', label: 'IP 차단', icon: ShieldBan, permission: 'settings.write' },
       { href: '/admin/settings/system', label: '시스템 설정', icon: ToggleRight, superAdminOnly: true },
       { href: '/admin/settings/roles', label: '역할 관리', icon: KeyRound, superAdminOnly: true },
     ],

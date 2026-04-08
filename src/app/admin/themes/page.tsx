@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Package, CheckCircle, Trash2, Download, Key, X, ShoppingCart, Star, Plus, Settings, Upload, Palette, LayoutGrid } from 'lucide-react';
+import { Package, CheckCircle, Trash2, Download, X, ShoppingCart, Star, Plus, Settings, Upload, Palette, LayoutGrid } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { getStoreThemes } from '@/services/store';
 import { uploadThemeCSS, uploadThemeThumbnail, deleteThemeFiles, downloadAndInstallTheme } from '@/services/theme-storage';
+import { getValidAccessToken, getOAuthConnection, startOAuthFlow, disconnectOAuth, OAuthConnection } from '@/services/oauth';
 
 interface Theme {
   id: string;
@@ -66,9 +67,15 @@ export default function AdminThemesPage() {
   const [toast, setToast] = useState('');
 
   // 스토어 설치 모달
-  const [licenseModal, setLicenseModal] = useState<{ themeId: string; themeName: string; themeSlug: string } | null>(null);
-  const [licenseKey, setLicenseKey] = useState('');
+  const [installModal, setInstallModal] = useState<{ themeId: string; themeName: string; themeSlug: string; price: number } | null>(null);
   const [installLoading, setInstallLoading] = useState(false);
+  // 도메인 관리
+  const [domains, setDomains] = useState<{ id: string; domain: string; label: string | null; hasActivations: boolean }[]>([]);
+  const [domainsLoading, setDomainsLoading] = useState(false);
+  const [selectedDomain, setSelectedDomain] = useState('');
+  const [newDomainInput, setNewDomainInput] = useState('');
+  const [addingDomain, setAddingDomain] = useState(false);
+  const [purchaseStatus, setPurchaseStatus] = useState<'loading' | 'purchased' | 'not_purchased'>('loading');
 
   // 커스텀 테마 생성
   const [createForm, setCreateForm] = useState({
@@ -86,6 +93,13 @@ export default function AdminThemesPage() {
   // 테마 설정 모달
   const [configModal, setConfigModal] = useState<Theme | null>(null);
   const [editConfig, setEditConfig] = useState<ThemeConfig>({ ...defaultConfig });
+  const [pendingAutoInstall, setPendingAutoInstall] = useState<{ themeId: string; domain: string } | null>(null);
+  // 팝업 구매 완료 후 자동 설치 트리거
+  const [postPurchaseInstall, setPostPurchaseInstall] = useState(false);
+
+  // freecart-web 연동 상태
+  const [oauthConn, setOauthConn] = useState<OAuthConnection | null | undefined>(undefined);
+  const [oauthLoading, setOauthLoading] = useState(false);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -94,7 +108,57 @@ export default function AdminThemesPage() {
 
   useEffect(() => {
     loadThemes();
+    getOAuthConnection().then(setOauthConn).catch(() => setOauthConn(null));
+
+    // 결제 후 자동 설치: ?install_theme=ID&install_domain=DOMAIN
+    const urlParams = new URLSearchParams(window.location.search);
+    const installThemeId = urlParams.get('install_theme');
+    const installDomain = urlParams.get('install_domain');
+    if (installThemeId) {
+      // URL 파라미터 제거
+      window.history.replaceState({}, '', window.location.pathname);
+      // available 탭으로 전환 후 자동 설치 트리거
+      setActiveTab('available');
+      setPendingAutoInstall({ themeId: installThemeId, domain: installDomain || '' });
+    }
   }, []);
+
+  // 팝업 구매 완료 후 자동 설치
+  useEffect(() => {
+    if (postPurchaseInstall && purchaseStatus === 'purchased') {
+      setPostPurchaseInstall(false);
+      installFromStore();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [postPurchaseInstall, purchaseStatus]);
+
+  async function handleOAuthConnect() {
+    setOauthLoading(true);
+    try {
+      const result = await startOAuthFlow();
+      if (result.success) {
+        const conn = await getOAuthConnection();
+        setOauthConn(conn);
+        showToast(`freecart-web 연동 완료: ${result.email}`);
+      } else {
+        showToast(result.error || '연동 실패');
+      }
+    } finally {
+      setOauthLoading(false);
+    }
+  }
+
+  async function handleOAuthDisconnect() {
+    if (!confirm('freecart-web 연동을 해제하시겠습니까?')) return;
+    setOauthLoading(true);
+    try {
+      await disconnectOAuth();
+      setOauthConn(null);
+      showToast('연동이 해제되었습니다.');
+    } finally {
+      setOauthLoading(false);
+    }
+  }
 
   async function loadThemes() {
     try {
@@ -128,10 +192,29 @@ export default function AdminThemesPage() {
   }
 
   useEffect(() => {
-    if (activeTab === 'available' && available.length === 0) {
-      loadAvailableThemes();
+    if (activeTab === 'available') {
+      if (available.length === 0) {
+        loadAvailableThemes();
+      } else if (pendingAutoInstall) {
+        triggerAutoInstall(available);
+      }
     }
-  }, [activeTab]);
+  }, [activeTab, available]);
+
+  useEffect(() => {
+    if (pendingAutoInstall && available.length > 0) {
+      triggerAutoInstall(available);
+    }
+  }, [pendingAutoInstall, available]);
+
+  function triggerAutoInstall(themes: AvailableTheme[]) {
+    if (!pendingAutoInstall) return;
+    const found = themes.find((t) => t.id === pendingAutoInstall.themeId);
+    if (found) {
+      setPendingAutoInstall(null);
+      openInstallModal(found, pendingAutoInstall.domain);
+    }
+  }
 
   async function loadAvailableThemes() {
     setAvailableLoading(true);
@@ -199,34 +282,149 @@ export default function AdminThemesPage() {
     }
   }
 
+  // 설치 모달 열기
+  async function openInstallModal(theme: AvailableTheme, preselectedDomain?: string) {
+    setInstallModal({ themeId: theme.id, themeName: theme.name, themeSlug: theme.slug, price: theme.price });
+    setSelectedDomain(preselectedDomain || window.location.host);
+    setNewDomainInput('');
+    setPurchaseStatus('loading');
+
+    const accessToken = await getValidAccessToken().catch(() => null);
+    if (!accessToken) { setPurchaseStatus('not_purchased'); return; }
+
+    // 도메인 목록 조회
+    setDomainsLoading(true);
+    try {
+      const res = await fetch(`${STORE_API_URL}/api/oauth/me/domains`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const data = await res.json();
+      const domainList = data.data || [];
+      setDomains(domainList);
+
+      // 현재 host가 없으면 자동 추가 선택
+      const currentHost = window.location.host;
+      if (!domainList.find((d: { domain: string }) => d.domain === currentHost)) {
+        setNewDomainInput(currentHost);
+      }
+    } catch { setDomains([]); }
+    finally { setDomainsLoading(false); }
+
+    // 구매 상태 조회
+    try {
+      const res = await fetch(`${STORE_API_URL}/api/oauth/me/purchase-status?theme_id=${theme.id}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const data = await res.json();
+      setPurchaseStatus(data.purchased ? 'purchased' : 'not_purchased');
+    } catch { setPurchaseStatus('not_purchased'); }
+  }
+
+  // 도메인 등록
+  async function addDomain() {
+    if (!newDomainInput.trim()) return;
+    const accessToken = await getValidAccessToken().catch(() => null);
+    if (!accessToken) return;
+    setAddingDomain(true);
+    try {
+      const res = await fetch(`${STORE_API_URL}/api/oauth/me/domains`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: newDomainInput.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDomains((prev) => [...prev, { id: data.data.id, domain: data.data.domain, label: null, hasActivations: false }]);
+        setSelectedDomain(data.data.domain);
+        setNewDomainInput('');
+      } else {
+        showToast(data.error || '도메인 등록 실패');
+      }
+    } finally { setAddingDomain(false); }
+  }
+
+  // 도메인 삭제
+  async function removeDomain(domain: string) {
+    const accessToken = await getValidAccessToken().catch(() => null);
+    if (!accessToken) return;
+    const res = await fetch(`${STORE_API_URL}/api/oauth/me/domains`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      setDomains((prev) => prev.filter((d) => d.domain !== domain));
+      if (selectedDomain === domain) setSelectedDomain('');
+    } else {
+      showToast(data.error || '삭제 실패');
+    }
+  }
+
   // 스토어에서 테마 설치
   async function installFromStore() {
-    if (!licenseModal) return;
+    if (!installModal) return;
     setInstallLoading(true);
     try {
-      // freecart-web에서 테마 다운로드 후 Storage에 업로드
+      const accessToken = await getValidAccessToken().catch(() => null);
+
+      if (purchaseStatus === 'not_purchased' && installModal.price > 0) {
+        // 팝업으로 구매 페이지 열기
+        const redirectBack = window.location.origin + window.location.pathname;
+        const purchaseUrl = `${STORE_API_URL}/marketplace/themes/${installModal.themeId}?redirect_back=${encodeURIComponent(redirectBack)}&install_domain=${encodeURIComponent(selectedDomain)}`;
+        const popup = window.open(purchaseUrl, 'theme_purchase', 'width=900,height=700,resizable=yes,scrollbars=yes');
+        if (!popup) {
+          // 팝업 차단된 경우 fallback
+          window.location.href = purchaseUrl;
+          return;
+        }
+        setInstallLoading(false);
+
+        // 구매 완료 메시지 수신
+        const messageHandler = (event: MessageEvent) => {
+          if (event.data?.type === 'THEME_PURCHASED') {
+            window.removeEventListener('message', messageHandler);
+            popup.close();
+            setPurchaseStatus('purchased');
+            setPostPurchaseInstall(true); // useEffect에서 감지하여 설치 진행
+          }
+        };
+        window.addEventListener('message', messageHandler);
+        return;
+      }
+
       const downloadResult = await downloadAndInstallTheme(
         STORE_API_URL,
-        licenseModal.themeId,
-        licenseModal.themeSlug,
-        licenseKey || undefined
+        installModal.themeId,
+        installModal.themeSlug,
+        undefined,
+        accessToken || undefined
       );
+
+      if (!downloadResult.success) {
+        if (downloadResult.code === 'DOMAIN_LIMIT_EXCEEDED') {
+          const ds = downloadResult.activatedDomains?.join(', ') || '';
+          showToast(`이미 다른 도메인(${ds})에서 사용 중입니다. 이 도메인에서 사용하려면 별도 구매가 필요합니다.`);
+        } else {
+          showToast(downloadResult.error || '설치에 실패했습니다.');
+        }
+        return;
+      }
 
       const supabase = createClient();
       const { error } = await supabase.from('installed_themes').insert({
-        slug: licenseModal.themeSlug,
-        name: licenseModal.themeName,
+        slug: installModal.themeSlug,
+        name: installModal.themeName,
         version: '1.0.0',
         source: 'store',
-        license_key: licenseKey || null,
         css_url: downloadResult.cssUrl || null,
         is_active: false,
       });
 
       if (error) throw error;
       showToast('테마가 설치되었습니다.');
-      setLicenseModal(null);
-      setLicenseKey('');
+      setInstallModal(null);
+      setActiveTab('installed');
       await loadThemes();
     } catch (err) {
       console.error('테마 설치 실패:', err);
@@ -331,35 +529,104 @@ export default function AdminThemesPage() {
       )}
 
       {/* 스토어 설치 모달 */}
-      {licenseModal && (
+      {installModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-lg">테마 설치 - {licenseModal.themeName}</h3>
-              <button onClick={() => setLicenseModal(null)}>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-bold text-lg">{installModal.themeName}</h3>
+              <button onClick={() => setInstallModal(null)}>
                 <X className="h-5 w-5 text-gray-400 hover:text-gray-600" />
               </button>
             </div>
-            <p className="text-sm text-gray-500 mb-4">
-              테마 파일이 Supabase Storage에 저장됩니다.
+            <p className="text-sm text-gray-400 mb-4">
+              {installModal.price > 0 ? `${installModal.price.toLocaleString()}원` : '무료'}
+              {' · '}
+              {purchaseStatus === 'loading' ? '구매 확인 중...' : purchaseStatus === 'purchased'
+                ? <span className="text-green-600 font-medium">구매 완료 ✓</span>
+                : <span className="text-orange-500">미구매</span>}
             </p>
+
+            {/* 도메인 선택 */}
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Key className="h-4 w-4 inline mr-1" />
-                라이선스 키 (유료 테마인 경우)
-              </label>
-              <input
-                type="text"
-                value={licenseKey}
-                onChange={(e) => setLicenseKey(e.target.value)}
-                placeholder="라이선스 키를 입력하세요"
-                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <label className="block text-sm font-semibold text-gray-700 mb-2">설치 도메인 선택</label>
+
+              {domainsLoading ? (
+                <div className="text-xs text-gray-400 py-2">도메인 목록 로딩 중...</div>
+              ) : (
+                <div className="space-y-1.5 mb-3">
+                  {domains.map((d) => (
+                    <div
+                      key={d.id}
+                      className={`flex items-center justify-between rounded-lg border px-3 py-2 cursor-pointer transition-colors ${selectedDomain === d.domain ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:bg-gray-50'}`}
+                      onClick={() => setSelectedDomain(d.domain)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={`w-3.5 h-3.5 rounded-full border-2 flex-shrink-0 ${selectedDomain === d.domain ? 'border-blue-500 bg-blue-500' : 'border-gray-300'}`} />
+                        <span className="text-sm font-medium">{d.domain}</span>
+                        {d.hasActivations && (
+                          <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">활성화됨</span>
+                        )}
+                      </div>
+                      {!d.hasActivations && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeDomain(d.domain); }}
+                          className="text-gray-300 hover:text-red-400 ml-2"
+                          title="삭제"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 도메인 추가 */}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newDomainInput}
+                  onChange={(e) => setNewDomainInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && addDomain()}
+                  placeholder="새 도메인 추가 (예: localhost:3000)"
+                  className="flex-1 border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={addDomain}
+                  disabled={addingDomain || !newDomainInput.trim()}
+                  className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-sm rounded-lg disabled:opacity-50"
+                >
+                  {addingDomain ? '...' : '추가'}
+                </button>
+              </div>
+
+              {!oauthConn && (
+                <p className="text-xs text-orange-500 mt-2">
+                  freecart-web 연동 시 도메인 관리 및 구매 연동이 가능합니다.
+                </p>
+              )}
             </div>
+
             <div className="flex gap-3">
-              <button onClick={() => setLicenseModal(null)} className="flex-1 border border-gray-300 rounded-lg py-2 text-sm font-medium hover:bg-gray-50">취소</button>
-              <button onClick={installFromStore} disabled={installLoading} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-2 text-sm font-medium disabled:opacity-50">
-                {installLoading ? '설치 중...' : '설치'}
+              <button
+                onClick={() => setInstallModal(null)}
+                className="flex-1 border border-gray-300 rounded-lg py-2 text-sm font-medium hover:bg-gray-50"
+              >
+                취소
+              </button>
+              <button
+                onClick={installFromStore}
+                disabled={installLoading || purchaseStatus === 'loading' || !selectedDomain}
+                className={`flex-1 rounded-lg py-2 text-sm font-medium disabled:opacity-50 text-white ${
+                  purchaseStatus === 'not_purchased' && installModal.price > 0
+                    ? 'bg-orange-500 hover:bg-orange-600'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                {installLoading ? '처리 중...' :
+                  purchaseStatus === 'not_purchased' && installModal.price > 0
+                    ? `${installModal.price.toLocaleString()}원 구매하기`
+                    : '설치'}
               </button>
             </div>
           </div>
@@ -580,6 +847,39 @@ export default function AdminThemesPage() {
       {/* 테마 스토어 */}
       {activeTab === 'available' && (
         <div>
+          {/* freecart-web 연동 상태 배너 */}
+          {oauthConn === null && (
+            <div className="mb-4 flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-blue-800">freecart-web 미연동</p>
+                <p className="text-xs text-blue-600 mt-0.5">연동하면 구매한 유료 테마를 라이선스 키 없이 바로 설치할 수 있습니다.</p>
+              </div>
+              <button
+                onClick={handleOAuthConnect}
+                disabled={oauthLoading}
+                className="shrink-0 ml-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {oauthLoading ? '연동 중...' : 'freecart-web 연동하기'}
+              </button>
+            </div>
+          )}
+          {oauthConn && (
+            <div className="mb-4 flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
+                <p className="text-sm font-medium text-green-800">freecart-web 연동됨</p>
+                <span className="text-xs text-green-600">{oauthConn.freecartUserEmail}</span>
+              </div>
+              <button
+                onClick={handleOAuthDisconnect}
+                disabled={oauthLoading}
+                className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+              >
+                연동 해제
+              </button>
+            </div>
+          )}
+
           {availableLoading ? (
             <div className="flex justify-center py-12">
               <span className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
@@ -633,13 +933,15 @@ export default function AdminThemesPage() {
                       </div>
                     )}
                     <button
-                      onClick={() => setLicenseModal({ themeId: theme.id, themeName: theme.name, themeSlug: theme.slug })}
-                      className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 rounded-lg flex items-center justify-center gap-2 transition-colors"
+                      onClick={() => openInstallModal(theme)}
+                      className={`mt-4 w-full text-white text-sm font-medium py-2 rounded-lg flex items-center justify-center gap-2 transition-colors ${
+                        theme.price === 0 ? 'bg-blue-600 hover:bg-blue-700' : 'bg-orange-500 hover:bg-orange-600'
+                      }`}
                     >
                       {theme.price === 0 ? (
                         <><Download className="h-4 w-4" />무료 설치</>
                       ) : (
-                        <><ShoppingCart className="h-4 w-4" />구매 후 설치</>
+                        <><ShoppingCart className="h-4 w-4" />{theme.price.toLocaleString()}원 구매/설치</>
                       )}
                     </button>
                   </div>

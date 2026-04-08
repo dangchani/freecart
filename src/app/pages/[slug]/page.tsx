@@ -30,9 +30,19 @@ export default function ContentPageView() {
     }
   }, [slug]);
 
+  // slug → terms.type 매핑 (footer 링크 연결용)
+  const TERMS_SLUG_MAP: Record<string, string> = {
+    privacy: 'privacy_policy',
+    'privacy-policy': 'privacy_policy',
+    terms: 'terms_of_service',
+    'terms-of-service': 'terms_of_service',
+  };
+
   async function fetchPage(pageSlug: string) {
     try {
       const supabase = createClient();
+
+      // 1차: content_pages 테이블에서 조회
       const { data, error } = await supabase
         .from('content_pages')
         .select('*')
@@ -40,46 +50,81 @@ export default function ContentPageView() {
         .eq('is_visible', true)
         .single();
 
-      if (error || !data) {
-        setNotFound(true);
+      if (!error && data) {
+        setPage(data);
+        applyPageSEO(data);
+        await supabase
+          .from('content_pages')
+          .update({ view_count: (data.view_count || 0) + 1 })
+          .eq('id', data.id);
         return;
       }
 
-      setPage(data);
+      // 2차: terms 테이블 fallback (약관/개인정보처리방침)
+      // slug 자체 또는 매핑된 type 모두 허용 (예: privacy → privacy_policy or privacy)
+      const termType = TERMS_SLUG_MAP[pageSlug];
+      const termTypeValues = termType ? [termType, pageSlug] : [pageSlug];
 
-      // SEO 메타 태그 설정
-      if (data.seo_title || data.title) {
-        document.title = data.seo_title || data.title;
-      }
-      if (data.seo_description) {
-        let metaDesc = document.querySelector('meta[name="description"]');
-        if (!metaDesc) {
-          metaDesc = document.createElement('meta');
-          metaDesc.setAttribute('name', 'description');
-          document.head.appendChild(metaDesc);
+      if (termTypeValues.length > 0) {
+        const { data: termData, error: termError } = await supabase
+          .from('terms')
+          .select('id, title, content, type, created_at')
+          .in('type', termTypeValues)
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (!termError && termData) {
+          setPage({
+            id: termData.id,
+            title: termData.title,
+            slug: pageSlug,
+            content: termData.content,
+            type: termData.type,
+            excerpt: null,
+            seo_title: termData.title,
+            seo_description: null,
+            seo_keywords: null,
+            view_count: 0,
+            created_at: termData.created_at,
+            updated_at: termData.created_at,
+          });
+          document.title = termData.title;
+          return;
         }
-        metaDesc.setAttribute('content', data.seo_description);
-      }
-      if (data.seo_keywords) {
-        let metaKeywords = document.querySelector('meta[name="keywords"]');
-        if (!metaKeywords) {
-          metaKeywords = document.createElement('meta');
-          metaKeywords.setAttribute('name', 'keywords');
-          document.head.appendChild(metaKeywords);
-        }
-        metaKeywords.setAttribute('content', data.seo_keywords);
       }
 
-      // 조회수 증가
-      await supabase
-        .from('content_pages')
-        .update({ view_count: (data.view_count || 0) + 1 })
-        .eq('id', data.id);
+      setNotFound(true);
     } catch (err) {
       console.error('페이지 로딩 실패:', err);
       setNotFound(true);
     } finally {
       setLoading(false);
+    }
+  }
+
+  function applyPageSEO(data: ContentPage) {
+    if (data.seo_title || data.title) {
+      document.title = data.seo_title || data.title;
+    }
+    if (data.seo_description) {
+      let metaDesc = document.querySelector('meta[name="description"]');
+      if (!metaDesc) {
+        metaDesc = document.createElement('meta');
+        metaDesc.setAttribute('name', 'description');
+        document.head.appendChild(metaDesc);
+      }
+      metaDesc.setAttribute('content', data.seo_description);
+    }
+    if (data.seo_keywords) {
+      let metaKeywords = document.querySelector('meta[name="keywords"]');
+      if (!metaKeywords) {
+        metaKeywords = document.createElement('meta');
+        metaKeywords.setAttribute('name', 'keywords');
+        document.head.appendChild(metaKeywords);
+      }
+      metaKeywords.setAttribute('content', data.seo_keywords);
     }
   }
 
