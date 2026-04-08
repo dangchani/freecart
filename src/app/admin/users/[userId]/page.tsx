@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
@@ -9,8 +9,11 @@ import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ArrowLeft } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { getSystemSetting } from '@/lib/permissions';
+import { logAdminAction, buildDiff } from '@/lib/admin-log';
 import { UserManagersSection } from '@/components/admin/user-managers-section';
-import { UserCustomFieldsSection } from '@/components/admin/user-custom-fields-section';
+import { UserSignupFieldsSection, type UserSignupFieldsSectionHandle } from '@/components/admin/user-signup-fields-section';
+import { UserPermissionSection } from '@/components/admin/user-permission-section';
 
 interface UserDetail {
   id: string;
@@ -23,6 +26,7 @@ interface UserDetail {
   isBlocked: boolean;
   memo: string;
   address: string;
+  role: string;
   orders?: Order[];
 }
 
@@ -63,9 +67,33 @@ export default function AdminUserDetailPage() {
   const [memo, setMemo] = useState('');
   const [selectedLevel, setSelectedLevel] = useState('');
 
+  // joy: 기본 정보 편집 상태 (이름/전화번호). 이메일은 수정 불가.
+  const [editingBasic, setEditingBasic] = useState(false);
+  const [basicForm, setBasicForm] = useState({ name: '', phone: '' });
+  const [savingBasic, setSavingBasic] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
+  const signupFieldsRef = useRef<UserSignupFieldsSectionHandle>(null);
+
   const [pointAction, setPointAction] = useState<'add' | 'subtract'>('add');
   const [pointAmount, setPointAmount] = useState('');
   const [pointReason, setPointReason] = useState('');
+
+  const [useLevels, setUseLevels] = useState(true);
+  const [usePoints, setUsePoints] = useState(true);
+  const [pointLabel, setPointLabel] = useState('포인트');
+
+  useEffect(() => {
+    (async () => {
+      const [ul, up, pl] = await Promise.all([
+        getSystemSetting<boolean>('use_user_levels'),
+        getSystemSetting<boolean>('use_points'),
+        getSystemSetting<string>('point_label'),
+      ]);
+      setUseLevels(ul !== false);
+      setUsePoints(up !== false);
+      if (typeof pl === 'string' && pl) setPointLabel(pl);
+    })();
+  }, []);
 
   useEffect(() => {
     if (!authLoading) {
@@ -84,19 +112,19 @@ export default function AdminUserDetailPage() {
 
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('id, name, email, phone, points, is_blocked, created_at, memo, level_id, user_levels(name)')
+        .select('id, name, email, phone, points, is_blocked, created_at, memo, level_id, role, user_levels(name)')
         .eq('id', userId!)
         .single();
 
       if (userError) throw userError;
 
-      // Get default address
+      // Get default address (없을 수 있으므로 maybeSingle)
       const { data: addressData } = await supabase
         .from('user_addresses')
         .select('address1, address2')
         .eq('user_id', userId!)
         .eq('is_default', true)
-        .single();
+        .maybeSingle();
 
       // Get orders
       const { data: ordersData } = await supabase
@@ -117,6 +145,7 @@ export default function AdminUserDetailPage() {
         createdAt: userData.created_at,
         isBlocked: userData.is_blocked,
         memo: userData.memo || '',
+        role: (userData as any).role || 'user',
         address: addressData ? [addressData.address1, addressData.address2].filter(Boolean).join(' ') : '',
         orders: (ordersData || []).map((o) => ({
           id: o.id,
@@ -130,6 +159,7 @@ export default function AdminUserDetailPage() {
       setUserDetail(detail);
       setMemo(detail.memo);
       setSelectedLevel(detail.level || 'bronze');
+      setBasicForm({ name: detail.name, phone: detail.phone });
     } catch {
       setError('회원 정보를 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -140,16 +170,110 @@ export default function AdminUserDetailPage() {
   async function handleSaveMemo() {
     try {
       const supabase = createClient();
+      const before = userDetail?.memo ?? '';
       const { error: updateError } = await supabase
         .from('users')
         .update({ memo })
         .eq('id', userId!);
 
       if (updateError) throw updateError;
+      if (before !== memo) {
+        await logAdminAction({
+          action: 'update_memo',
+          resourceType: 'users',
+          resourceId: userId!,
+          details: { before: { memo: before }, after: { memo } },
+        });
+      }
       setEditingMemo(false);
       await loadUser();
     } catch (err) {
       alert(err instanceof Error ? err.message : '메모 저장 중 오류가 발생했습니다.');
+    }
+  }
+
+  // joy: 회원 기본정보(이름/전화번호) 저장 + admin_logs 기록
+  async function handleSaveBasic() {
+    if (!userDetail) return;
+    const name = basicForm.name.trim();
+    if (!name) {
+      alert('이름을 입력해주세요.');
+      return;
+    }
+    const phone = basicForm.phone.trim();
+    const diff = buildDiff(
+      { name: userDetail.name, phone: userDetail.phone },
+      { name, phone },
+    );
+    const signupHasChanges = signupFieldsRef.current?.hasChanges() ?? false;
+    if (!diff && !signupHasChanges) {
+      setEditingBasic(false);
+      return;
+    }
+    try {
+      setSavingBasic(true);
+      if (diff) {
+        const supabase = createClient();
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({ name, phone: phone || null })
+          .eq('id', userId!);
+        if (updateError) throw updateError;
+
+        await logAdminAction({
+          action: 'update',
+          resourceType: 'users',
+          resourceId: userId!,
+          details: diff,
+        });
+      }
+
+      // 회원가입 동적 필드 저장 (내부에서 자체 로그 기록)
+      if (signupHasChanges) {
+        const ok = await signupFieldsRef.current?.save();
+        if (!ok) {
+          setSavingBasic(false);
+          return;
+        }
+      }
+
+      setEditingBasic(false);
+      await loadUser();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '기본 정보 저장 중 오류가 발생했습니다.');
+    } finally {
+      setSavingBasic(false);
+    }
+  }
+
+  function handleCancelBasic() {
+    if (!userDetail) return;
+    setBasicForm({ name: userDetail.name, phone: userDetail.phone });
+    setEditingBasic(false);
+  }
+
+  // joy: 비밀번호 초기화 — A안: 재설정 메일 발송 + 로그 기록
+  async function handleResetPassword() {
+    if (!userDetail) return;
+    if (!confirm(`${userDetail.email} 주소로 비밀번호 재설정 메일을 발송하시겠습니까?`)) return;
+    try {
+      setResettingPassword(true);
+      const supabase = createClient();
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(userDetail.email);
+      if (resetError) throw resetError;
+
+      await logAdminAction({
+        action: 'password_reset',
+        resourceType: 'users',
+        resourceId: userId!,
+        details: { method: 'reset_email', email: userDetail.email },
+      });
+
+      alert('비밀번호 재설정 메일이 발송되었습니다.');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '비밀번호 초기화 중 오류가 발생했습니다.');
+    } finally {
+      setResettingPassword(false);
     }
   }
 
@@ -166,12 +290,19 @@ export default function AdminUserDetailPage() {
 
       if (levelError || !levelData) throw new Error('등급을 찾을 수 없습니다.');
 
+      const beforeLevel = userDetail?.level ?? '';
       const { error: updateError } = await supabase
         .from('users')
         .update({ level_id: levelData.id })
         .eq('id', userId!);
 
       if (updateError) throw updateError;
+      await logAdminAction({
+        action: 'change_level',
+        resourceType: 'users',
+        resourceId: userId!,
+        details: { before: beforeLevel, after: selectedLevel },
+      });
       alert('등급이 변경되었습니다.');
       await loadUser();
     } catch (err) {
@@ -216,6 +347,18 @@ export default function AdminUserDetailPage() {
         description: pointReason || (pointAction === 'add' ? '관리자 지급' : '관리자 차감'),
       });
 
+      await logAdminAction({
+        action: 'adjust_points',
+        resourceType: 'users',
+        resourceId: userId!,
+        details: {
+          type: pointAction,
+          amount: actualAmount,
+          balance: newBalance,
+          reason: pointReason || null,
+        },
+      });
+
       alert('포인트가 처리되었습니다.');
       setPointAmount('');
       setPointReason('');
@@ -231,12 +374,18 @@ export default function AdminUserDetailPage() {
     if (!confirm(`해당 회원을 ${action}하시겠습니까?`)) return;
     try {
       const supabase = createClient();
+      const nextBlocked = !userDetail.isBlocked;
       const { error: updateError } = await supabase
         .from('users')
-        .update({ is_blocked: !userDetail.isBlocked })
+        .update({ is_blocked: nextBlocked })
         .eq('id', userId!);
 
       if (updateError) throw updateError;
+      await logAdminAction({
+        action: nextBlocked ? 'block' : 'unblock',
+        resourceType: 'users',
+        resourceId: userId!,
+      });
       await loadUser();
     } catch (err) {
       alert(err instanceof Error ? err.message : '처리 중 오류가 발생했습니다.');
@@ -277,34 +426,70 @@ export default function AdminUserDetailPage() {
         </Button>
       </div>
 
-      {/* joy: 담당자 + 커스텀 필드 섹션 */}
+      {/* joy: 권한 + 담당자 + 커스텀 필드 섹션 */}
       {userId && (
         <div className="mb-6 space-y-4">
-          <UserManagersSection userId={userId} />
-          <UserCustomFieldsSection userId={userId} />
+          <UserPermissionSection userId={userId} />
+          {userDetail.role === 'user' && <UserManagersSection userId={userId} />}
         </div>
       )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* 기본 정보 */}
         <Card className="p-6">
-          <h2 className="mb-4 text-lg font-bold">기본 정보</h2>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-bold">기본 정보</h2>
+            {!editingBasic && (
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => setEditingBasic(true)}>
+                  수정
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleResetPassword}
+                  disabled={resettingPassword}
+                >
+                  {resettingPassword ? '발송 중...' : '비밀번호 초기화'}
+                </Button>
+              </div>
+            )}
+          </div>
           <dl className="space-y-3 text-sm">
-            <div className="flex justify-between">
-              <dt className="text-gray-500">이름</dt>
-              <dd className="font-medium">{userDetail.name}</dd>
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-gray-500 shrink-0">이름</dt>
+              <dd className="font-medium text-right flex-1">
+                {editingBasic ? (
+                  <input
+                    type="text"
+                    value={basicForm.name}
+                    onChange={(e) => setBasicForm((f) => ({ ...f, name: e.target.value }))}
+                    className="w-full rounded-md border px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                ) : (
+                  userDetail.name
+                )}
+              </dd>
             </div>
-            <div className="flex justify-between">
-              <dt className="text-gray-500">이메일</dt>
-              <dd>{userDetail.email}</dd>
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-gray-500 shrink-0">이메일</dt>
+              <dd className="text-right flex-1">{userDetail.email}</dd>
             </div>
-            <div className="flex justify-between">
-              <dt className="text-gray-500">전화번호</dt>
-              <dd>{userDetail.phone || '-'}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-gray-500">주소</dt>
-              <dd>{userDetail.address || '-'}</dd>
+            <div className="flex items-center justify-between gap-4">
+              <dt className="text-gray-500 shrink-0">휴대폰번호</dt>
+              <dd className="text-right flex-1">
+                {editingBasic ? (
+                  <input
+                    type="tel"
+                    value={basicForm.phone}
+                    onChange={(e) => setBasicForm((f) => ({ ...f, phone: e.target.value }))}
+                    className="w-full rounded-md border px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="010-0000-0000"
+                  />
+                ) : (
+                  userDetail.phone || '-'
+                )}
+              </dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-gray-500">가입일</dt>
@@ -318,17 +503,41 @@ export default function AdminUserDetailPage() {
                 </Badge>
               </dd>
             </div>
+
+            {/* joy: 회원가입 필드 동적 표시 (기본 4개 제외한 활성 필드) */}
+            {userId && (
+              <div className="border-t pt-3 space-y-3">
+                <UserSignupFieldsSection ref={signupFieldsRef} userId={userId} editing={editingBasic} />
+              </div>
+            )}
           </dl>
+
+          {editingBasic && (
+            <div className="mt-4 flex gap-2 border-t pt-4">
+              <Button size="sm" onClick={handleSaveBasic} disabled={savingBasic}>
+                {savingBasic ? '저장 중...' : '저장'}
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleCancelBasic} disabled={savingBasic}>
+                취소
+              </Button>
+            </div>
+          )}
         </Card>
 
         {/* 등급 및 포인트 */}
+        {(useLevels || usePoints) && (
         <Card className="p-6">
-          <h2 className="mb-4 text-lg font-bold">등급 및 포인트</h2>
+          <h2 className="mb-4 text-lg font-bold">
+            {useLevels && usePoints ? `등급 및 ${pointLabel}` : useLevels ? '등급' : pointLabel}
+          </h2>
+          {usePoints && (
           <div className="mb-4">
-            <p className="mb-1 text-sm text-gray-500">현재 포인트</p>
+            <p className="mb-1 text-sm text-gray-500">현재 {pointLabel}</p>
             <p className="text-2xl font-bold">{(userDetail.points || 0).toLocaleString()}P</p>
           </div>
+          )}
 
+          {useLevels && (
           <div className="mb-4">
             <label className="mb-1 block text-sm font-medium text-gray-700">등급 변경</label>
             <div className="flex gap-2">
@@ -346,9 +555,11 @@ export default function AdminUserDetailPage() {
               <Button onClick={handleChangeLevel} size="sm">변경</Button>
             </div>
           </div>
+          )}
 
+          {usePoints && (
           <form onSubmit={handlePointSubmit}>
-            <label className="mb-1 block text-sm font-medium text-gray-700">포인트 조정</label>
+            <label className="mb-1 block text-sm font-medium text-gray-700">{pointLabel} 조정</label>
             <div className="mb-2 flex gap-2">
               <button
                 type="button"
@@ -371,7 +582,7 @@ export default function AdminUserDetailPage() {
             </div>
             <input
               type="number"
-              placeholder="포인트 금액"
+              placeholder={`${pointLabel} 금액`}
               value={pointAmount}
               onChange={(e) => setPointAmount(e.target.value)}
               min="1"
@@ -384,9 +595,11 @@ export default function AdminUserDetailPage() {
               onChange={(e) => setPointReason(e.target.value)}
               className="mb-2 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <Button type="submit" className="w-full">포인트 처리</Button>
+            <Button type="submit" className="w-full">{pointLabel} 처리</Button>
           </form>
+          )}
         </Card>
+        )}
 
         {/* 메모 */}
         <Card className="p-6">

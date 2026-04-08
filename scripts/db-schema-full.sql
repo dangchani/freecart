@@ -1392,6 +1392,37 @@ CREATE TABLE IF NOT EXISTS admin_logs (
 CREATE INDEX IF NOT EXISTS idx_admin_logs_admin_id   ON admin_logs(admin_id);
 CREATE INDEX IF NOT EXISTS idx_admin_logs_created_at ON admin_logs(created_at DESC);
 
+-- joy: is_admin / is_super_admin 헬퍼 함수 사전 정의
+-- (아래 RLS 정책들이 is_admin(uuid)을 참조하므로, 함수 본 정의(섹션 11)보다 먼저 선언)
+CREATE OR REPLACE FUNCTION is_super_admin(uid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM users WHERE id = uid AND role = 'super_admin'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION is_admin(uid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM users WHERE id = uid AND role IN ('admin', 'super_admin')
+  );
+$$;
+
+-- joy: admin_logs RLS — 관리자만 조회, 본인이 admin_id인 로그만 insert
+ALTER TABLE admin_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "admin_logs_select_admin" ON admin_logs;
+CREATE POLICY "admin_logs_select_admin" ON admin_logs
+  FOR SELECT USING (is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS "admin_logs_insert_self" ON admin_logs;
+CREATE POLICY "admin_logs_insert_self" ON admin_logs
+  FOR INSERT WITH CHECK (
+    is_admin(auth.uid()) AND admin_id = auth.uid()
+  );
+
 -- 10.7 ip_blocks (IP 차단)
 CREATE TABLE IF NOT EXISTS ip_blocks (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2033,6 +2064,12 @@ CREATE POLICY "users_update_own" ON users
 DROP POLICY IF EXISTS "user_addresses_own" ON user_addresses;
 CREATE POLICY "user_addresses_own" ON user_addresses
   FOR ALL USING (auth.uid()::text = user_id::text);
+
+-- joy: 관리자(admin/super_admin)는 모든 회원의 주소를 조회/수정 가능
+DROP POLICY IF EXISTS "user_addresses_admin_all" ON user_addresses;
+CREATE POLICY "user_addresses_admin_all" ON user_addresses
+  FOR ALL USING (is_admin(auth.uid()))
+  WITH CHECK (is_admin(auth.uid()));
 
 -- user_points_history: read own history
 DROP POLICY IF EXISTS "user_points_history_read_own" ON user_points_history;
@@ -2766,7 +2803,15 @@ INSERT INTO system_settings (key, value, description) VALUES
   -- joy: 회원가입 시 관리자 승인이 필요한 사이트와 그렇지 않은 사이트를 토글로 전환하기 위한 설정.
   -- true이면 가입 후 is_approved=true가 되기 전까지 일반 사용자 로그인 차단.
   ('require_signup_approval', 'false'::jsonb,
-   '회원가입 시 관리자 승인 필요 여부. true이면 is_approved=false 상태의 일반 사용자는 로그인 불가')
+   '회원가입 시 관리자 승인 필요 여부. true이면 is_approved=false 상태의 일반 사용자는 로그인 불가'),
+  -- joy: 회원 등급 기능 사용 여부. false면 관리자 회원 목록/상세에서 등급 UI 숨김
+  ('use_user_levels', 'true'::jsonb,
+   '회원 등급 기능 사용 여부. false이면 관리자 회원 관리 화면에서 등급 컬럼/변경 UI를 숨김'),
+  -- joy: 포인트 기능 사용 여부 + 명칭. false면 회원 목록/상세에서 포인트 UI 숨김
+  ('use_points', 'true'::jsonb,
+   '포인트 기능 사용 여부. false이면 관리자 회원 관리 화면에서 포인트 컬럼/조정 UI를 숨김'),
+  ('point_label', '"포인트"'::jsonb,
+   '포인트 명칭(예: 포인트, 적립금, 마일리지). UI 라벨에 사용됨')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------------------------------------------------------------------

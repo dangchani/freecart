@@ -126,13 +126,19 @@ export function DynamicSignupForm({ onSuccess, previewOnly, previewDefinitions }
       // 3) 주소 → user_addresses
       if (usersMeta['_address']) {
         const a = usersMeta['_address'] as AddressValue;
-        await supabase.from('user_addresses').insert({
+        const recipientName = String(usersMeta['name'] ?? '') || '회원';
+        const recipientPhone = String(usersMeta['phone'] ?? '') || '-';
+        const { error: addrErr } = await supabase.from('user_addresses').insert({
           user_id: newUserId,
-          zipcode: a.zonecode,
+          name: '기본 배송지',
+          recipient_name: recipientName,
+          recipient_phone: recipientPhone,
+          postal_code: a.zonecode,
           address1: a.address,
           address2: a.detailAddress,
           is_default: true,
         });
+        if (addrErr) console.error('user_addresses insert failed:', addrErr);
       }
 
       // 4) 커스텀 필드 bulk insert

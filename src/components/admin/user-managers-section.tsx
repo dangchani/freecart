@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { getSystemSetting } from '@/lib/permissions';
 
 interface AdminOption {
   id: string;
@@ -24,6 +25,7 @@ export function UserManagersSection({ userId }: Props) {
   const [assigned, setAssigned] = useState<AdminOption[]>([]);
   const [allAdmins, setAllAdmins] = useState<AdminOption[]>([]);
   const [loading, setLoading] = useState(true);
+  const [enabled, setEnabled] = useState(false); // joy: enable_user_assignment 토글
   const [modalOpen, setModalOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
@@ -34,6 +36,13 @@ export function UserManagersSection({ userId }: Props) {
 
   async function load() {
     setLoading(true);
+    const toggle = await getSystemSetting<boolean>('enable_user_assignment');
+    if (toggle !== true) {
+      setEnabled(false);
+      setLoading(false);
+      return;
+    }
+    setEnabled(true);
     const [{ data: mgr }, { data: adminList }] = await Promise.all([
       supabase.from('user_managers').select('manager_user_id').eq('user_id', userId),
       supabase.from('users').select('id, name, email').in('role', ['admin', 'super_admin']).order('name'),
@@ -64,6 +73,7 @@ export function UserManagersSection({ userId }: Props) {
   }
 
   if (loading) return null;
+  if (!enabled) return null;
 
   return (
     <Card className="p-6">
