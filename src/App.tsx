@@ -106,7 +106,6 @@ import AdminExternalConnectionsPage from './app/admin/external-connections/page'
 import AdminPaymentGatewaysPage from './app/admin/payment-gateways/page';
 import AdminShippingSettingsPage from './app/admin/settings/shipping/page';
 // joy: Phase 3 신규 페이지
-import AdminSystemSettingsPage from './app/admin/settings/system/page';
 import AdminRolesPage from './app/admin/settings/roles/page';
 import AdminPendingApprovalPage from './app/admin/users/pending/page';
 import AdminSignupFieldsPage from './app/admin/settings/signup-fields/page';
@@ -274,7 +273,6 @@ export default function App() {
             <Route path="/admin/refunds" element={<AdminRefundsPage />} />
             <Route path="/admin/settings" element={<AdminSettingsPage />} />
             <Route path="/admin/settings/shipping" element={<AdminShippingSettingsPage />} />
-            <Route path="/admin/settings/system" element={<AdminSystemSettingsPage />} />
             <Route path="/admin/settings/roles" element={<AdminRolesPage />} />
             <Route path="/admin/settings/signup-fields" element={<AdminSignupFieldsPage />} />
             <Route path="/admin/statistics" element={<AdminStatisticsPage />} />

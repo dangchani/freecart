@@ -138,6 +138,13 @@ export default function AdminSettingsPage() {
   const [applyError, setApplyError] = useState('');
   const [applySuccess, setApplySuccess] = useState('');
 
+  // system_settings 상태
+  const [requireSignupApproval, setRequireSignupApproval] = useState(false);
+  const [enableUserAssignment, setEnableUserAssignment] = useState(false);
+  const [useUserLevels, setUseUserLevels] = useState(false);
+  const [usePoints, setUsePoints] = useState(false);
+  const [pointLabel, setPointLabel] = useState('포인트');
+
   // freecart-web OAuth 연동 상태
   const [oauthConn, setOauthConn] = useState<OAuthConnection | null>(null);
   const [oauthLoading, setOauthLoading] = useState(false);
@@ -214,6 +221,19 @@ export default function AdminSettingsPage() {
       }
 
       setSettings(loaded as Settings);
+
+      // system_settings 일괄 로드
+      const { data: sysRows } = await supabase
+        .from('system_settings')
+        .select('key, value')
+        .in('key', ['require_signup_approval', 'enable_user_assignment', 'use_user_levels', 'use_points', 'point_label']);
+      for (const row of sysRows ?? []) {
+        if (row.key === 'require_signup_approval') setRequireSignupApproval(row.value === true);
+        if (row.key === 'enable_user_assignment') setEnableUserAssignment(row.value === true);
+        if (row.key === 'use_user_levels') setUseUserLevels(row.value === true);
+        if (row.key === 'use_points') setUsePoints(row.value === true);
+        if (row.key === 'point_label' && typeof row.value === 'string') setPointLabel(row.value);
+      }
     } catch {
       setError('설정을 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -250,6 +270,23 @@ export default function AdminSettingsPage() {
           .upsert({ key: dbKey, value }, { onConflict: 'key' });
 
         if (upsertError) throw upsertError;
+      }
+
+      // system_settings 일괄 저장
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      const sysUpdates = [
+        { key: 'require_signup_approval', value: requireSignupApproval },
+        { key: 'enable_user_assignment', value: enableUserAssignment },
+        { key: 'use_user_levels', value: useUserLevels },
+        { key: 'use_points', value: usePoints },
+        { key: 'point_label', value: pointLabel },
+      ];
+      for (const { key, value } of sysUpdates) {
+        const { error: sysError } = await supabase
+          .from('system_settings')
+          .update({ value, updated_by: authUser?.id ?? null })
+          .eq('key', key);
+        if (sysError) throw sysError;
       }
 
       invalidateSettingsCache();
@@ -399,37 +436,6 @@ export default function AdminSettingsPage() {
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">무료배송 기준금액 (원)</label>
               <input type="number" name="freeShippingThreshold" value={settings.freeShippingThreshold} onChange={handleChange} min="0" className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="50000" />
-            </div>
-          </div>
-        </Card>
-
-        {/* 포인트 설정 */}
-        <Card className="p-6">
-          <h2 className="mb-4 text-lg font-bold">포인트 설정</h2>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">기본 적립률 (%)</label>
-              <input type="number" name="pointEarnRate" value={settings.pointEarnRate} onChange={handleChange} min="0" max="100" step="0.1" className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="1" />
-              <p className="mt-1 text-xs text-gray-500">구매금액 대비 포인트 적립 비율</p>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">회원가입 포인트 (P)</label>
-              <input type="number" name="signupPoints" value={settings.signupPoints} onChange={handleChange} min="0" className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="1000" />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">최소 보유 포인트 (사용 기준)</label>
-              <input type="number" name="pointsMinThreshold" value={settings.pointsMinThreshold} onChange={handleChange} min="0" className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="1000" />
-              <p className="mt-1 text-xs text-gray-500">이 금액 이상 보유 시 포인트 사용 가능</p>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">사용 단위 (원)</label>
-              <input type="number" name="pointsUnitAmount" value={settings.pointsUnitAmount} onChange={handleChange} min="1" className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="100" />
-              <p className="mt-1 text-xs text-gray-500">포인트 사용 최소 단위</p>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">최대 사용 비율 (%)</label>
-              <input type="number" name="pointsMaxUsagePercent" value={settings.pointsMaxUsagePercent} onChange={handleChange} min="1" max="100" className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="50" />
-              <p className="mt-1 text-xs text-gray-500">결제금액의 몇 %까지 포인트로 결제 가능</p>
             </div>
           </div>
         </Card>
@@ -813,7 +819,11 @@ export default function AdminSettingsPage() {
             </div>
             <button
               type="button"
-              onClick={() => setSettings((prev) => ({ ...prev, closedMallEnabled: prev.closedMallEnabled === 'true' ? 'false' : 'true' }))}
+              onClick={() => {
+                const turningOn = settings.closedMallEnabled !== 'true';
+                setSettings((prev) => ({ ...prev, closedMallEnabled: turningOn ? 'true' : 'false' }));
+                if (turningOn) setRequireSignupApproval(true);
+              }}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
                 settings.closedMallEnabled === 'true' ? 'bg-blue-600' : 'bg-gray-200'
               }`}
@@ -863,11 +873,155 @@ export default function AdminSettingsPage() {
               </label>
 
               <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
-                <strong>※ 승인 조건:</strong> 로그인 + 관리자가 회원을 직접 승인한 경우에만 접근 가능합니다.
+                <strong>※ 승인 조건:</strong> 폐쇄몰 활성화 시 아래 '회원 가입 설정'의 관리자 승인 기능이 자동으로 켜집니다.
                 회원 승인은 <a href="/admin/users" className="underline hover:text-amber-900">회원 관리</a> 페이지에서 할 수 있습니다.
               </div>
             </div>
           )}
+        </Card>
+
+        {/* 회원 가입 설정 */}
+        <Card className="p-6">
+          <h2 className="text-lg font-semibold mb-1">회원 가입 설정</h2>
+          <p className="text-sm text-gray-500 mb-5">가입 후 로그인 허용 방식을 설정합니다.</p>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-sm">회원가입 시 관리자 승인 필요</p>
+              <p className="text-xs text-gray-400 mt-0.5">켜면 가입 후 관리자가 직접 승인해야 로그인할 수 있습니다.</p>
+              {settings.closedMallEnabled === 'true' && (
+                <span className="inline-block mt-1.5 text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded px-2 py-0.5">
+                  폐쇄몰 활성화로 자동 설정됨
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setRequireSignupApproval((prev) => !prev)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                requireSignupApproval ? 'bg-blue-600' : 'bg-gray-200'
+              }`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                requireSignupApproval ? 'translate-x-6' : 'translate-x-1'
+              }`} />
+            </button>
+          </div>
+        </Card>
+
+        {/* 기능 설정 */}
+        <Card className="p-6">
+          <h2 className="text-lg font-semibold mb-1">기능 설정</h2>
+          <p className="text-sm text-gray-500 mb-5">사이트에서 사용할 기능을 켜거나 끕니다.</p>
+
+          <div className="space-y-6">
+            {/* 담당자 기능 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">담당자 기능 사용</p>
+                <p className="text-xs text-gray-400 mt-0.5">켜면 담당자가 배정되지 않은 일반 관리자는 사용자/주문에 접근할 수 없습니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!enableUserAssignment && !confirm('담당자 기능을 켜면 담당자가 배정되지 않은 일반 관리자는 사용자/주문에 접근할 수 없게 됩니다. 계속하시겠습니까?')) return;
+                  setEnableUserAssignment((prev) => !prev);
+                }}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  enableUserAssignment ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  enableUserAssignment ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            <div className="border-t" />
+
+            {/* 회원 등급 기능 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">회원 등급 기능 사용</p>
+                <p className="text-xs text-gray-400 mt-0.5">끄면 관리자 회원 관리 화면에서 등급 컬럼/변경 UI가 숨겨집니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUseUserLevels((prev) => !prev)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  useUserLevels ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  useUserLevels ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            <div className="border-t" />
+
+            {/* 포인트 기능 */}
+            <div className="space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-sm">포인트 기능 사용</p>
+                  <p className="text-xs text-gray-400 mt-0.5">끄면 회원 관리 화면에서 포인트 관련 UI가 숨겨집니다.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setUsePoints((prev) => !prev)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                    usePoints ? 'bg-blue-600' : 'bg-gray-200'
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    usePoints ? 'translate-x-6' : 'translate-x-1'
+                  }`} />
+                </button>
+              </div>
+
+              <div className={`space-y-4 transition-opacity ${!usePoints ? 'opacity-40 pointer-events-none' : ''}`}>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">포인트 명칭</label>
+                    <input
+                      type="text"
+                      value={pointLabel}
+                      onChange={(e) => setPointLabel(e.target.value)}
+                      disabled={!usePoints}
+                      className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                      placeholder="포인트"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">UI에 표시되는 명칭 (예: 포인트, 적립금, 마일리지)</p>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">기본 적립률 (%)</label>
+                    <input type="number" name="pointEarnRate" value={settings.pointEarnRate} onChange={handleChange} min="0" max="100" step="0.1" disabled={!usePoints} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:cursor-not-allowed" placeholder="1" />
+                    <p className="mt-1 text-xs text-gray-500">구매금액 대비 포인트 적립 비율</p>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">회원가입 포인트 (P)</label>
+                    <input type="number" name="signupPoints" value={settings.signupPoints} onChange={handleChange} min="0" disabled={!usePoints} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:cursor-not-allowed" placeholder="1000" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">최소 보유 포인트 (사용 기준)</label>
+                    <input type="number" name="pointsMinThreshold" value={settings.pointsMinThreshold} onChange={handleChange} min="0" disabled={!usePoints} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:cursor-not-allowed" placeholder="1000" />
+                    <p className="mt-1 text-xs text-gray-500">이 금액 이상 보유 시 포인트 사용 가능</p>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">사용 단위 (원)</label>
+                    <input type="number" name="pointsUnitAmount" value={settings.pointsUnitAmount} onChange={handleChange} min="1" disabled={!usePoints} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:cursor-not-allowed" placeholder="100" />
+                    <p className="mt-1 text-xs text-gray-500">포인트 사용 최소 단위</p>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">최대 사용 비율 (%)</label>
+                    <input type="number" name="pointsMaxUsagePercent" value={settings.pointsMaxUsagePercent} onChange={handleChange} min="1" max="100" disabled={!usePoints} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:cursor-not-allowed" placeholder="50" />
+                    <p className="mt-1 text-xs text-gray-500">결제금액의 몇 %까지 포인트로 결제 가능</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </Card>
 
         <Button type="submit" disabled={submitting} className="w-full md:w-auto">
