@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { PageSection } from '@/components/theme/PageSection';
 import { ProductCard } from '@/components/product-card';
 import { createClient } from '@/lib/supabase/client';
 import type { Product } from '@/types';
@@ -131,7 +132,9 @@ export default function CategoryPage() {
   const totalPages = Math.ceil(total / LIMIT);
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <>
+      <PageSection id="category" />
+      <div className="container mx-auto px-4 py-8">
       {/* 브레드크럼 */}
       <nav className="mb-4 flex items-center gap-1 text-sm text-gray-500">
         <Link to="/" className="hover:text-gray-700">홈</Link>
@@ -231,5 +234,6 @@ export default function CategoryPage() {
         </div>
       )}
     </div>
+    </>
   );
 }

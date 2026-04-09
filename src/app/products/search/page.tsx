@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { PageSection } from '@/components/theme/PageSection';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
@@ -156,7 +157,9 @@ function SearchPageContent() {
   }
 
   return (
-    <div className="container py-8">
+    <>
+      <PageSection id="search" />
+      <div className="container py-8">
       <h1 className="mb-6 text-3xl font-bold">상품 검색</h1>
 
       {/* 검색 입력 */}
@@ -308,6 +311,7 @@ function SearchPageContent() {
         </>
       )}
     </div>
+    </>
   );
 }
 

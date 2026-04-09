@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { Clock, LogOut } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useNavigate } from 'react-router-dom';
+import { PageSection } from '@/components/theme/PageSection';
 
 export default function PendingApprovalPage() {
   const navigate = useNavigate();
@@ -13,7 +14,9 @@ export default function PendingApprovalPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+    <>
+      <PageSection id="pending-approval" />
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-md text-center">
         <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-amber-100">
           <Clock className="h-10 w-10 text-amber-500" />
@@ -41,5 +44,6 @@ export default function PendingApprovalPage() {
         </button>
       </div>
     </div>
+    </>
   );
 }

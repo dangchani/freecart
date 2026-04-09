@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { PageSection } from '@/components/theme/PageSection';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -442,7 +443,9 @@ export default function CheckoutPage() {
   }
 
   return (
-    <div className="container py-8">
+    <>
+      <PageSection id="checkout" />
+      <div className="container py-8">
       <h1 className="mb-8 text-3xl font-bold">주문하기</h1>
 
       {pgError && (
@@ -850,5 +853,6 @@ export default function CheckoutPage() {
         </div>
       </form>
     </div>
+    </>
   );
 }

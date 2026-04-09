@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
+import { PageSection } from '@/components/theme/PageSection';
 import { Badge } from '@/components/ui/badge';
 import { Pin, Eye } from 'lucide-react';
 import { format } from 'date-fns';
@@ -60,7 +61,9 @@ export default function NoticesPage() {
   }
 
   return (
-    <div className="container py-8">
+    <>
+      <PageSection id="notices" />
+      <div className="container py-8">
       <h1 className="mb-8 text-3xl font-bold">공지사항</h1>
 
       {error && (
@@ -106,5 +109,6 @@ export default function NoticesPage() {
         </Card>
       )}
     </div>
+    </>
   );
 }

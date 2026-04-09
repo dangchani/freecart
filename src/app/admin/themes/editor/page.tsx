@@ -50,7 +50,7 @@ interface ThemeData {
 interface EditorSection {
   id: string;
   title: string;
-  htmlUrl: string;
+  htmlUrl?: string;  // undefined = 아직 HTML 없음 (신규)
   enabled: boolean;
 }
 
@@ -102,11 +102,13 @@ const GROUP_META: Record<SectionGroup, { label: string; color: string }> = {
 
 function getSectionGroup(id: string): SectionGroup {
   if (id === 'header' || id === 'footer' || id === 'nav') return 'layout';
-  const HOME = ['hero', 'features', 'products', 'banner', 'reviews', 'newsletter', 'categories', 'brands', 'cta', 'promo', 'gallery', 'stats'];
-  if (HOME.includes(id)) return 'home';
-  if (id.startsWith('product') || ['cart', 'checkout', 'wishlist', 'order'].includes(id)) return 'shop';
-  if (id.startsWith('board') || id.startsWith('post') || id.startsWith('community')) return 'community';
-  if (['login', 'signup', 'mypage', 'terms', 'privacy', 'account', 'password', 'profile'].includes(id) || id.startsWith('my')) return 'account';
+  const HOME = ['hero', 'features', 'products', 'banner', 'reviews', 'newsletter', 'categories', 'brands', 'cta', 'promo', 'gallery', 'stats', 'new-products', 'best-products', 'product-list', 'product-list-bottom'];
+  if (HOME.includes(id) || id.startsWith('new-') || id.startsWith('best-')) return 'home';
+  const SHOP = ['cart', 'checkout', 'checkout-success', 'wishlist', 'order', 'search', 'category', 'product-detail', 'product-detail-bottom', 'product-list', 'product-list-bottom'];
+  if (SHOP.includes(id) || id.startsWith('product') || id.startsWith('checkout') || id.startsWith('category')) return 'shop';
+  if (id.startsWith('board') || id.startsWith('post') || id.startsWith('community') || ['boards', 'board', 'notices', 'faqs'].includes(id)) return 'community';
+  const ACCOUNT = ['login', 'signup', 'mypage', 'terms', 'privacy', 'account', 'password', 'profile', 'forgot-password', 'pending-approval', 'login-closed-mall'];
+  if (ACCOUNT.includes(id) || id.startsWith('my')) return 'account';
   return 'etc';
 }
 
@@ -282,6 +284,9 @@ export default function ThemeEditorPage() {
   // drag
   const dragIdx = useRef<number | null>(null);
 
+  // Ctrl+S → HTML 저장 (항상 최신 saveCurrentFile을 참조)
+  const saveCurrentFileRef = useRef<() => void>(() => {});
+
   function showToast(msg: string) { setToast(msg); setTimeout(() => setToast(''), 3000); }
   function dirty() { setIsDirty(true); }
 
@@ -306,14 +311,23 @@ export default function ThemeEditorPage() {
         };
 
         // 본문 섹션 구성 (header/footer/layout 제외)
+        // HTML URL 없는 섹션도 포함 — 에디터에서 새로 작성 가능
         const ordered: EditorSection[] = [];
         const seen = new Set<string>();
+
+        // 홈 섹션
         for (const hs of layoutConf.homeSections) {
-          if (htmlUrls[hs.id]) {
-            ordered.push({ id: hs.id, title: hs.title || hs.id, htmlUrl: htmlUrls[hs.id], enabled: hs.enabled !== false });
-            seen.add(hs.id);
+          ordered.push({ id: hs.id, title: hs.title || hs.id, htmlUrl: htmlUrls[hs.id] || undefined, enabled: hs.enabled !== false });
+          seen.add(hs.id);
+        }
+        // 페이지별 섹션
+        for (const ps of layoutConf.pageSections ?? []) {
+          if (!seen.has(ps.id)) {
+            ordered.push({ id: ps.id, title: ps.title || ps.id, htmlUrl: htmlUrls[ps.id] || undefined, enabled: ps.enabled !== false });
+            seen.add(ps.id);
           }
         }
+        // section_html_urls에만 있는 섹션 (직접 업로드된 것)
         for (const k of Object.keys(htmlUrls)) {
           if (!seen.has(k) && k !== 'header' && k !== 'footer' && k !== 'layout') {
             ordered.push({ id: k, title: k, htmlUrl: htmlUrls[k], enabled: true });
@@ -368,12 +382,16 @@ export default function ThemeEditorPage() {
   // HTML file open / save
   // ----------------------------------------------------------------
   async function openFile(fileId: string) {
+    // 이미 편집 중인 파일 재클릭 → 무시
+    if (editingId === fileId) return;
     setEditingId(fileId);
-    if (htmlMap[fileId] !== undefined) return;
     if (!theme) return;
     const url = theme.sectionHtmlUrls[fileId];
-    if (!url) return;
-
+    if (!url) {
+      setHtmlMap((p) => ({ ...p, [fileId]: '' }));
+      return;
+    }
+    // 항상 최신 내용 fetch (캐시 무효화)
     setHtmlLoading(true);
     try {
       const res = await fetch(url + '?t=' + Date.now());
@@ -392,6 +410,18 @@ export default function ThemeEditorPage() {
     try {
       const result = await uploadSectionHTML(theme.slug, editingId, htmlMap[editingId]);
       if (!result.success) throw new Error(result.error);
+
+      // 신규 섹션이면 section_html_urls DB 업데이트
+      if (result.url && !theme.sectionHtmlUrls[editingId]) {
+        const newUrls = { ...theme.sectionHtmlUrls, [editingId]: result.url };
+        const supabase = createClient();
+        await supabase.from('installed_themes').update({ section_html_urls: newUrls }).eq('id', theme.id);
+        setTheme((p) => p ? { ...p, sectionHtmlUrls: newUrls } : p);
+        setEditSections((p) => p.map((s) => s.id === editingId ? { ...s, htmlUrl: result.url } : s));
+      }
+
+      // 항상 ThemeContext 갱신 → htmlCacheVersion 증가 → 페이지 즉시 반영
+      await refreshTheme();
       showToast(`${editingId}.html 저장 완료`);
     } catch (e) {
       showToast('저장 실패: ' + (e instanceof Error ? e.message : ''));
@@ -399,6 +429,9 @@ export default function ThemeEditorPage() {
       setHtmlSaving(false);
     }
   }
+
+  // ref를 항상 최신 saveCurrentFile로 유지
+  useEffect(() => { saveCurrentFileRef.current = saveCurrentFile; });
 
   // ----------------------------------------------------------------
   // Settings helpers
@@ -770,6 +803,12 @@ export default function ThemeEditorPage() {
                   onChange={(val) => {
                     if (val !== undefined) setHtmlMap((p) => ({ ...p, [editingId]: val }));
                   }}
+                  onMount={(editor, monaco) => {
+                    editor.addCommand(
+                      monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
+                      () => saveCurrentFileRef.current()
+                    );
+                  }}
                   options={{
                     fontSize: 13,
                     lineHeight: 22,
@@ -832,7 +871,7 @@ function SectionFileRow({ id, label, editingId, onEdit }: {
 // DraggableSectionRow — 드래그 + 토글 섹션
 // ============================================================
 function DraggableSectionRow({ sec, globalIdx, editingId, onEdit, onToggle, onDragStart, onDragOver, onDragEnd }: {
-  sec: { id: string; title: string; enabled: boolean };
+  sec: { id: string; title: string; htmlUrl?: string; enabled: boolean };
   globalIdx: number;
   editingId: string | null;
   onEdit: (id: string) => void;
@@ -842,6 +881,7 @@ function DraggableSectionRow({ sec, globalIdx, editingId, onEdit, onToggle, onDr
   onDragEnd: () => void;
 }) {
   const active = editingId === sec.id;
+  const hasHtml = !!sec.htmlUrl;
   return (
     <div
       draggable
@@ -852,8 +892,11 @@ function DraggableSectionRow({ sec, globalIdx, editingId, onEdit, onToggle, onDr
       onClick={() => onEdit(sec.id)}
     >
       <GripVertical className="h-3.5 w-3.5 text-gray-700 cursor-grab flex-shrink-0" />
-      <File className="h-3 w-3 opacity-40 flex-shrink-0" />
+      <File className={`h-3 w-3 flex-shrink-0 ${hasHtml ? 'opacity-40' : 'text-amber-500 opacity-80'}`} />
       <span className={`font-mono flex-1 ${!sec.enabled ? 'line-through opacity-40' : ''}`}>{sec.id}.html</span>
+      {!hasHtml && (
+        <span className="text-[9px] bg-amber-900/50 text-amber-400 border border-amber-700/50 px-1 py-0.5 rounded flex-shrink-0">신규</span>
+      )}
       <button
         onClick={(e) => { e.stopPropagation(); onToggle(sec.id); }}
         className="flex-shrink-0 p-0.5"

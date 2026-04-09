@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link, useSearchParams } from 'react-router-dom';
+import { PageSection } from '@/components/theme/PageSection';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -171,7 +172,9 @@ export default function BoardDetailPage() {
   }
 
   return (
-    <div className="container py-8">
+    <>
+      <PageSection id="board" />
+      <div className="container py-8">
       <Link to="/boards" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
         <ArrowLeft className="mr-1 h-4 w-4" />
         커뮤니티 목록으로
@@ -271,5 +274,6 @@ export default function BoardDetailPage() {
         </Card>
       )}
     </div>
+    </>
   );
 }

@@ -10,6 +10,7 @@ import NotFoundPage from './app/not-found';
 
 // Auth
 import LoginPage from './app/auth/login/page';
+import ClosedMallLoginPage from './app/auth/closed-mall/page';
 import SignupPage from './app/auth/signup/page';
 import ForgotPasswordPage from './app/auth/forgot-password/page';
 import ResetPasswordPage from './app/auth/reset-password/page';
@@ -154,6 +155,9 @@ export default function App() {
         <Routes>
           {/* 설정 페이지 */}
           <Route path="/setup" element={<SetupPage />} />
+
+          {/* 폐쇄몰 전용 로그인 (헤더/푸터 없음) */}
+          <Route path="/auth/closed-mall" element={<ClosedMallLoginPage />} />
 
           {/* 메인 레이아웃 (테마 적용) */}
           <Route element={<MainLayout />}>
