@@ -17,6 +17,9 @@ DROP POLICY IF EXISTS "themes_storage_select" ON storage.objects;
 DROP POLICY IF EXISTS "themes_storage_insert" ON storage.objects;
 DROP POLICY IF EXISTS "themes_storage_update" ON storage.objects;
 DROP POLICY IF EXISTS "themes_storage_delete" ON storage.objects;
+DROP POLICY IF EXISTS "popups_storage_select" ON storage.objects;
+DROP POLICY IF EXISTS "popups_storage_insert" ON storage.objects;
+DROP POLICY IF EXISTS "popups_storage_delete" ON storage.objects;
 -- ※ 버킷 삭제는 Supabase 대시보드 → Storage에서 직접 삭제
 DROP FUNCTION IF EXISTS public.admin_create_user CASCADE;
 DROP FUNCTION IF EXISTS public.handle_new_user CASCADE;
@@ -1245,10 +1248,16 @@ CREATE TRIGGER trg_banners_updated_at
 CREATE TABLE IF NOT EXISTS popups (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name              VARCHAR(200) NOT NULL,
-  content           TEXT,
-  image_url         VARCHAR(500),
-  link_url          VARCHAR(500),
-  position          VARCHAR(20) NOT NULL DEFAULT 'center',
+  popup_type        VARCHAR(20)  NOT NULL DEFAULT 'image'
+                      CHECK (popup_type IN ('text', 'image', 'slide')),
+  content           TEXT,                                 -- text 타입 전용
+  image_url         VARCHAR(500),                        -- image 타입 전용
+  link_url          VARCHAR(500),                        -- image 타입 전용
+  slide_settings    JSONB,                               -- slide 타입 전용 설정
+  position          VARCHAR(20) NOT NULL DEFAULT 'center'
+                      CHECK (position IN ('center','top','bottom','left','right','custom')),
+  position_x        NUMERIC(5,2),                        -- position='custom' 일 때 X% (0~100)
+  position_y        NUMERIC(5,2),                        -- position='custom' 일 때 Y% (0~100)
   width             INTEGER NOT NULL DEFAULT 500,
   height            INTEGER,
   starts_at         TIMESTAMPTZ,                          -- NULL = 즉시 노출
@@ -1264,6 +1273,26 @@ DROP TRIGGER IF EXISTS trg_popups_updated_at ON popups;
 CREATE TRIGGER trg_popups_updated_at
   BEFORE UPDATE ON popups
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- 9.2-1 popup_images (슬라이드형 팝업 이미지 목록)
+CREATE TABLE IF NOT EXISTS popup_images (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  popup_id    UUID,
+  image_url   VARCHAR(500) NOT NULL,
+  link_url    VARCHAR(500),
+  caption     VARCHAR(200),
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- FK 명시적 재설정 (IF NOT EXISTS로 테이블이 스킵돼도 FK 보장)
+ALTER TABLE popup_images
+  DROP CONSTRAINT IF EXISTS popup_images_popup_id_fkey;
+ALTER TABLE popup_images
+  ADD CONSTRAINT popup_images_popup_id_fkey
+  FOREIGN KEY (popup_id) REFERENCES popups(id) ON DELETE CASCADE;
+ALTER TABLE popup_images
+  ALTER COLUMN popup_id SET NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_popup_images_popup_id ON popup_images(popup_id);
 
 -- 9.3 events (이벤트)
 CREATE TABLE IF NOT EXISTS events (
@@ -1803,8 +1832,9 @@ CREATE TRIGGER trg_installed_themes_updated_at
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- skins.theme_id FK (installed_themes 생성 후 추가)
+ALTER TABLE skins DROP CONSTRAINT IF EXISTS skins_theme_id_fkey;
 ALTER TABLE skins
-  ADD CONSTRAINT IF NOT EXISTS skins_theme_id_fkey
+  ADD CONSTRAINT skins_theme_id_fkey
   FOREIGN KEY (theme_id) REFERENCES installed_themes(id) ON DELETE CASCADE;
 
 -- 15.2 installed_skins (레거시 — 현재 미사용. 스킨은 skins 테이블에서 관리)
@@ -2415,6 +2445,23 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
+-- 이메일 인증 자동 완료 (rate limit 방지)
+CREATE OR REPLACE FUNCTION public.auto_confirm_user()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  UPDATE auth.users
+  SET email_confirmed_at = COALESCE(email_confirmed_at, NOW()),
+      updated_at = NOW()
+  WHERE id = NEW.id;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_auto_confirm ON auth.users;
+CREATE TRIGGER on_auth_user_auto_confirm
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.auto_confirm_user();
+
 -- =============================================================================
 -- SECTION 11: PAYMENT GATEWAYS (PG사 설정)
 -- =============================================================================
@@ -2740,13 +2787,16 @@ VALUES (
 ON CONFLICT (id) DO NOTHING;
 
 -- 상품 이미지 버킷 RLS: 누구나 조회 가능
+DROP POLICY IF EXISTS "products_storage_select" ON storage.objects;
 CREATE POLICY "products_storage_select" ON storage.objects
   FOR SELECT USING (bucket_id = 'products');
 
 -- 상품 이미지 버킷 RLS: 인증된 사용자만 업로드/삭제
+DROP POLICY IF EXISTS "products_storage_insert" ON storage.objects;
 CREATE POLICY "products_storage_insert" ON storage.objects
   FOR INSERT WITH CHECK (bucket_id = 'products' AND auth.role() = 'authenticated');
 
+DROP POLICY IF EXISTS "products_storage_delete" ON storage.objects;
 CREATE POLICY "products_storage_delete" ON storage.objects
   FOR DELETE USING (bucket_id = 'products' AND auth.role() = 'authenticated');
 
@@ -2762,20 +2812,49 @@ VALUES (
 ON CONFLICT (id) DO NOTHING;
 
 -- 테마 버킷 RLS: 누구나 조회 (CSS, 썸네일 공개 접근)
+DROP POLICY IF EXISTS "themes_storage_select" ON storage.objects;
 CREATE POLICY "themes_storage_select" ON storage.objects
   FOR SELECT USING (bucket_id = 'themes');
 
 -- 테마 버킷 RLS: 인증된 사용자만 업로드 (관리자 업로드)
+DROP POLICY IF EXISTS "themes_storage_insert" ON storage.objects;
 CREATE POLICY "themes_storage_insert" ON storage.objects
   FOR INSERT WITH CHECK (bucket_id = 'themes' AND auth.role() = 'authenticated');
 
 -- 테마 버킷 RLS: 인증된 사용자만 업데이트
+DROP POLICY IF EXISTS "themes_storage_update" ON storage.objects;
 CREATE POLICY "themes_storage_update" ON storage.objects
   FOR UPDATE USING (bucket_id = 'themes' AND auth.role() = 'authenticated');
 
 -- 테마 버킷 RLS: 인증된 사용자만 삭제
+DROP POLICY IF EXISTS "themes_storage_delete" ON storage.objects;
 CREATE POLICY "themes_storage_delete" ON storage.objects
   FOR DELETE USING (bucket_id = 'themes' AND auth.role() = 'authenticated');
+
+-- 팝업 이미지 버킷 (공개)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'popups',
+  'popups',
+  true,
+  5242880,  -- 5MB
+  ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- 팝업 이미지 버킷 RLS: 누구나 조회 가능
+DROP POLICY IF EXISTS "popups_storage_select" ON storage.objects;
+CREATE POLICY "popups_storage_select" ON storage.objects
+  FOR SELECT USING (bucket_id = 'popups');
+
+-- 팝업 이미지 버킷 RLS: 인증된 사용자만 업로드/삭제
+DROP POLICY IF EXISTS "popups_storage_insert" ON storage.objects;
+CREATE POLICY "popups_storage_insert" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'popups' AND auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "popups_storage_delete" ON storage.objects;
+CREATE POLICY "popups_storage_delete" ON storage.objects
+  FOR DELETE USING (bucket_id = 'popups' AND auth.role() = 'authenticated');
 
 -- =============================================================================
 -- SEED DATA: 기본 카테고리 / 브랜드 / 상품
