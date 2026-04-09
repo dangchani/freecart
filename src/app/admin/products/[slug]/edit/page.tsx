@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { generateVariantCombinations, type VariantRow } from '@/utils/variants';
+import { saveGiftSets, getGiftSetsAdmin, type GiftSetDraft, type GiftSetItemDraft } from '@/services/giftSets';
 
 // =============================================================================
 // Schema
@@ -60,6 +61,7 @@ const productSchema = z.object({
   stockAlertQuantity: z.number().int().min(0).default(10),
   minPurchaseQuantity: z.number().int().min(1).default(1),
   maxPurchaseQuantity: z.number().int().min(1).optional().nullable(),
+  dailyPurchaseLimit: z.number().int().min(1).optional().nullable(),
   sku: z.string().optional(),
   manufacturer: z.string().optional(),
   origin: z.string().optional(),
@@ -111,10 +113,100 @@ export default function EditProductPage() {
     basic: true,
     price: true,
     stock: true,
+    purchaseQty: true,
     options: false,
+    giftSets: false,
     shipping: false,
     seo: false,
   });
+
+  // 사은품 세트 로컬 상태
+  const [giftSetDrafts, setGiftSetDrafts] = useState<GiftSetDraft[]>([]);
+  const [giftProductSearch, setGiftProductSearch] = useState<Record<string, string>>({});
+  const [giftProductResults, setGiftProductResults] = useState<Record<string, any[]>>({});
+
+  function newGiftSetDraft(): GiftSetDraft {
+    return {
+      localId: crypto.randomUUID(),
+      dbId: null,
+      name: '',
+      giftMode: 'auto',
+      triggerQuantity: 1,
+      maxGiftQuantity: 1,
+      maxDistinctItems: null,
+      isActive: true,
+      startsAt: '',
+      endsAt: '',
+      items: [],
+    };
+  }
+
+  function updateGiftSet(localId: string, patch: Partial<GiftSetDraft>) {
+    setGiftSetDrafts((prev) =>
+      prev.map((s) => (s.localId === localId ? { ...s, ...patch } : s))
+    );
+  }
+
+  function removeGiftSet(localId: string) {
+    setGiftSetDrafts((prev) => prev.filter((s) => s.localId !== localId));
+  }
+
+  function addGiftItem(setLocalId: string, product: any) {
+    const img = (product.product_images || []).find((i: any) => i.is_primary) || product.product_images?.[0];
+    const newItem: GiftSetItemDraft = {
+      localId: crypto.randomUUID(),
+      dbId: null,
+      giftProductId: product.id,
+      giftProductName: product.name,
+      giftProductImageUrl: img?.url ?? null,
+      giftProductSalePrice: product.sale_price,
+      maxPerItem: null,
+      sortOrder: 0,
+    };
+    setGiftSetDrafts((prev) =>
+      prev.map((s) =>
+        s.localId === setLocalId ? { ...s, items: [...s.items, newItem] } : s
+      )
+    );
+    setGiftProductSearch((prev) => ({ ...prev, [setLocalId]: '' }));
+    setGiftProductResults((prev) => ({ ...prev, [setLocalId]: [] }));
+  }
+
+  function removeGiftItem(setLocalId: string, itemLocalId: string) {
+    setGiftSetDrafts((prev) =>
+      prev.map((s) =>
+        s.localId === setLocalId
+          ? { ...s, items: s.items.filter((i) => i.localId !== itemLocalId) }
+          : s
+      )
+    );
+  }
+
+  function updateGiftItem(setLocalId: string, itemLocalId: string, patch: Partial<GiftSetItemDraft>) {
+    setGiftSetDrafts((prev) =>
+      prev.map((s) =>
+        s.localId === setLocalId
+          ? { ...s, items: s.items.map((i) => (i.localId === itemLocalId ? { ...i, ...patch } : i)) }
+          : s
+      )
+    );
+  }
+
+  async function searchGiftProducts(setLocalId: string, keyword: string) {
+    setGiftProductSearch((prev) => ({ ...prev, [setLocalId]: keyword }));
+    if (!keyword.trim()) {
+      setGiftProductResults((prev) => ({ ...prev, [setLocalId]: [] }));
+      return;
+    }
+    const supabase = createClient();
+    const { data } = await supabase
+      .from('products')
+      .select('id, name, sale_price, product_images(url, is_primary)')
+      .ilike('name', `%${keyword}%`)
+      .eq('status', 'active')
+      .limit(8);
+    setGiftProductResults((prev) => ({ ...prev, [setLocalId]: data || [] }));
+  }
 
   const {
     register,
@@ -208,7 +300,7 @@ export default function EditProductPage() {
           id, name, slug, summary, description,
           category_id, brand_id, sku, manufacturer, origin, weight,
           regular_price, sale_price, cost_price, point_rate,
-          stock_quantity, stock_alert_quantity, min_purchase_quantity, max_purchase_quantity,
+          stock_quantity, stock_alert_quantity, min_purchase_quantity, max_purchase_quantity, daily_purchase_limit,
           status, is_featured, is_new, is_best, is_sale,
           shipping_type, shipping_fee,
           seo_title, seo_description, seo_keywords,
@@ -294,6 +386,7 @@ export default function EditProductPage() {
         stockAlertQuantity: product.stock_alert_quantity ?? 10,
         minPurchaseQuantity: product.min_purchase_quantity ?? 1,
         maxPurchaseQuantity: product.max_purchase_quantity || null,
+        dailyPurchaseLimit: product.daily_purchase_limit || null,
         status: product.status as 'draft' | 'active' | 'inactive',
         isFeatured: product.is_featured,
         isNew: product.is_new,
@@ -308,6 +401,31 @@ export default function EditProductPage() {
         options: existingOptions.length > 0 ? existingOptions : [],
         tags: product.tags || [],
       });
+
+      // 기존 사은품 세트 로드
+      const existingSets = await getGiftSetsAdmin(product.id);
+      setGiftSetDrafts(existingSets.map((s) => ({
+        localId: crypto.randomUUID(),
+        dbId: s.id,
+        name: s.name,
+        giftMode: s.giftMode,
+        triggerQuantity: s.triggerQuantity,
+        maxGiftQuantity: s.maxGiftQuantity,
+        maxDistinctItems: s.maxDistinctItems,
+        isActive: s.isActive,
+        startsAt: s.startsAt ?? '',
+        endsAt: s.endsAt ?? '',
+        items: s.items.map((i) => ({
+          localId: crypto.randomUUID(),
+          dbId: i.id,
+          giftProductId: i.giftProductId,
+          giftProductName: i.giftProductName,
+          giftProductImageUrl: i.giftProductImageUrl,
+          giftProductSalePrice: i.giftProductSalePrice,
+          maxPerItem: i.maxPerItem,
+          sortOrder: i.sortOrder,
+        })),
+      })));
     } catch (error) {
       console.error('Failed to load product:', error);
       alert('상품을 불러오는 중 오류가 발생했습니다.');
@@ -477,6 +595,7 @@ export default function EditProductPage() {
           stock_alert_quantity: data.stockAlertQuantity,
           min_purchase_quantity: data.minPurchaseQuantity,
           max_purchase_quantity: data.maxPurchaseQuantity || null,
+          daily_purchase_limit: data.dailyPurchaseLimit || null,
           sku: data.sku || null,
           manufacturer: data.manufacturer || null,
           origin: data.origin || null,
@@ -565,6 +684,9 @@ export default function EditProductPage() {
           if (variantError) throw variantError;
         }
       }
+
+      // 사은품 세트 저장
+      await saveGiftSets(productId!, giftSetDrafts);
 
       alert('상품이 수정되었습니다.');
       navigate('/admin/products');
@@ -970,26 +1092,6 @@ export default function EditProductPage() {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="minPurchaseQuantity">최소 구매 수량</Label>
-                  <Input
-                    id="minPurchaseQuantity"
-                    type="number"
-                    {...register('minPurchaseQuantity', { valueAsNumber: true })}
-                    placeholder="1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="maxPurchaseQuantity">최대 구매 수량 (선택)</Label>
-                  <Input
-                    id="maxPurchaseQuantity"
-                    type="number"
-                    {...register('maxPurchaseQuantity', { valueAsNumber: true })}
-                    placeholder="제한 없음"
-                  />
-                </div>
-              </div>
             </div>
           )}
         </Card>
@@ -1096,6 +1198,230 @@ export default function EditProductPage() {
                   )}
                 </div>
               )}
+            </div>
+          )}
+        </Card>
+
+        {/* 사은품 설정 */}
+        <Card className="overflow-hidden">
+          <SectionHeader title="사은품 설정" section="giftSets" />
+          {expandedSections.giftSets && (
+            <div className="p-4 space-y-4">
+              {giftSetDrafts.map((giftSet) => (
+                <div key={giftSet.localId} className="rounded-lg border border-gray-200 p-4 space-y-4 bg-gray-50">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <Label>세트명</Label>
+                      <Input
+                        value={giftSet.name}
+                        onChange={(e) => updateGiftSet(giftSet.localId, { name: e.target.value })}
+                        placeholder="예: 3+1 사은품 이벤트"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 pt-5">
+                      <label className="flex items-center gap-1 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={giftSet.isActive}
+                          onChange={(e) => updateGiftSet(giftSet.localId, { isActive: e.target.checked })}
+                          className="rounded"
+                        />
+                        활성
+                      </label>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => removeGiftSet(giftSet.localId)}>
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="max-w-xs">
+                    <Label>본품 구매 수량 (발동 조건)</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={1}
+                        value={giftSet.triggerQuantity}
+                        onChange={(e) => updateGiftSet(giftSet.localId, { triggerQuantity: Number(e.target.value) || 1 })}
+                        className="w-24"
+                      />
+                      <span className="text-sm text-gray-500">개 이상 구매 시 발동</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label>증정 방식</Label>
+                    <div className="mt-1 flex gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" checked={giftSet.giftMode === 'auto'} onChange={() => updateGiftSet(giftSet.localId, { giftMode: 'auto' })} />
+                        <div>
+                          <span className="text-sm font-medium">자동 증정</span>
+                          <p className="text-xs text-gray-500">풀의 모든 사은품 자동 추가</p>
+                        </div>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" checked={giftSet.giftMode === 'select'} onChange={() => updateGiftSet(giftSet.localId, { giftMode: 'select' })} />
+                        <div>
+                          <span className="text-sm font-medium">선택 증정</span>
+                          <p className="text-xs text-gray-500">고객이 풀에서 직접 선택</p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {giftSet.giftMode === 'select' && (
+                    <div className="grid grid-cols-2 gap-4 rounded-md border border-blue-100 bg-blue-50 p-3">
+                      <div>
+                        <Label>총 선택 가능 수량</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number" min={1}
+                            value={giftSet.maxGiftQuantity}
+                            onChange={(e) => updateGiftSet(giftSet.localId, { maxGiftQuantity: Number(e.target.value) || 1 })}
+                            className="w-24"
+                          />
+                          <span className="text-xs text-gray-500">개</span>
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500">예: 3+1이면 1</p>
+                      </div>
+                      <div>
+                        <Label>선택 가능 품목 종류 (선택)</Label>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number" min={1}
+                            value={giftSet.maxDistinctItems ?? ''}
+                            onChange={(e) => updateGiftSet(giftSet.localId, { maxDistinctItems: e.target.value ? Number(e.target.value) : null })}
+                            className="w-24"
+                            placeholder="제한 없음"
+                          />
+                          <span className="text-xs text-gray-500">가지</span>
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500">빈칸 = 제한 없음</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <Label>사은품 상품 목록 (풀)</Label>
+                    <div className="mt-2 space-y-2">
+                      {giftSet.items.map((item) => (
+                        <div key={item.localId} className="flex items-center gap-2 rounded border bg-white p-2">
+                          {item.giftProductImageUrl && (
+                            <img src={item.giftProductImageUrl} alt={item.giftProductName} className="h-8 w-8 rounded object-cover flex-shrink-0" />
+                          )}
+                          <span className="flex-1 text-sm truncate">{item.giftProductName}</span>
+                          <span className="text-xs text-gray-400 flex-shrink-0">
+                            실제가 {item.giftProductSalePrice.toLocaleString()}원 → 사은품 0원
+                          </span>
+                          {giftSet.giftMode === 'select' && (
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <span className="text-xs text-gray-500">개당 최대</span>
+                              <Input
+                                type="number" min={1}
+                                value={item.maxPerItem ?? ''}
+                                onChange={(e) => updateGiftItem(giftSet.localId, item.localId, { maxPerItem: e.target.value ? Number(e.target.value) : null })}
+                                className="h-7 w-16 text-xs"
+                                placeholder="∞"
+                              />
+                              <span className="text-xs text-gray-500">개</span>
+                            </div>
+                          )}
+                          <Button type="button" variant="ghost" size="sm" onClick={() => removeGiftItem(giftSet.localId, item.localId)}>
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
+                      <div className="relative">
+                        <Input
+                          value={giftProductSearch[giftSet.localId] ?? ''}
+                          onChange={(e) => searchGiftProducts(giftSet.localId, e.target.value)}
+                          placeholder="사은품 상품 검색..."
+                          className="text-sm"
+                        />
+                        {(giftProductResults[giftSet.localId] || []).length > 0 && (
+                          <div className="absolute z-10 w-full mt-1 rounded-md border bg-white shadow-lg max-h-48 overflow-y-auto">
+                            {(giftProductResults[giftSet.localId] || []).map((p: any) => {
+                              const alreadyAdded = giftSet.items.some((i) => i.giftProductId === p.id);
+                              return (
+                                <button
+                                  key={p.id} type="button" disabled={alreadyAdded}
+                                  onClick={() => addGiftItem(giftSet.localId, p)}
+                                  className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50 ${alreadyAdded ? 'opacity-40 cursor-not-allowed' : ''}`}
+                                >
+                                  <span className="flex-1 truncate">{p.name}</span>
+                                  <span className="text-xs text-gray-400">{(p.sale_price || 0).toLocaleString()}원</span>
+                                  {alreadyAdded && <span className="text-xs text-green-600">추가됨</span>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>시작일시 (선택)</Label>
+                      <Input type="datetime-local" value={giftSet.startsAt} onChange={(e) => updateGiftSet(giftSet.localId, { startsAt: e.target.value })} />
+                    </div>
+                    <div>
+                      <Label>종료일시 (선택)</Label>
+                      <Input type="datetime-local" value={giftSet.endsAt} onChange={(e) => updateGiftSet(giftSet.localId, { endsAt: e.target.value })} />
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <Button type="button" variant="outline" onClick={() => setGiftSetDrafts((prev) => [...prev, newGiftSetDraft()])}>
+                <Plus className="h-4 w-4 mr-2" />
+                사은품 세트 추가
+              </Button>
+            </div>
+          )}
+        </Card>
+
+        {/* 구매 수량 설정 */}
+        <Card className="overflow-hidden">
+          <SectionHeader title="구매 수량 설정" section="purchaseQty" />
+          {expandedSections.purchaseQty && (
+            <div className="p-4 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="minPurchaseQuantity">최소 구매 수량</Label>
+                  <Input
+                    id="minPurchaseQuantity"
+                    type="number"
+                    min={1}
+                    {...register('minPurchaseQuantity', { valueAsNumber: true })}
+                    placeholder="1"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">1회 주문 시 최소 구매 수량</p>
+                </div>
+                <div>
+                  <Label htmlFor="maxPurchaseQuantity">최대 구매 수량 (선택)</Label>
+                  <Input
+                    id="maxPurchaseQuantity"
+                    type="number"
+                    min={1}
+                    {...register('maxPurchaseQuantity', { valueAsNumber: true })}
+                    placeholder="제한 없음"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">1회 주문 시 최대 구매 수량</p>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <div className="max-w-xs">
+                  <Label htmlFor="dailyPurchaseLimit">1일 최대 구매 수량 (선택)</Label>
+                  <Input
+                    id="dailyPurchaseLimit"
+                    type="number"
+                    min={1}
+                    {...register('dailyPurchaseLimit', { valueAsNumber: true })}
+                    placeholder="제한 없음"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">동일 계정이 하루에 구매할 수 있는 최대 수량</p>
+                </div>
+              </div>
             </div>
           )}
         </Card>

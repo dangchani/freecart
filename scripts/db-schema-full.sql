@@ -40,7 +40,7 @@ DROP TABLE IF EXISTS
   payments, order_memos, order_status_history, order_items, orders,
   cart_items, carts, user_coupons, coupons, user_recently_viewed, user_wishlist,
   product_subscriptions, product_qna, product_quantity_discounts, product_level_prices,
-  product_discounts, product_stock_alerts, product_gifts, product_sets, product_related,
+  product_discounts, product_stock_alerts, product_gift_set_items, product_gift_sets, product_sets, product_related,
   product_attribute_values, product_attributes, product_tag_map, product_tags,
   product_images, product_variants, product_option_values, product_options, products,
   product_brands, product_categories, notification_settings, user_messages,
@@ -310,6 +310,7 @@ CREATE TABLE IF NOT EXISTS products (
   stock_alert_quantity  INTEGER NOT NULL DEFAULT 10,
   min_purchase_quantity INTEGER NOT NULL DEFAULT 1,
   max_purchase_quantity INTEGER,
+  daily_purchase_limit  INTEGER,
   status                VARCHAR(20) NOT NULL DEFAULT 'draft',
   is_featured           BOOLEAN NOT NULL DEFAULT false,
   is_new                BOOLEAN NOT NULL DEFAULT false,
@@ -463,20 +464,45 @@ CREATE TABLE IF NOT EXISTS product_sets (
 
 CREATE INDEX IF NOT EXISTS idx_product_sets_product_id ON product_sets(product_id);
 
--- 2.11 product_gifts (사은품)
-CREATE TABLE IF NOT EXISTS product_gifts (
-  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  product_id       UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  gift_product_id  UUID REFERENCES products(id) ON DELETE SET NULL,
-  gift_name        VARCHAR(100) NOT NULL,
-  gift_image_url   VARCHAR(500),
-  is_selectable    BOOLEAN NOT NULL DEFAULT false,
-  start_at         TIMESTAMPTZ,
-  end_at           TIMESTAMPTZ,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+-- 2.11 product_gift_sets (사은품 세트)
+-- gift_mode: 'auto' = 조건 충족 시 풀 전체 자동 추가, 'select' = 고객이 풀에서 선택
+CREATE TABLE IF NOT EXISTS product_gift_sets (
+  id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id         UUID        NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  name               VARCHAR(200) NOT NULL,
+  gift_mode          VARCHAR(10) NOT NULL DEFAULT 'auto'
+                     CHECK (gift_mode IN ('auto', 'select')),
+  trigger_quantity   INTEGER     NOT NULL DEFAULT 1 CHECK (trigger_quantity >= 1),
+  max_gift_quantity  INTEGER     NOT NULL DEFAULT 1 CHECK (max_gift_quantity >= 1),
+  max_distinct_items INTEGER     CHECK (max_distinct_items >= 1),
+  is_active          BOOLEAN     NOT NULL DEFAULT true,
+  starts_at          TIMESTAMPTZ,
+  ends_at            TIMESTAMPTZ,
+  sort_order         INTEGER     NOT NULL DEFAULT 0,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_product_gifts_product_id ON product_gifts(product_id);
+CREATE INDEX IF NOT EXISTS idx_product_gift_sets_product_id
+  ON product_gift_sets(product_id);
+
+CREATE TRIGGER trg_product_gift_sets_updated_at
+  BEFORE UPDATE ON product_gift_sets
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- 2.11-b product_gift_set_items (사은품 풀)
+CREATE TABLE IF NOT EXISTS product_gift_set_items (
+  id              UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+  gift_set_id     UUID    NOT NULL REFERENCES product_gift_sets(id) ON DELETE CASCADE,
+  gift_product_id UUID    NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  max_per_item    INTEGER CHECK (max_per_item >= 1),
+  sort_order      INTEGER NOT NULL DEFAULT 0,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (gift_set_id, gift_product_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_gift_set_items_gift_set_id
+  ON product_gift_set_items(gift_set_id);
 
 -- 2.12 product_stock_alerts (재입고 알림)
 CREATE TABLE IF NOT EXISTS product_stock_alerts (
@@ -2184,6 +2210,22 @@ ALTER TABLE post_likes             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inquiries              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_subscriptions     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE product_gift_sets      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE product_gift_set_items ENABLE ROW LEVEL SECURITY;
+
+-- product_gift_sets: 누구나 조회, 관리자만 수정
+CREATE POLICY "gift_sets_select_public" ON product_gift_sets
+  FOR SELECT USING (true);
+CREATE POLICY "gift_sets_modify_admin" ON product_gift_sets
+  FOR ALL USING (is_admin(auth.uid()))
+  WITH CHECK (is_admin(auth.uid()));
+
+-- product_gift_set_items: 누구나 조회, 관리자만 수정
+CREATE POLICY "gift_set_items_select_public" ON product_gift_set_items
+  FOR SELECT USING (true);
+CREATE POLICY "gift_set_items_modify_admin" ON product_gift_set_items
+  FOR ALL USING (is_admin(auth.uid()))
+  WITH CHECK (is_admin(auth.uid()));
 
 -- main 충돌
 -- admin 여부 확인 함수 (main, 인자 없음)

@@ -28,11 +28,10 @@ import {
 import {
   getRelatedProducts,
   getProductSets,
-  getProductGifts,
   type RelatedProduct,
   type ProductSet,
-  type ProductGift,
 } from '@/services/relatedProducts';
+import { getGiftSets, isGiftItemAddDisabled, type GiftSet, type GiftSelection } from '@/services/giftSets';
 import { requestStockAlert } from '@/services/stockAlert';
 import { addToRecentlyViewed } from '@/services/recentlyViewed';
 import { dispatchThemeEvent } from '@/lib/theme';
@@ -121,7 +120,9 @@ export default function ProductDetailPage() {
   // 관련 상품 관련 state
   const [relatedProducts, setRelatedProducts] = useState<RelatedProduct[]>([]);
   const [productSets, setProductSets] = useState<ProductSet[]>([]);
-  const [productGifts, setProductGifts] = useState<ProductGift[]>([]);
+  const [giftSets, setGiftSets] = useState<GiftSet[]>([]);
+  // 선택 모드 사은품 선택 상태: { [giftSetId]: GiftSelection[] }
+  const [giftSelections, setGiftSelections] = useState<Record<string, GiftSelection[]>>({});
 
   // 재고 알림 state
   const [stockAlertEmail, setStockAlertEmail] = useState('');
@@ -219,7 +220,15 @@ export default function ProductDetailPage() {
     if (!product) return;
     getRelatedProducts(product.id).then(setRelatedProducts);
     getProductSets(product.id).then(setProductSets);
-    getProductGifts(product.id).then(setProductGifts);
+    getGiftSets(product.id).then((sets) => {
+      setGiftSets(sets);
+      // select 모드 세트의 선택 상태 초기화
+      const initSelections: Record<string, GiftSelection[]> = {};
+      sets.forEach((s) => {
+        if (s.giftMode === 'select') initSelections[s.id] = [];
+      });
+      setGiftSelections(initSelections);
+    });
   }, [product]);
 
   // 상품 옵션 로드
@@ -739,25 +748,128 @@ export default function ProductDetailPage() {
             </div>
           )}
 
-          {/* 사은품 안내 */}
-          {productGifts.length > 0 && (
-            <div className="mb-6 rounded-xl border-2 border-dashed border-green-300 bg-green-50 p-4">
-              <p className="mb-2 font-semibold text-green-800">🎁 사은품 증정</p>
-              {productGifts.map((gift) => (
-                <div key={gift.id} className="flex items-center gap-3">
-                  {gift.giftProduct.imageUrl && (
-                    <img src={gift.giftProduct.imageUrl} alt={gift.giftProduct.name} className="h-12 w-12 rounded object-cover" />
-                  )}
-                  <div>
-                    <p className="text-sm font-medium text-green-900">{gift.giftProduct.name}</p>
-                    {gift.minOrderAmount > 0 && (
-                      <p className="text-xs text-green-700">{formatCurrency(gift.minOrderAmount)} 이상 구매 시</p>
+          {/* 사은품 */}
+          {giftSets.length > 0 && giftSets.map((giftSet) => {
+            const triggered = quantity >= giftSet.triggerQuantity;
+
+            if (giftSet.giftMode === 'auto') {
+              return (
+                <div key={giftSet.id} className={`mb-4 rounded-xl border-2 border-dashed p-4 ${triggered ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-gray-50 opacity-60'}`}>
+                  <p className="mb-2 font-semibold text-green-800">
+                    🎁 {giftSet.name}
+                    {!triggered && (
+                      <span className="ml-2 text-xs font-normal text-gray-500">
+                        ({giftSet.triggerQuantity}개 이상 구매 시 증정)
+                      </span>
                     )}
+                  </p>
+                  <div className="space-y-2">
+                    {giftSet.items.map((item) => (
+                      <div key={item.id} className="flex items-center gap-3">
+                        {item.giftProductImageUrl && (
+                          <img src={item.giftProductImageUrl} alt={item.giftProductName} className="h-10 w-10 rounded object-cover" />
+                        )}
+                        <div>
+                          <p className="text-sm font-medium text-green-900">{item.giftProductName}</p>
+                          <p className="text-xs text-green-700">사은품 (0원)</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+              );
+            }
+
+            // select 모드
+            const selections = giftSelections[giftSet.id] ?? [];
+            const totalSelected = selections.reduce((s, g) => s + g.quantity, 0);
+
+            function changeGiftQty(productId: string, delta: number) {
+              setGiftSelections((prev) => {
+                const cur = prev[giftSet.id] ?? [];
+                const existing = cur.find((g) => g.giftProductId === productId);
+                const newQty = (existing?.quantity ?? 0) + delta;
+                if (newQty <= 0) {
+                  return { ...prev, [giftSet.id]: cur.filter((g) => g.giftProductId !== productId) };
+                }
+                if (existing) {
+                  return { ...prev, [giftSet.id]: cur.map((g) => g.giftProductId === productId ? { ...g, quantity: newQty } : g) };
+                }
+                return { ...prev, [giftSet.id]: [...cur, { giftProductId: productId, quantity: newQty }] };
+              });
+            }
+
+            return (
+              <div key={giftSet.id} className={`mb-4 rounded-xl border-2 border-dashed p-4 ${triggered ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-gray-50 opacity-60'}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="font-semibold text-blue-800">
+                    🎁 {giftSet.name}
+                    {!triggered && (
+                      <span className="ml-2 text-xs font-normal text-gray-500">
+                        ({giftSet.triggerQuantity}개 이상 구매 시 선택 가능)
+                      </span>
+                    )}
+                  </p>
+                  <span className={`text-sm font-bold ${totalSelected >= giftSet.maxGiftQuantity ? 'text-orange-600' : 'text-blue-600'}`}>
+                    {totalSelected} / {giftSet.maxGiftQuantity}개 선택
+                  </span>
+                </div>
+                {/* 진행 바 */}
+                <div className="mb-3 h-1.5 w-full rounded-full bg-gray-200">
+                  <div
+                    className={`h-1.5 rounded-full transition-all ${totalSelected >= giftSet.maxGiftQuantity ? 'bg-orange-400' : 'bg-blue-400'}`}
+                    style={{ width: `${Math.min((totalSelected / giftSet.maxGiftQuantity) * 100, 100)}%` }}
+                  />
+                </div>
+                <div className="space-y-2">
+                  {giftSet.items.map((item) => {
+                    const selectedQty = selections.find((g) => g.giftProductId === item.giftProductId)?.quantity ?? 0;
+                    const plusDisabled = !triggered || isGiftItemAddDisabled(giftSet, selections, item.giftProductId);
+                    const minusDisabled = !triggered || selectedQty <= 0;
+
+                    return (
+                      <div key={item.id} className="flex items-center gap-3 rounded-lg border bg-white p-2">
+                        {item.giftProductImageUrl && (
+                          <img src={item.giftProductImageUrl} alt={item.giftProductName} className="h-10 w-10 rounded object-cover flex-shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{item.giftProductName}</p>
+                          <p className="text-xs text-gray-400">
+                            사은품 0원
+                            {item.maxPerItem && ` · 최대 ${item.maxPerItem}개`}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            type="button"
+                            disabled={minusDisabled}
+                            onClick={() => changeGiftQty(item.giftProductId, -1)}
+                            className="flex h-7 w-7 items-center justify-center rounded border text-sm font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50"
+                          >
+                            −
+                          </button>
+                          <span className="w-6 text-center text-sm font-medium">{selectedQty}</span>
+                          <button
+                            type="button"
+                            disabled={plusDisabled}
+                            onClick={() => changeGiftQty(item.giftProductId, 1)}
+                            className="flex h-7 w-7 items-center justify-center rounded border text-sm font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {triggered && giftSet.maxDistinctItems && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    최대 {giftSet.maxDistinctItems}가지 품목 선택 가능
+                  </p>
+                )}
+              </div>
+            );
+          })}
 
           {/* 세트 상품 안내 */}
           {productSets.length > 0 && (

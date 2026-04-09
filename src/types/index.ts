@@ -49,6 +49,7 @@ export interface Product {
   stockAlertQuantity?: number;
   minPurchaseQuantity?: number;
   maxPurchaseQuantity?: number;
+  dailyPurchaseLimit?: number | null;
   status: 'draft' | 'active' | 'inactive' | 'soldout';
   isFeatured: boolean;
   isNew: boolean;
@@ -77,6 +78,33 @@ export interface ProductImage {
   alt?: string;
   isPrimary: boolean;
   sortOrder: number;
+}
+
+export type GiftMode = 'auto' | 'select';
+
+export interface ProductGiftSetItem {
+  id: string;
+  giftProductId: string;
+  giftProductName: string;
+  giftProductImageUrl: string | null;
+  giftProductSalePrice: number;
+  maxPerItem: number | null;
+  sortOrder: number;
+}
+
+export interface ProductGiftSet {
+  id: string;
+  productId: string;
+  name: string;
+  giftMode: GiftMode;
+  triggerQuantity: number;
+  maxGiftQuantity: number;
+  maxDistinctItems: number | null;
+  isActive: boolean;
+  startsAt: string | null;
+  endsAt: string | null;
+  sortOrder: number;
+  items: ProductGiftSetItem[];
 }
 
 export interface ProductOption {
