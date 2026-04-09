@@ -82,17 +82,26 @@ export default function AdminUserDetailPage() {
   const [useLevels, setUseLevels] = useState(true);
   const [usePoints, setUsePoints] = useState(true);
   const [pointLabel, setPointLabel] = useState('포인트');
+  const [enableUserTags, setEnableUserTags] = useState(false);
+
+  // 태그 관련 상태
+  interface TagRow { id: string; name: string; color: string; sort_order: number; created_by: string | null; }
+  const [allTags, setAllTags] = useState<TagRow[]>([]);
+  const [userTagIds, setUserTagIds] = useState<string[]>([]);
+  const [tagLoading, setTagLoading] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const [ul, up, pl] = await Promise.all([
+      const [ul, up, pl, eut] = await Promise.all([
         getSystemSetting<boolean>('use_user_levels'),
         getSystemSetting<boolean>('use_points'),
         getSystemSetting<string>('point_label'),
+        getSystemSetting<boolean>('enable_user_tags'),
       ]);
       setUseLevels(ul !== false);
       setUsePoints(up !== false);
       if (typeof pl === 'string' && pl) setPointLabel(pl);
+      setEnableUserTags(eut === true);
     })();
   }, []);
 
@@ -166,6 +175,43 @@ export default function AdminUserDetailPage() {
       setError('회원 정보를 불러오는 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (enableUserTags && userId) loadUserTags();
+  }, [enableUserTags, userId]);
+
+  async function loadUserTags() {
+    setTagLoading(true);
+    try {
+      const supabase = createClient();
+      const [tagsRes, memberRes] = await Promise.all([
+        supabase.from('user_tags').select('id, name, color, sort_order, created_by').order('sort_order'),
+        supabase.from('user_tag_members').select('tag_id').eq('user_id', userId!),
+      ]);
+      setAllTags((tagsRes.data as TagRow[]) ?? []);
+      setUserTagIds(((memberRes.data as any[]) ?? []).map((r) => r.tag_id));
+    } finally {
+      setTagLoading(false);
+    }
+  }
+
+  async function handleToggleUserTag(tagId: string) {
+    const supabase = createClient();
+    const { data: { user: au } } = await supabase.auth.getUser();
+    const hasTag = userTagIds.includes(tagId);
+    if (hasTag) {
+      await supabase.from('user_tag_members').delete()
+        .eq('tag_id', tagId).eq('user_id', userId!);
+      setUserTagIds((prev) => prev.filter((id) => id !== tagId));
+    } else {
+      await supabase.from('user_tag_members').insert({
+        tag_id: tagId,
+        user_id: userId!,
+        added_by: au?.id ?? null,
+      });
+      setUserTagIds((prev) => [...prev, tagId]);
     }
   }
 
@@ -454,6 +500,43 @@ export default function AdminUserDetailPage() {
           <UserPermissionSection userId={userId} />
           {userDetail.role === 'user' && <UserManagersSection userId={userId} />}
         </div>
+      )}
+
+      {/* 태그 섹션 */}
+      {enableUserTags && (
+        <Card className="mb-6 p-5">
+          <h2 className="mb-3 text-base font-semibold">태그</h2>
+          {tagLoading ? (
+            <p className="text-sm text-gray-400">로딩 중...</p>
+          ) : allTags.length === 0 ? (
+            <p className="text-sm text-gray-400">생성된 태그가 없습니다. 먼저 태그를 만들어주세요.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {allTags.map((tag) => {
+                const active = userTagIds.includes(tag.id);
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => handleToggleUserTag(tag.id)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
+                      active
+                        ? 'text-white border-transparent'
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+                    }`}
+                    style={active ? { backgroundColor: tag.color, borderColor: tag.color } : {}}
+                  >
+                    <span
+                      className="inline-block h-2 w-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: active ? 'rgba(255,255,255,0.6)' : tag.color }}
+                    />
+                    {tag.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Card>
       )}
 
       <div className="grid gap-6 lg:grid-cols-2">
