@@ -34,6 +34,7 @@ export interface FieldDefinition {
   options: Array<{ label: string; value: string }> | null;
   target_role: string;
   is_system: boolean;
+  is_editable: boolean;
   storage_target: StorageTarget;
   storage_column: string | null;
   terms_id: string | null;

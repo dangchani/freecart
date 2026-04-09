@@ -5,7 +5,21 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { openDaumPostcode } from '@/lib/daum-postcode';
 import { TermsField } from './TermsField';
+import { createClient } from '@/lib/supabase/client';
 import type { FieldDefinition, FieldValue, AddressValue } from './types';
+
+function formatPhone(v: string): string {
+  const d = v.replace(/\D/g, '').slice(0, 11);
+  if (d.length <= 3) return d;
+  if (d.startsWith('02')) {
+    if (d.length <= 5) return `${d.slice(0, 2)}-${d.slice(2)}`;
+    if (d.length <= 9) return `${d.slice(0, 2)}-${d.slice(2, 5)}-${d.slice(5)}`;
+    return `${d.slice(0, 2)}-${d.slice(2, 6)}-${d.slice(6)}`;
+  }
+  if (d.length <= 6) return `${d.slice(0, 3)}-${d.slice(3)}`;
+  if (d.length <= 10) return `${d.slice(0, 3)}-${d.slice(3, 6)}-${d.slice(6)}`;
+  return `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`;
+}
 
 interface Props {
   definition: FieldDefinition;
@@ -40,13 +54,34 @@ function Wrapper({
 export function DynamicField({ definition, value, onChange, error, disabled }: Props) {
   const { field_type, field_key, placeholder } = definition;
 
-  // text / email / url / phone / password
-  if (['text', 'email', 'url', 'phone', 'password'].includes(field_type) || field_key === 'password') {
-    const inputType =
-      field_key === 'password' ? 'password' :
-      field_type === 'email' ? 'email' :
-      field_type === 'url' ? 'url' :
-      field_type === 'phone' ? 'tel' : 'text';
+  // 전화번호 — 하이픈 자동 포맷
+  if (field_type === 'phone') {
+    return (
+      <Wrapper definition={definition} error={error}>
+        <Input
+          type="tel"
+          placeholder={placeholder ?? '010-0000-0000'}
+          value={typeof value === 'string' ? value : ''}
+          onChange={(e) => onChange(formatPhone(e.target.value))}
+          disabled={disabled}
+        />
+      </Wrapper>
+    );
+  }
+
+  // 아이디 — 중복 확인 버튼
+  if (field_key === 'login_id') {
+    return <LoginIdField definition={definition} value={value} onChange={onChange} error={error} disabled={disabled} />;
+  }
+
+  // 비밀번호 — 확인 입력
+  if (field_type === 'password' || field_key === 'password') {
+    return <PasswordField definition={definition} value={value} onChange={onChange} error={error} disabled={disabled} />;
+  }
+
+  // text / email / url
+  if (['text', 'email', 'url'].includes(field_type)) {
+    const inputType = field_type === 'email' ? 'email' : field_type === 'url' ? 'url' : 'text';
     return (
       <Wrapper definition={definition} error={error}>
         <Input
@@ -265,6 +300,89 @@ function FileFieldInner({ definition, value, onChange, error, disabled }: Props)
         disabled={disabled}
       />
       {fileName && <p className="text-xs text-gray-500">선택됨: {fileName}</p>}
+    </Wrapper>
+  );
+}
+
+function LoginIdField({ definition, value, onChange, error, disabled }: Props) {
+  const [checking, setChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState<'ok' | 'dup' | null>(null);
+
+  async function checkDuplicate() {
+    const v = typeof value === 'string' ? value.trim() : '';
+    if (!v) return;
+    setChecking(true);
+    setCheckResult(null);
+    try {
+      const supabase = createClient();
+      const { count } = await supabase
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .eq('login_id', v);
+      setCheckResult(count === 0 ? 'ok' : 'dup');
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  function handleChange(v: string) {
+    setCheckResult(null);
+    onChange(v);
+  }
+
+  return (
+    <Wrapper definition={definition} error={error}>
+      <div className="flex gap-2">
+        <Input
+          type="text"
+          placeholder={definition.placeholder ?? '영문, 숫자 5자 이상'}
+          value={typeof value === 'string' ? value : ''}
+          onChange={(e) => handleChange(e.target.value)}
+          disabled={disabled}
+          className="flex-1"
+        />
+        <Button type="button" variant="outline" onClick={checkDuplicate}
+          disabled={disabled || checking || !value}>
+          {checking ? '확인 중...' : '중복확인'}
+        </Button>
+      </div>
+      {checkResult === 'ok' && <p className="text-xs text-green-600">사용 가능한 아이디입니다.</p>}
+      {checkResult === 'dup' && <p className="text-xs text-red-600">이미 사용 중인 아이디입니다.</p>}
+    </Wrapper>
+  );
+}
+
+function PasswordField({ definition, value, onChange, error, disabled }: Props) {
+  const [raw, setRaw] = useState('');
+  const [confirm, setConfirm] = useState('');
+
+  function sync(p: string, c: string) {
+    onChange(p && c && p === c ? p : '');
+  }
+
+  return (
+    <Wrapper definition={definition} error={raw.length === 0 ? error : undefined}>
+      <Input
+        type="password"
+        placeholder={definition.placeholder ?? '비밀번호'}
+        value={raw}
+        onChange={(e) => { setRaw(e.target.value); sync(e.target.value, confirm); }}
+        disabled={disabled}
+      />
+      <div className="mt-2">
+        <Input
+          type="password"
+          placeholder="비밀번호 확인"
+          value={confirm}
+          onChange={(e) => { setConfirm(e.target.value); sync(raw, e.target.value); }}
+          disabled={disabled}
+        />
+        {confirm.length > 0 && (
+          raw === confirm
+            ? <p className="mt-1 text-xs text-green-600">비밀번호가 일치합니다.</p>
+            : <p className="mt-1 text-xs text-red-500">비밀번호가 일치하지 않습니다.</p>
+        )}
+      </div>
     </Wrapper>
   );
 }

@@ -3224,6 +3224,9 @@ ALTER TABLE signup_field_definitions
   ADD COLUMN IF NOT EXISTS storage_target VARCHAR(20) NOT NULL DEFAULT 'custom',
   ADD COLUMN IF NOT EXISTS storage_column VARCHAR(50);
 
+ALTER TABLE signup_field_definitions
+  ADD COLUMN IF NOT EXISTS is_editable BOOLEAN NOT NULL DEFAULT true;
+
 -- joy: 회원가입 기본 필드 시드. is_system=true로 삭제 방지.
 --   이메일/비밀번호는 field_key로 UI에서 비활성화 토글 차단 (항상 필수)
 --   순서: 아이디(10) → 비밀번호(20) → 이름(30) → 휴대폰(40) → 이메일(50) → 주소(60) → 동의(70)
@@ -3274,6 +3277,9 @@ ON CONFLICT (field_key) DO UPDATE SET
   storage_target = EXCLUDED.storage_target,
   storage_column = EXCLUDED.storage_column,
   is_system      = EXCLUDED.is_system;
+
+-- login_id는 마이페이지에서 수정 불가 고정
+UPDATE signup_field_definitions SET is_editable = false WHERE field_key = 'login_id';
 
 -- 10) user_field_values : 회원이 입력한 동적 필드 값 -- joy 작성
 CREATE TABLE IF NOT EXISTS user_field_values (
