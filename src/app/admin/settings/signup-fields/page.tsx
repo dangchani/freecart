@@ -39,6 +39,7 @@ interface EditDraft {
   field_type: FieldType;
   is_required: boolean;
   is_active: boolean;
+  is_editable: boolean;
   placeholder: string;
   help_text: string;
   options: Array<{ label: string; value: string }>;
@@ -54,6 +55,7 @@ function emptyDraft(): EditDraft {
     field_type: 'text',
     is_required: false,
     is_active: true,
+    is_editable: true,
     placeholder: '',
     help_text: '',
     options: [],
@@ -156,6 +158,7 @@ function Inner() {
       field_type: f.field_type,
       is_required: f.is_required,
       is_active: f.is_active,
+      is_editable: f.is_editable,
       placeholder: f.placeholder ?? '',
       help_text: f.help_text ?? '',
       options: f.options ?? [],
@@ -208,6 +211,7 @@ function Inner() {
         help_text: draft.help_text || null,
         is_active: isCoreField(draft.field_key) ? true : draft.is_active,
         is_required: isCoreField(draft.field_key) ? true : draft.is_required,
+        is_editable: draft.field_key === 'login_id' ? false : draft.is_editable,
       };
       if (!draft.is_system) {
         update.options = draft.options.length > 0 ? draft.options : null;
@@ -226,6 +230,7 @@ function Inner() {
         field_type: draft.field_type,
         is_required: draft.is_required,
         is_active: draft.is_active,
+        is_editable: draft.is_editable,
         sort_order: nextOrder,
         placeholder: draft.placeholder || null,
         help_text: draft.help_text || null,
@@ -343,6 +348,18 @@ function Inner() {
                 disabled={coreDraft}
               />
               활성화
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={draft.field_key === 'login_id' ? false : draft.is_editable}
+                onChange={(e) => setDraft({ ...draft, is_editable: e.target.checked })}
+                disabled={draft.field_key === 'login_id'}
+              />
+              마이페이지에서 수정 허용
+              {draft.field_key === 'login_id' && (
+                <span className="text-xs text-gray-400">(아이디는 변경 불가 고정)</span>
+              )}
             </label>
 
             {isTermsType && (

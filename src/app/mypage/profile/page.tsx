@@ -1,132 +1,168 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
+import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { createClient } from '@/lib/supabase/client';
-import { UserProfileCustomFields } from '@/components/mypage/user-profile-custom-fields';
+import { DynamicField } from '@/components/signup-fields/DynamicField';
+import type { FieldDefinition, FieldValue } from '@/components/signup-fields/types';
 
-const profileSchema = z.object({
-  displayName: z.string().min(1, '이름을 입력해주세요').optional(),
-  phone: z.string().min(10, '휴대폰 번호를 입력해주세요').optional(),
-  address: z.string().optional(),
-});
-
-type ProfileForm = z.infer<typeof profileSchema>;
+// 마이페이지에서 노출할 필드 (password는 별도 섹션)
+const SKIP_KEYS = ['password'];
 
 export default function ProfilePage() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [profile, setProfile] = useState<any>(null);
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    formState: { errors },
-  } = useForm<ProfileForm>({
-    resolver: zodResolver(profileSchema),
-  });
+  const [fields, setFields] = useState<FieldDefinition[]>([]);
+  const [userData, setUserData] = useState<Record<string, unknown>>({});
+  const [values, setValues] = useState<Record<string, FieldValue>>({});
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+
+  // 비밀번호 변경
+  const [currentPw, setCurrentPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwError, setPwError] = useState('');
+  const [pwSuccess, setPwSuccess] = useState('');
 
   useEffect(() => {
     if (!authLoading) {
-      if (!user) {
-        navigate('/auth/login');
-        return;
-      }
-      loadProfile();
+      if (!user) { navigate('/auth/login'); return; }
+      load();
     }
-  }, [user, authLoading, navigate]);
+  }, [user, authLoading]);
 
-  async function loadProfile() {
-    try {
-      if (!user) return;
+  async function load() {
+    if (!user) return;
+    const supabase = createClient();
 
-      const supabase = createClient();
-      const { data, error } = await supabase
+    const [fieldsRes, userRes] = await Promise.all([
+      supabase
+        .from('signup_field_definitions')
+        .select('*, terms(id, title, content)')
+        .eq('is_active', true)
+        .order('sort_order'),
+      supabase
         .from('users')
-        .select('id, name, nickname, phone, email')
+        .select('*')
         .eq('id', user.id)
-        .single();
+        .single(),
+    ]);
 
-      if (error) throw error;
+    const defs = (fieldsRes.data as FieldDefinition[] ?? []).filter(
+      (f) => !SKIP_KEYS.includes(f.field_key)
+    );
+    setFields(defs);
 
-      if (data) {
-        setProfile(data);
-        reset({
-          displayName: data.name || '',
-          phone: data.phone || '',
-          address: '',
-        });
+    const ud = userRes.data ?? {};
+    setUserData(ud);
+
+    // 현재 값 초기화
+    const initial: Record<string, FieldValue> = {};
+    for (const f of defs) {
+      if (f.field_key === 'email') {
+        initial['email'] = user.email ?? '';
+      } else if (f.storage_target === 'users' && f.storage_column) {
+        initial[f.field_key] = (ud[f.storage_column] as FieldValue) ?? '';
+      } else if (f.storage_target === 'users' && !f.storage_column) {
+        initial[f.field_key] = (ud[f.field_key] as FieldValue) ?? '';
       }
-    } catch (error) {
-      console.error('Failed to load profile:', error);
     }
+    setValues(initial);
   }
 
-  async function onSubmit(data: ProfileForm) {
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
     if (!user) return;
+    setSaveError('');
+    setSaving(true);
 
     try {
-      setLoading(true);
-
       const supabase = createClient();
-      const { error } = await supabase
-        .from('users')
-        .update({
-          name: data.displayName,
-          phone: data.phone,
-        })
-        .eq('id', user.id);
+      const usersUpdate: Record<string, unknown> = {};
+      let emailChanged = false;
+      let newEmail = '';
 
-      if (error) throw error;
+      for (const f of fields) {
+        if (!f.is_editable) continue;
+        const v = values[f.field_key];
 
-      alert('프로필이 업데이트되었습니다.');
-      await loadProfile();
-    } catch (error) {
-      console.error('Failed to update profile:', error);
-      alert(error instanceof Error ? error.message : '프로필 업데이트 중 오류가 발생했습니다.');
+        if (f.field_key === 'email') {
+          const email = String(v ?? '').trim();
+          if (email && email !== user.email) {
+            emailChanged = true;
+            newEmail = email;
+          }
+        } else if (f.storage_target === 'users') {
+          const col = f.storage_column ?? f.field_key;
+          usersUpdate[col] = v ?? null;
+        }
+      }
+
+      // public.users 업데이트
+      if (Object.keys(usersUpdate).length > 0) {
+        const { error } = await supabase.from('users').update(usersUpdate).eq('id', user.id);
+        if (error) throw error;
+      }
+
+      // 이메일 변경
+      if (emailChanged) {
+        const { error } = await supabase.auth.updateUser({ email: newEmail });
+        if (error) throw error;
+        await supabase.from('users').update({ email: newEmail }).eq('id', user.id);
+      }
+
+      // 저장 완료 → 강제 로그아웃
+      await supabase.auth.signOut();
+      alert('회원정보가 변경되어 재로그인이 필요합니다.');
+      navigate('/auth/login');
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : '저장 중 오류가 발생했습니다.');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
 
-  async function handleDeleteAccount() {
-    if (!user) return;
+  async function handlePasswordChange(e: React.FormEvent) {
+    e.preventDefault();
+    setPwError('');
+    setPwSuccess('');
+    if (!newPw || newPw.length < 6) { setPwError('새 비밀번호는 6자 이상이어야 합니다.'); return; }
+    if (newPw !== confirmPw) { setPwError('새 비밀번호가 일치하지 않습니다.'); return; }
 
-    if (!confirm('정말로 계정을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
-      return;
-    }
-
+    setPwLoading(true);
     try {
       const supabase = createClient();
-      // Mark user as dormant/blocked instead of hard delete (due to FK constraints)
-      const { error } = await supabase
-        .from('users')
-        .update({ is_blocked: true, blocked_reason: '사용자 탈퇴 요청' })
-        .eq('id', user.id);
+      const { error: signInErr } = await supabase.auth.signInWithPassword({
+        email: user!.email!,
+        password: currentPw,
+      });
+      if (signInErr) { setPwError('현재 비밀번호가 올바르지 않습니다.'); return; }
 
+      const { error } = await supabase.auth.updateUser({ password: newPw });
       if (error) throw error;
 
-      alert('계정이 삭제되었습니다.');
-      navigate('/');
-    } catch (error) {
-      console.error('Failed to delete account:', error);
-      alert(error instanceof Error ? error.message : '계정 삭제 중 오류가 발생했습니다.');
+      // 비밀번호 변경도 재로그인 필요
+      await supabase.auth.signOut();
+      alert('회원정보가 변경되어 재로그인이 필요합니다.');
+      navigate('/auth/login');
+    } catch (err) {
+      setPwError(err instanceof Error ? err.message : '비밀번호 변경에 실패했습니다.');
+    } finally {
+      setPwLoading(false);
     }
   }
 
-  if (authLoading) {
-    return <div className="container py-8">로딩 중...</div>;
-  }
+  if (authLoading) return <div className="container py-8">로딩 중...</div>;
+
+  const editableFields = fields.filter((f) => f.is_editable);
+  const readonlyFields = fields.filter((f) => !f.is_editable);
 
   return (
     <div className="container py-8">
@@ -135,53 +171,79 @@ export default function ProfilePage() {
         마이페이지로 돌아가기
       </Link>
 
-      <h1 className="mb-8 text-3xl font-bold">프로필 수정</h1>
+      <h1 className="mb-8 text-3xl font-bold">회원정보</h1>
 
-      <div className="max-w-2xl">
-        <Card className="p-6">
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <div className="max-w-2xl space-y-6">
+
+        {/* 변경 불가 필드 */}
+        {readonlyFields.length > 0 && (
+          <Card className="p-6 space-y-4">
             <div>
-              <Label>이메일</Label>
-              <Input value={user?.email || ''} disabled />
-              <p className="mt-1 text-sm text-gray-500">이메일은 변경할 수 없습니다.</p>
+              <h2 className="text-lg font-semibold">변경 불가 정보</h2>
+              <p className="text-sm text-gray-500 mt-0.5">아래 정보는 고객센터를 통해 변경하실 수 있습니다.</p>
             </div>
+            {readonlyFields.map((f) => (
+              <div key={f.id}>
+                <Label className="text-gray-500">{f.label}</Label>
+                <div className="mt-1 rounded-md border bg-gray-50 px-3 py-2 text-sm text-gray-700">
+                  {String(values[f.field_key] ?? (userData[f.storage_column ?? f.field_key] as string) ?? '-')}
+                </div>
+              </div>
+            ))}
+          </Card>
+        )}
 
+        {/* 수정 가능 필드 */}
+        {editableFields.length > 0 && (
+          <Card className="p-6">
+            <h2 className="mb-4 text-lg font-semibold">정보 수정</h2>
+            <form onSubmit={handleSave} className="space-y-4">
+              {editableFields.map((f) => (
+                <DynamicField
+                  key={f.id}
+                  definition={f}
+                  value={values[f.field_key] ?? null}
+                  onChange={(v) => setValues((prev) => ({ ...prev, [f.field_key]: v }))}
+                />
+              ))}
+              {saveError && <p className="text-sm text-red-600">{saveError}</p>}
+              <Button type="submit" disabled={saving}>
+                {saving ? '저장 중...' : '저장'}
+              </Button>
+            </form>
+          </Card>
+        )}
+
+        {/* 비밀번호 변경 */}
+        <Card className="p-6">
+          <h2 className="mb-4 text-lg font-semibold">비밀번호 변경</h2>
+          <form onSubmit={handlePasswordChange} className="space-y-4">
             <div>
-              <Label htmlFor="displayName">이름</Label>
-              <Input id="displayName" {...register('displayName')} placeholder="이름을 입력해주세요" />
-              {errors.displayName && (
-                <p className="mt-1 text-sm text-red-500">{errors.displayName.message}</p>
+              <Label htmlFor="currentPw">현재 비밀번호</Label>
+              <Input id="currentPw" type="password" value={currentPw}
+                onChange={(e) => setCurrentPw(e.target.value)} required />
+            </div>
+            <div>
+              <Label htmlFor="newPw">새 비밀번호</Label>
+              <Input id="newPw" type="password" value={newPw}
+                onChange={(e) => setNewPw(e.target.value)} required placeholder="6자 이상" />
+            </div>
+            <div>
+              <Label htmlFor="confirmPw">새 비밀번호 확인</Label>
+              <Input id="confirmPw" type="password" value={confirmPw}
+                onChange={(e) => setConfirmPw(e.target.value)} required />
+              {confirmPw.length > 0 && (
+                newPw === confirmPw
+                  ? <p className="mt-1 text-xs text-green-600">비밀번호가 일치합니다.</p>
+                  : <p className="mt-1 text-xs text-red-500">비밀번호가 일치하지 않습니다.</p>
               )}
             </div>
-
-            <div>
-              <Label htmlFor="phone">휴대폰 번호</Label>
-              <Input id="phone" {...register('phone')} placeholder="01012345678" />
-              {errors.phone && <p className="mt-1 text-sm text-red-500">{errors.phone.message}</p>}
-            </div>
-
-            <div>
-              <Label htmlFor="address">주소</Label>
-              <Input id="address" {...register('address')} placeholder="주소를 입력해주세요" />
-              {errors.address && <p className="mt-1 text-sm text-red-500">{errors.address.message}</p>}
-            </div>
-
-            <Button type="submit" disabled={loading}>
-              {loading ? '저장 중...' : '저장'}
+            {pwError && <p className="text-sm text-red-600">{pwError}</p>}
+            {pwSuccess && <p className="text-sm text-green-600">{pwSuccess}</p>}
+            <Button type="submit" disabled={pwLoading}>
+              {pwLoading ? '변경 중...' : '비밀번호 변경'}
             </Button>
           </form>
-        </Card>
-
-        {user && <UserProfileCustomFields userId={user.id} />}
-
-        <Card className="mt-6 p-6 border-red-200">
-          <h2 className="mb-2 text-lg font-bold text-red-600">위험 영역</h2>
-          <p className="mb-4 text-sm text-gray-600">
-            계정을 삭제하면 모든 데이터가 영구적으로 삭제됩니다.
-          </p>
-          <Button variant="destructive" onClick={handleDeleteAccount}>
-            계정 삭제
-          </Button>
         </Card>
       </div>
     </div>
