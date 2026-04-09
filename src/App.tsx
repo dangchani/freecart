@@ -119,11 +119,13 @@ import ContentPage from './app/pages/[slug]/page';
 import OAuthCallbackPage from './app/admin/oauth/callback/page';
 import PendingApprovalPage from './app/auth/pending-approval/page';
 import { PrivateMallGuard } from './components/private-mall-guard';
+import PopupManager from './components/popup/PopupManager';
 
 // 테마 레이아웃 (DB layout_config 기반 헤더/푸터 동적 렌더링)
 function MainLayout() {
   return (
     <ThemeLayout>
+      <PopupManager />
       <Outlet />
     </ThemeLayout>
   );

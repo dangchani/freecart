@@ -8,11 +8,15 @@
 DROP POLICY IF EXISTS "products_storage_select" ON storage.objects;
 DROP POLICY IF EXISTS "products_storage_insert" ON storage.objects;
 DROP POLICY IF EXISTS "products_storage_delete" ON storage.objects;
+DROP POLICY IF EXISTS "popups_storage_select" ON storage.objects;
+DROP POLICY IF EXISTS "popups_storage_insert" ON storage.objects;
+DROP POLICY IF EXISTS "popups_storage_delete" ON storage.objects;
 -- ※ 버킷 삭제는 Supabase 대시보드 → Storage에서 직접 삭제
 
 -- 함수 삭제
 DROP FUNCTION IF EXISTS public.admin_create_user CASCADE;
 DROP FUNCTION IF EXISTS public.handle_new_user CASCADE;
+DROP FUNCTION IF EXISTS public.auto_confirm_user CASCADE;
 DROP FUNCTION IF EXISTS public.update_updated_at_column CASCADE;
 
 -- 2026.04.07 윌리엄 추가 (joy) — 권한/담당자/동적 필드 관련 함수/트리거
