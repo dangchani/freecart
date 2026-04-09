@@ -74,6 +74,18 @@ export function ThemeSection({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawHtml ?? htmlUrl, JSON.stringify(settings)]);
 
+  // <script> 태그 실행 (dangerouslySetInnerHTML은 스크립트 미실행)
+  useEffect(() => {
+    if (!html || !containerRef.current) return;
+    const scripts = containerRef.current.querySelectorAll('script');
+    scripts.forEach((old) => {
+      const s = document.createElement('script');
+      Array.from(old.attributes).forEach((a) => s.setAttribute(a.name, a.value));
+      s.textContent = old.textContent;
+      old.parentNode?.replaceChild(s, old);
+    });
+  }, [html]);
+
   // <a> 클릭 → React Router navigate (SPA 라우팅)
   useEffect(() => {
     if (!html || !containerRef.current) return;

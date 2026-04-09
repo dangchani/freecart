@@ -3,7 +3,7 @@
  * Supabase Storage를 사용하여 테마 파일을 관리합니다.
  */
 
-import { createClient } from '@/lib/supabase/client';
+import { createClient, createServiceClient } from '@/lib/supabase/client';
 
 const THEME_BUCKET = 'themes';
 
@@ -19,37 +19,23 @@ interface UploadResult {
   error?: string;
 }
 
-// 버킷 존재 여부 캐시 (한 번 확인하면 재확인 불필요)
 let _bucketReady = false;
 
 /**
- * 테마 버킷 초기화 (없으면 생성) — 세션당 1회만 실행
+ * 테마 버킷 확인/초기화 — service role로 실행, 세션당 1회
  */
 export async function ensureThemeBucket(): Promise<boolean> {
   if (_bucketReady) return true;
-
-  const supabase = createClient();
-  const { data: buckets, error: listErr } = await supabase.storage.listBuckets();
-
-  if (listErr) {
-    console.error('[ThemeStorage] 버킷 목록 조회 실패:', listErr.message);
-    // 조회 실패해도 업로드 시도는 계속 진행
-    _bucketReady = true;
-    return true;
-  }
-
+  const supabase = createServiceClient();
+  const { data: buckets } = await supabase.storage.listBuckets();
   const exists = buckets?.some((b) => b.name === THEME_BUCKET);
   if (!exists) {
-    const { error } = await supabase.storage.createBucket(THEME_BUCKET, {
+    await supabase.storage.createBucket(THEME_BUCKET, {
       public: true,
       fileSizeLimit: 10 * 1024 * 1024,
+      allowedMimeTypes: ['text/css', 'text/html', 'text/plain', 'image/jpeg', 'image/png', 'image/webp', 'application/zip'],
     });
-    if (error && !error.message.toLowerCase().includes('already exists')) {
-      console.error('[ThemeStorage] 버킷 생성 실패:', error.message);
-      return false;
-    }
   }
-
   _bucketReady = true;
   return true;
 }
@@ -61,7 +47,7 @@ export async function uploadThemeCSS(
   themeSlug: string,
   cssContent: string
 ): Promise<UploadResult> {
-  const supabase = createClient();
+  const supabase = createServiceClient();
 
   await ensureThemeBucket();
 
@@ -93,7 +79,7 @@ export async function uploadThemeThumbnail(
   themeSlug: string,
   file: File
 ): Promise<UploadResult> {
-  const supabase = createClient();
+  const supabase = createServiceClient();
 
   await ensureThemeBucket();
 
@@ -126,7 +112,7 @@ export async function uploadThemeFile(
   fileName: string,
   file: File | Blob
 ): Promise<UploadResult> {
-  const supabase = createClient();
+  const supabase = createServiceClient();
 
   await ensureThemeBucket();
 
@@ -159,7 +145,7 @@ export async function uploadSectionHTML(
   sectionId: string,
   htmlContent: string
 ): Promise<UploadResult> {
-  const supabase = createClient();
+  const supabase = createServiceClient();
   await ensureThemeBucket();
 
   const filePath = `${themeSlug}/sections/${sectionId}.html`;
@@ -182,7 +168,7 @@ export async function uploadSectionHTML(
  * 테마 파일 삭제
  */
 export async function deleteThemeFiles(themeSlug: string): Promise<boolean> {
-  const supabase = createClient();
+  const supabase = createServiceClient();
 
   // 해당 테마 폴더의 모든 파일 목록
   const { data: files, error: listError } = await supabase.storage
@@ -206,7 +192,7 @@ export async function deleteThemeFiles(themeSlug: string): Promise<boolean> {
  * 테마 파일 목록 조회
  */
 export async function getThemeFiles(themeSlug: string): Promise<ThemeFiles> {
-  const supabase = createClient();
+  const supabase = createServiceClient();
 
   const { data: files } = await supabase.storage
     .from(THEME_BUCKET)
@@ -250,7 +236,7 @@ export async function uploadSkinCSS(
   skinSlug: string,
   cssContent: string
 ): Promise<UploadResult> {
-  const supabase = createClient();
+  const supabase = createServiceClient();
   await ensureThemeBucket();
 
   const filePath = `${themeSlug}/skins/${skinSlug}.css`;

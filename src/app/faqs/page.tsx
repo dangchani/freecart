@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { PageSection } from '@/components/theme/PageSection';
 import { ChevronDown, ChevronUp, HelpCircle } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
@@ -79,7 +80,9 @@ export default function FAQsPage() {
   }
 
   return (
-    <div className="container py-8">
+    <>
+      <PageSection id="faqs" />
+      <div className="container py-8">
       <div className="mb-8 text-center">
         <h1 className="text-3xl font-bold">자주 묻는 질문</h1>
         <p className="mt-2 text-gray-500">궁금하신 점을 빠르게 확인해보세요.</p>
@@ -146,5 +149,6 @@ export default function FAQsPage() {
         </div>
       )}
     </div>
+    </>
   );
 }

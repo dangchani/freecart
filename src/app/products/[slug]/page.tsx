@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { PageSection } from '@/components/theme/PageSection';
 import {
   getProductBySlug,
   getProductOptions,
@@ -510,7 +511,9 @@ export default function ProductDetailPage() {
   }
 
   return (
-    <div className="container py-8">
+    <>
+      <PageSection id="product-detail" />
+      <div className="container py-8">
       {toast.show && (
         <div className={`fixed right-4 top-4 z-50 flex items-center gap-2 rounded-lg px-4 py-3 shadow-lg transition-all ${toast.type === 'success' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`}>
           {toast.type === 'success' && <Check className="h-4 w-4" />}
@@ -1033,6 +1036,8 @@ export default function ProductDetailPage() {
         <RecentlyViewed currentProductId={product.id} maxItems={10} layout="horizontal" />
       </div>
     </div>
+    <PageSection id="product-detail-bottom" />
+    </>
   );
 }
 

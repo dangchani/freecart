@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { signIn, PENDING_APPROVAL_ERROR } from '@/lib/auth';
+import { PageSection } from '@/components/theme/PageSection';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -40,7 +41,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="container flex min-h-[calc(100vh-200px)] items-center justify-center py-8">
+    <>
+      <PageSection id="login" />
+      <div className="container flex min-h-[calc(100vh-200px)] items-center justify-center py-8">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>로그인</CardTitle>
@@ -100,5 +103,6 @@ export default function LoginPage() {
         </CardContent>
       </Card>
     </div>
+    </>
   );
 }

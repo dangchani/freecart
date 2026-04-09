@@ -42,6 +42,9 @@ export interface ThemeLayoutConfig {
   // 메인페이지 섹션 배치
   homeSections: HomeSectionConfig[];
 
+  // 페이지별 섹션 (로그인/상품/장바구니 등 각 페이지 상단·하단 HTML 주입)
+  pageSections?: { id: string; title: string; enabled: boolean }[];
+
   // 상세 설정
   settings: {
     headerFixed: boolean;
@@ -195,6 +198,8 @@ export interface ThemeContextValue {
   layoutConfig: ThemeLayoutConfig;
   loading: boolean;
   error: string | null;
+  /** refreshTheme 호출마다 증가 — HTML URL 캐시 무효화용 */
+  htmlCacheVersion: number;
 
   // 액션
   activateTheme: (themeId: string) => Promise<void>;

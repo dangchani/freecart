@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { PageSection } from '@/components/theme/PageSection';
 import { ProductCard } from '@/components/product-card';
 import { createClient } from '@/lib/supabase/client';
 import type { Product } from '@/types';
@@ -167,7 +168,9 @@ export default function ProductsPage() {
   const pageTitle = isFeatured ? '추천 상품' : isNew ? '신상품' : isBest ? '베스트 상품' : '전체 상품';
 
   return (
-    <div className="container py-8">
+    <>
+      <PageSection id="product-list" />
+      <div className="container py-8">
       {/* 상단 헤더 */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-gray-900">
@@ -395,5 +398,7 @@ export default function ProductsPage() {
         </div>
       )}
     </div>
+    <PageSection id="product-list-bottom" />
+    </>
   );
 }

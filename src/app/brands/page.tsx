@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight, Tag } from 'lucide-react';
+import { PageSection } from '@/components/theme/PageSection';
 import { createClient } from '@/lib/supabase/client';
 
 interface Brand {
@@ -47,7 +48,9 @@ export default function BrandsPage() {
   }, []);
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-6xl">
+    <>
+      <PageSection id="brands" />
+      <div className="container mx-auto px-4 py-8 max-w-6xl">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
           <Tag className="h-8 w-8 text-blue-600" />
@@ -110,5 +113,6 @@ export default function BrandsPage() {
         </div>
       )}
     </div>
+    </>
   );
 }

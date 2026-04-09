@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { CheckCircle2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { PageSection } from '@/components/theme/PageSection';
 import { createClient } from '@/lib/supabase/client';
 import { dispatchThemeEvent } from '@/lib/theme';
 
@@ -115,7 +116,9 @@ function SuccessContent() {
   }
 
   return (
-    <div className="container flex min-h-[60vh] items-center justify-center py-8">
+    <>
+      <PageSection id="checkout-success" />
+      <div className="container flex min-h-[60vh] items-center justify-center py-8">
       <Card className="p-8 text-center max-w-md">
         <div className="mb-4 flex justify-center">
           <CheckCircle2 className="h-16 w-16 text-green-500" />
@@ -148,6 +151,7 @@ function SuccessContent() {
         </div>
       </Card>
     </div>
+    </>
   );
 }
 

@@ -2,12 +2,15 @@
 import { useNavigate, Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { DynamicSignupForm } from '@/components/signup-fields/DynamicSignupForm';
+import { PageSection } from '@/components/theme/PageSection';
 
 export default function SignupPage() {
   const navigate = useNavigate();
 
   return (
-    <div className="container flex min-h-[calc(100vh-200px)] items-center justify-center py-8">
+    <>
+      <PageSection id="signup" />
+      <div className="container flex min-h-[calc(100vh-200px)] items-center justify-center py-8">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">회원가입</CardTitle>
@@ -27,5 +30,6 @@ export default function SignupPage() {
         </CardContent>
       </Card>
     </div>
+    </>
   );
 }

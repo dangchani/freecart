@@ -89,6 +89,14 @@ export function ThemeConfigProvider({ children }: { children: ReactNode }) {
   const [layoutConfig, setLayoutConfig] = useState<ThemeLayoutConfig>(DEFAULT_LAYOUT_CONFIG);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [htmlCacheVersion, setHtmlCacheVersion] = useState(() => Date.now());
+
+  // 다른 탭에서 HTML 저장 시 → 타임스탬프 수신해서 즉시 적용
+  useEffect(() => {
+    const ch = new BroadcastChannel('fc-html-update');
+    ch.onmessage = (e: MessageEvent<number>) => setHtmlCacheVersion(e.data);
+    return () => ch.close();
+  }, []);
 
   // ------------------------------------------------------------------
   // 테마 로드
@@ -332,7 +340,14 @@ export function ThemeConfigProvider({ children }: { children: ReactNode }) {
     setActiveTheme((prev) => prev ? { ...prev, themeSettings: settings } : prev);
   }, [activeTheme]);
 
-  const refreshTheme = useCallback(() => loadTheme(), [loadTheme]);
+  const refreshTheme = useCallback(async () => {
+    await loadTheme();
+    const ts = Date.now();
+    setHtmlCacheVersion(ts);              // 자신 탭
+    const ch = new BroadcastChannel('fc-html-update');
+    ch.postMessage(ts);                   // 다른 탭 — 같은 타임스탬프로 동기화
+    ch.close();
+  }, [loadTheme]);
 
   return (
     <ThemeContext.Provider value={{
@@ -340,6 +355,7 @@ export function ThemeConfigProvider({ children }: { children: ReactNode }) {
       layoutConfig,
       loading,
       error,
+      htmlCacheVersion,
       activateTheme,
       activateSkin,
       updateLayoutConfig,

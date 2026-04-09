@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Mail, CheckCircle } from 'lucide-react';
 import { resetPasswordByLoginId } from '@/lib/auth';
+import { PageSection } from '@/components/theme/PageSection';
 
 export default function ForgotPasswordPage() {
   const [loginId, setLoginId] = useState('');
@@ -34,7 +35,9 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4">
+    <>
+      <PageSection id="forgot-password" />
+      <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4">
       <div className="w-full max-w-md">
         <Link
           to="/auth/login"
@@ -111,5 +114,6 @@ export default function ForgotPasswordPage() {
         </Card>
       </div>
     </div>
+    </>
   );
 }

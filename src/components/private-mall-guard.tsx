@@ -51,13 +51,13 @@ export function PrivateMallGuard({ scope }: Props) {
   if (user?.role === 'admin' || user?.role === 'super_admin') return <Outlet />;
 
   // 미로그인 → 로그인 페이지
+  // full 모드(메인부터 차단)는 헤더/푸터 없는 전용 로그인 페이지로 이동
   if (!user) {
-    return (
-      <Navigate
-        to={`/auth/login?reason=closed_mall&next=${encodeURIComponent(location.pathname + location.search)}`}
-        replace
-      />
-    );
+    const loginPath =
+      scope === 'site' && config.mode === 'full'
+        ? `/auth/closed-mall?next=${encodeURIComponent(location.pathname + location.search)}`
+        : `/auth/login?reason=closed_mall&next=${encodeURIComponent(location.pathname + location.search)}`;
+    return <Navigate to={loginPath} replace />;
   }
 
   // 로그인했지만 미승인 → 승인 대기 페이지

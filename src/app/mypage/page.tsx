@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Link } from 'react-router-dom';
+import { PageSection } from '@/components/theme/PageSection';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
@@ -31,7 +32,9 @@ export default function MyPage() {
   }
 
   return (
-    <div className="container py-8">
+    <>
+      <PageSection id="mypage" />
+      <div className="container py-8">
       <h1 className="mb-8 text-3xl font-bold">마이페이지</h1>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -91,5 +94,6 @@ export default function MyPage() {
         </Button>
       </div>
     </div>
+    </>
   );
 }

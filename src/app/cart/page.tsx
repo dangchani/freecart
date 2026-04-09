@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
+import { PageSection } from '@/components/theme/PageSection';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { formatCurrency } from '@/lib/utils';
@@ -92,7 +93,9 @@ export default function CartPage() {
   const total = subtotal + shippingCost;
 
   return (
-    <div className="container py-8">
+    <>
+      <PageSection id="cart" />
+      <div className="container py-8">
       <h1 className="mb-8 text-3xl font-bold">장바구니</h1>
 
       {items.length === 0 ? (
@@ -184,5 +187,6 @@ export default function CartPage() {
         </div>
       )}
     </div>
+    </>
   );
 }

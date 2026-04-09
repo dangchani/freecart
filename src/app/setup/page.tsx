@@ -7,8 +7,8 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 const SCHEMA_SQL_URL = 'https://raw.githubusercontent.com/dangchani/freecart/main/supabase/db-schema-full.sql';
 const MAX_SUPER_ADMIN = 2;
 
-type Step = 'supabase' | 'database' | 'account' | 'complete' | 'locked';
-type DbStatus = 'idle' | 'checking' | 'not_ready' | 'ready' | 'creating_admin' | 'done' | 'error';
+type Step = 'supabase' | 'database' | 'account' | 'theme' | 'complete' | 'locked';
+type DbStatus = 'idle' | 'checking' | 'not_ready' | 'ready' | 'creating_admin' | 'done' | 'uploading_theme' | 'error';
 
 export default function SetupPage() {
   const [step, setStep] = useState<Step>('supabase');
@@ -25,6 +25,7 @@ export default function SetupPage() {
   // DB step
   const [sqlCopied, setSqlCopied] = useState(false);
   const [dbStatus, setDbStatus] = useState<DbStatus>('idle');
+  const [themeProgress, setThemeProgress] = useState<{ done: number; total: number; current: string }>({ done: 0, total: 0, current: '' });
   const [dbMessage, setDbMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -175,11 +176,88 @@ export default function SetupPage() {
       }
 
       setDbStatus('done');
-      setStep('complete');
+      setStep('theme');
     } catch (err) {
       setDbStatus('error');
       setError(err instanceof Error ? err.message : '계정 생성 중 오류가 발생했습니다.');
     }
+  }
+
+  // Step 4: 기본 테마 HTML 업로드
+  async function handleInstallDefaultTheme() {
+    setError('');
+    setDbStatus('uploading_theme');
+
+    try {
+      const supabase = getAdminClient();
+      const BUCKET = 'themes';
+      const THEME_SLUG = 'default-shop';
+
+      // 1. 섹션 HTML을 스토어 API에서 가져옴 — 단일 소스 (freecart-web/lib/default-theme-sections.ts)
+      //    store_api_url은 settings 테이블에서 읽음 (기본값: https://freecart.kr)
+      const { data: storeUrlSetting } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'store_api_url')
+        .single();
+      const storeUrl = storeUrlSetting?.value || 'https://freecart.kr';
+      const sectionsRes = await fetch(`${storeUrl}/api/themes/default-shop/sections`);
+      if (!sectionsRes.ok) throw new Error(`테마 섹션 로드 실패: ${sectionsRes.status}`);
+      const { sections: sectionHtmlMap } = await sectionsRes.json() as { sections: Record<string, string> };
+
+      // 2. 버킷 존재 확인 및 생성
+      const { data: buckets } = await supabase.storage.listBuckets();
+      const bucketExists = buckets?.some((b: any) => b.name === BUCKET);
+      if (!bucketExists) {
+        await supabase.storage.createBucket(BUCKET, {
+          public: true,
+          fileSizeLimit: 10 * 1024 * 1024,
+          allowedMimeTypes: ['text/css', 'text/html', 'text/plain', 'image/jpeg', 'image/png', 'image/webp', 'application/zip'],
+        });
+      }
+
+      const sectionIds = Object.keys(sectionHtmlMap);
+      setThemeProgress({ done: 0, total: sectionIds.length, current: '' });
+      const sectionHtmlUrls: Record<string, string> = {};
+
+      for (let i = 0; i < sectionIds.length; i++) {
+        const sectionId = sectionIds[i];
+        setThemeProgress({ done: i, total: sectionIds.length, current: sectionId });
+
+        const filePath = `${THEME_SLUG}/sections/${sectionId}.html`;
+        const blob = new Blob([sectionHtmlMap[sectionId]], { type: 'text/html' });
+
+        const { error: uploadErr } = await supabase.storage
+          .from(BUCKET)
+          .upload(filePath, blob, { cacheControl: '3600', upsert: true });
+
+        if (uploadErr) throw new Error(`${sectionId} 업로드 실패: ${uploadErr.message}`);
+
+        const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(filePath);
+        sectionHtmlUrls[sectionId] = urlData.publicUrl;
+      }
+
+      setThemeProgress({ done: sectionIds.length, total: sectionIds.length, current: '' });
+
+      // 3. installed_themes 업데이트
+      const { error: updateErr } = await supabase
+        .from('installed_themes')
+        .update({ section_html_urls: sectionHtmlUrls })
+        .eq('slug', THEME_SLUG);
+
+      if (updateErr) throw new Error(`테마 DB 업데이트 실패: ${updateErr.message}`);
+
+      setDbStatus('done');
+      setStep('complete');
+    } catch (err) {
+      setDbStatus('error');
+      setError(err instanceof Error ? err.message : '테마 초기화 중 오류가 발생했습니다.');
+    }
+  }
+
+  // 테마 초기화 건너뛰기
+  function skipThemeInstall() {
+    setStep('complete');
   }
 
   // locked 단계에서 강등 후 재시도 체크
@@ -211,7 +289,7 @@ export default function SetupPage() {
     }
   }
 
-  const stepOrder: Step[] = ['supabase', 'database', 'account', 'complete'];
+  const stepOrder: Step[] = ['supabase', 'database', 'account', 'theme', 'complete'];
   const currentIdx = stepOrder.indexOf(step === 'locked' ? 'account' : step);
 
   return (
@@ -243,6 +321,7 @@ export default function SetupPage() {
             {step === 'database' && 'Step 2: DB 초기화'}
             {step === 'account' && 'Step 3: 최고 관리자 계정 생성'}
             {step === 'locked' && 'Step 3: 생성 제한'}
+            {step === 'theme' && 'Step 4: 기본 테마 초기화'}
             {step === 'complete' && '설정 완료'}
           </p>
         </div>
@@ -427,6 +506,61 @@ export default function SetupPage() {
               {dbStatus === 'creating_admin' ? '생성 중...' : 'super_admin 계정 생성'}
             </button>
           </form>
+        )}
+
+        {/* Step 4: 기본 테마 초기화 */}
+        {step === 'theme' && (
+          <div className="space-y-5">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <p className="text-sm font-semibold text-blue-800 mb-1">기본 쇼핑몰 테마 초기화</p>
+              <p className="text-xs text-blue-700 leading-relaxed">
+                <strong>default-shop</strong> 테마의 섹션 HTML 파일을 Supabase Storage에 업로드합니다.<br />
+                Hero, 특징, 카테고리, 신상품, 베스트, 후기, 뉴스레터 등 8개 섹션이 설치됩니다.
+              </p>
+            </div>
+
+            {dbStatus === 'uploading_theme' && (
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent flex-shrink-0" />
+                  <span className="text-sm text-gray-700">업로드 중...</span>
+                </div>
+                {themeProgress.total > 0 && (
+                  <>
+                    <div className="w-full bg-gray-200 rounded-full h-1.5 mb-1.5">
+                      <div
+                        className="bg-blue-500 h-1.5 rounded-full transition-all"
+                        style={{ width: `${(themeProgress.done / themeProgress.total) * 100}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      {themeProgress.done}/{themeProgress.total}
+                      {themeProgress.current && ` — ${themeProgress.current}.html`}
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{error}</div>
+            )}
+
+            <button
+              onClick={handleInstallDefaultTheme}
+              disabled={dbStatus === 'uploading_theme'}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium py-2.5 rounded-lg text-sm"
+            >
+              {dbStatus === 'uploading_theme' ? '업로드 중...' : '기본 테마 초기화'}
+            </button>
+            <button
+              onClick={skipThemeInstall}
+              disabled={dbStatus === 'uploading_theme'}
+              className="w-full text-sm text-gray-400 hover:text-gray-600 disabled:opacity-40"
+            >
+              건너뛰기 (나중에 직접 업로드)
+            </button>
+          </div>
         )}
 
         {/* locked */}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
+import { PageSection } from '@/components/theme/PageSection';
 import { MessageSquare, Users } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
@@ -63,7 +64,9 @@ export default function BoardsPage() {
   }
 
   return (
-    <div className="container py-8">
+    <>
+      <PageSection id="boards" />
+      <div className="container py-8">
       <div className="mb-8">
         <h1 className="mb-2 text-3xl font-bold">커뮤니티</h1>
         <p className="text-gray-600">다양한 주제로 소통하세요</p>
@@ -96,5 +99,6 @@ export default function BoardsPage() {
         </div>
       )}
     </div>
+    </>
   );
 }
