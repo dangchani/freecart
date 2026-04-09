@@ -44,6 +44,7 @@ function parseValue(raw: string | undefined): string {
 export function invalidateSettingsCache(): void {
   cacheLoaded = false;
   cache = {};
+  window.dispatchEvent(new CustomEvent('freecart:settings-changed'));
 }
 
 /** 단일 설정 값을 문자열로 가져옵니다. */

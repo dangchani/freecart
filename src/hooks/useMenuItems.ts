@@ -24,6 +24,8 @@ export function useMenuItems() {
 
   useEffect(() => {
     loadMenus();
+    window.addEventListener('freecart:settings-changed', loadMenus);
+    return () => window.removeEventListener('freecart:settings-changed', loadMenus);
   }, [location.pathname]);
 
   async function loadMenus() {

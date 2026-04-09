@@ -176,7 +176,7 @@ export const UserSignupFieldsSection = forwardRef<UserSignupFieldsSectionHandle,
           .select(userColumns.join(','))
           .eq('id', userId)
           .single();
-        userRow = (data as Record<string, unknown>) ?? {};
+        userRow = (data as unknown as Record<string, unknown>) ?? {};
       }
 
       // 주소 (user_addresses 기본 배송지)

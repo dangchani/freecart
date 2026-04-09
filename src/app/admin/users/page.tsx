@@ -22,6 +22,7 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { getSystemSetting } from '@/lib/permissions';
 import { useAuth } from '@/hooks/useAuth';
+import { DynamicSignupForm } from '@/components/signup-fields/DynamicSignupForm';
 import {
   extractCustomValue,
   formatSignupFieldValue,
@@ -39,10 +40,20 @@ interface UserRow {
   points: number;
   createdAt: string;
   isBlocked: boolean;
+  role: string;
   // storage=users 인 커스텀 필드의 원시값 저장소
   userCols: Record<string, unknown>;
   // storage=custom 인 필드의 원시값 저장소 (field_key → value)
   customVals: Record<string, unknown>;
+}
+
+interface TagRow {
+  id: string;
+  name: string;
+  color: string;
+  sort_order: number;
+  created_by: string | null;
+  memberCount?: number;
 }
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100, 300] as const;
@@ -77,6 +88,32 @@ export default function AdminUsersPage() {
   const [useLevels, setUseLevels] = useState(true);
   const [usePoints, setUsePoints] = useState(true);
   const [pointLabel, setPointLabel] = useState('포인트');
+  const [enableUserTags, setEnableUserTags] = useState(false);
+
+  // 태그 관련 상태
+  const [activeTab, setActiveTab] = useState<'users' | 'tags'>('users');
+  const [tags, setTags] = useState<TagRow[]>([]);
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
+  const [userTagsMap, setUserTagsMap] = useState<Record<string, string[]>>({}); // userId → tagId[]
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+
+  // 태그 관리 패널
+  const [showTagPanel, setShowTagPanel] = useState(false);
+  const [tagForm, setTagForm] = useState({ name: '', color: '#6366f1' });
+  const [tagSubmitting, setTagSubmitting] = useState(false);
+  const [tagError, setTagError] = useState('');
+  const [editingTagId, setEditingTagId] = useState<string | null>(null);
+  const [editTagForm, setEditTagForm] = useState({ name: '', color: '#6366f1' });
+
+  // 일괄 태그
+  const [bulkTagId, setBulkTagId] = useState<string>('');
+  const [bulkAction, setBulkAction] = useState<'add' | 'remove'>('add');
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+
+  // 행 태그 팝오버
+  const [popoverUserId, setPopoverUserId] = useState<string | null>(null);
+  const [popoverTagLoading, setPopoverTagLoading] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   // 정렬
   const [sortKey, setSortKey] = useState<string>('created_at');
@@ -110,21 +147,20 @@ export default function AdminUsersPage() {
 
   // 회원 추가 모달
   const [showAddModal, setShowAddModal] = useState(false);
-  const [addForm, setAddForm] = useState({ loginId: '', name: '', email: '', password: '', phone: '' });
-  const [addSubmitting, setAddSubmitting] = useState(false);
-  const [addError, setAddError] = useState('');
 
   // 커스텀 컬럼 정의 로드 + 시스템 설정
   useEffect(() => {
     (async () => {
-      const [ul, up, pl] = await Promise.all([
+      const [ul, up, pl, eut] = await Promise.all([
         getSystemSetting<boolean>('use_user_levels'),
         getSystemSetting<boolean>('use_points'),
         getSystemSetting<string>('point_label'),
+        getSystemSetting<boolean>('enable_user_tags'),
       ]);
       setUseLevels(ul !== false);
       setUsePoints(up !== false);
       if (typeof pl === 'string' && pl) setPointLabel(pl);
+      setEnableUserTags(eut === true);
 
       const supabase = createClient();
       const { data } = await supabase
@@ -161,6 +197,38 @@ export default function AdminUsersPage() {
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, [showColumnMenu]);
 
+  // 팝오버 외부 클릭 닫기
+  useEffect(() => {
+    if (!popoverUserId) return;
+    function onClickOutside(e: MouseEvent) {
+      if (!popoverRef.current?.contains(e.target as Node)) setPopoverUserId(null);
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [popoverUserId]);
+
+  // 태그 목록 로드
+  useEffect(() => {
+    if (enableUserTags) loadTags();
+  }, [enableUserTags]);
+
+  async function loadTags() {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from('user_tags')
+      .select('id, name, color, sort_order, created_by, user_tag_members(count)')
+      .order('sort_order');
+    const rows: TagRow[] = ((data as any[]) ?? []).map((t) => ({
+      id: t.id,
+      name: t.name,
+      color: t.color,
+      sort_order: t.sort_order,
+      created_by: t.created_by,
+      memberCount: t.user_tag_members?.[0]?.count ?? 0,
+    }));
+    setTags(rows);
+  }
+
   // 선택된 커스텀 필드 정의들
   const selectedFields = useMemo(
     () => availableFields.filter((f) => visibleFieldKeys.includes(f.field_key)),
@@ -179,12 +247,12 @@ export default function AdminUsersPage() {
   useEffect(() => {
     loadUsers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authUser?.id, search, sortKey, sortDir, page, pageSize, visibleFieldKeys.join('|')]);
+  }, [authUser?.id, search, sortKey, sortDir, page, pageSize, visibleFieldKeys.join('|'), selectedTagId]);
 
-  // 검색/정렬/pageSize 변경 시 1페이지로
+  // 검색/정렬/pageSize/태그 변경 시 1페이지로
   useEffect(() => {
     setPage(1);
-  }, [search, sortKey, sortDir, pageSize]);
+  }, [search, sortKey, sortDir, pageSize, selectedTagId]);
 
   async function loadUsers() {
     try {
@@ -198,14 +266,31 @@ export default function AdminUsersPage() {
         .filter((f) => f.storage_target === 'users' && f.storage_column)
         .map((f) => f.storage_column as string);
       const baseCols =
-        'id, login_id, name, email, phone, points, is_blocked, created_at, level_id, user_levels(name)';
+        'id, login_id, name, email, phone, points, is_blocked, created_at, role, level_id, user_levels(name)';
       const selectExpr = extraCols.length > 0 ? `${baseCols}, ${extraCols.join(', ')}` : baseCols;
+
+      // 태그 필터: 해당 태그에 속한 user_id 목록을 먼저 조회
+      let tagFilterIds: string[] | null = null;
+      if (selectedTagId) {
+        const { data: tagMembers } = await supabase
+          .from('user_tag_members')
+          .select('user_id')
+          .eq('tag_id', selectedTagId);
+        tagFilterIds = (tagMembers ?? []).map((m: any) => m.user_id);
+        if (tagFilterIds.length === 0) {
+          setUsers([]);
+          setTotalCount(0);
+          setLoading(false);
+          return;
+        }
+      }
 
       let query = supabase
         .from('users')
         .select(selectExpr, { count: 'exact' });
 
       if (myId) query = query.neq('id', myId);
+      if (tagFilterIds) query = query.in('id', tagFilterIds);
       if (search) {
         query = query.or(`login_id.ilike.%${search}%,name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%`);
       }
@@ -272,6 +357,7 @@ export default function AdminUsersPage() {
           points: u.points || 0,
           createdAt: u.created_at,
           isBlocked: u.is_blocked,
+          role: u.role || 'user',
           userCols,
           customVals: customByUser[u.id] ?? {},
         };
@@ -295,17 +381,33 @@ export default function AdminUsersPage() {
       }
 
       setUsers(rows);
+      setSelectedUserIds(new Set());
 
-      // 7) 본인 정보 별도 조회 (목록과 무관하게 항상 표시)
+      // 7) 태그 기능이 켜진 경우 user_tag_members 일괄 조회
+      if (enableUserTags && ids.length > 0) {
+        const { data: tagMemberRows } = await supabase
+          .from('user_tag_members')
+          .select('user_id, tag_id')
+          .in('user_id', ids);
+        const map: Record<string, string[]> = {};
+        for (const row of (tagMemberRows as any[]) ?? []) {
+          if (!map[row.user_id]) map[row.user_id] = [];
+          map[row.user_id].push(row.tag_id);
+        }
+        setUserTagsMap(map);
+      }
+
+      // 8) 본인 정보 별도 조회 (목록과 무관하게 항상 표시)
       if (myId && !myInfo) {
         const { data: me } = await supabase
           .from('users')
-          .select('id, name, email, phone, points, is_blocked, created_at, level_id, user_levels(name)')
+          .select('id, login_id, name, email, phone, points, is_blocked, created_at, role, level_id, user_levels(name)')
           .eq('id', myId)
           .maybeSingle();
         if (me) {
           setMyInfo({
             id: (me as any).id,
+            loginId: (me as any).login_id || '',
             name: (me as any).name,
             email: (me as any).email,
             phone: (me as any).phone || '',
@@ -313,6 +415,7 @@ export default function AdminUsersPage() {
             points: (me as any).points || 0,
             createdAt: (me as any).created_at,
             isBlocked: (me as any).is_blocked,
+            role: (me as any).role || 'user',
             userCols: {},
             customVals: {},
           });
@@ -337,42 +440,117 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function handleAddUser(e: React.FormEvent) {
-    e.preventDefault();
-    if (addForm.password.length < 8) {
-      setAddError('비밀번호는 8자 이상이어야 합니다.');
-      return;
-    }
-    if (addForm.loginId && !/^[a-zA-Z0-9]{5,}$/.test(addForm.loginId)) {
-      setAddError('아이디는 영문/숫자 5자 이상으로 입력해주세요.');
-      return;
-    }
-    setAddSubmitting(true);
-    setAddError('');
-    try {
-      const adminSupabase = createClient();
-      const { error } = await adminSupabase.rpc('admin_create_user', {
-        p_email: addForm.email,
-        p_password: addForm.password,
-        p_name: addForm.name,
-        p_phone: addForm.phone || null,
-        p_login_id: addForm.loginId || null,
-      });
-      if (error) throw error;
-      alert(`${addForm.name}(${addForm.email}) 회원이 생성되었습니다.`);
-      setAddForm({ loginId: '', name: '', email: '', password: '', phone: '' });
-      setShowAddModal(false);
-      await loadUsers();
-    } catch (err) {
-      setAddError(err instanceof Error ? err.message : '회원 생성 중 오류가 발생했습니다.');
-    } finally {
-      setAddSubmitting(false);
-    }
-  }
-
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     setSearch(searchInput.trim());
+  }
+
+  async function handleCreateTag(e: React.FormEvent) {
+    e.preventDefault();
+    if (!tagForm.name.trim()) return;
+    setTagSubmitting(true);
+    setTagError('');
+    try {
+      const supabase = createClient();
+      const { data: { user: au } } = await supabase.auth.getUser();
+      const { error } = await supabase.from('user_tags').insert({
+        name: tagForm.name.trim(),
+        color: tagForm.color,
+        created_by: au?.id ?? null,
+      });
+      if (error) throw error;
+      setTagForm({ name: '', color: '#6366f1' });
+      await loadTags();
+    } catch (err) {
+      setTagError(err instanceof Error ? err.message : '태그 생성 중 오류가 발생했습니다.');
+    } finally {
+      setTagSubmitting(false);
+    }
+  }
+
+  async function handleUpdateTag(id: string) {
+    if (!editTagForm.name.trim()) return;
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.from('user_tags')
+        .update({ name: editTagForm.name.trim(), color: editTagForm.color })
+        .eq('id', id);
+      if (error) throw error;
+      setEditingTagId(null);
+      await loadTags();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '태그 수정 중 오류가 발생했습니다.');
+    }
+  }
+
+  async function handleDeleteTag(id: string, name: string) {
+    if (!confirm(`"${name}" 태그를 삭제하시겠습니까? 해당 태그의 회원 연결도 모두 해제됩니다.`)) return;
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.from('user_tags').delete().eq('id', id);
+      if (error) throw error;
+      if (selectedTagId === id) setSelectedTagId(null);
+      await loadTags();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '태그 삭제 중 오류가 발생했습니다.');
+    }
+  }
+
+  async function handleBulkTag() {
+    if (!bulkTagId || selectedUserIds.size === 0) return;
+    // 관리자 제외
+    const targetIds = Array.from(selectedUserIds).filter((uid) => {
+      const u = users.find((r) => r.id === uid);
+      return u && u.role === 'user';
+    });
+    if (targetIds.length === 0) {
+      alert('선택된 회원 중 태그를 부여할 수 있는 사용자가 없습니다.\n관리자 계정은 태그를 부여할 수 없습니다.');
+      return;
+    }
+    setBulkSubmitting(true);
+    try {
+      const supabase = createClient();
+      if (bulkAction === 'add') {
+        const { data: { user: au } } = await supabase.auth.getUser();
+        const inserts = targetIds.map((uid) => ({
+          tag_id: bulkTagId,
+          user_id: uid,
+          added_by: au?.id ?? null,
+        }));
+        const { error } = await supabase.from('user_tag_members').upsert(inserts, { onConflict: 'tag_id,user_id' });
+        if (error) throw error;
+      } else {
+        for (const uid of targetIds) {
+          await supabase.from('user_tag_members').delete().eq('tag_id', bulkTagId).eq('user_id', uid);
+        }
+      }
+      setSelectedUserIds(new Set());
+      await loadUsers();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '처리 중 오류가 발생했습니다.');
+    } finally {
+      setBulkSubmitting(false);
+    }
+  }
+
+  async function handlePopoverToggleTag(userId: string, tagId: string) {
+    const supabase = createClient();
+    const hasTag = (userTagsMap[userId] ?? []).includes(tagId);
+    setPopoverTagLoading(true);
+    try {
+      if (hasTag) {
+        await supabase.from('user_tag_members').delete().eq('tag_id', tagId).eq('user_id', userId);
+        setUserTagsMap((prev) => ({ ...prev, [userId]: (prev[userId] ?? []).filter((id) => id !== tagId) }));
+      } else {
+        const { data: { user: au } } = await supabase.auth.getUser();
+        await supabase.from('user_tag_members').insert({ tag_id: tagId, user_id: userId, added_by: au?.id ?? null });
+        setUserTagsMap((prev) => ({ ...prev, [userId]: [...(prev[userId] ?? []), tagId] }));
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '처리 중 오류가 발생했습니다.');
+    } finally {
+      setPopoverTagLoading(false);
+    }
   }
 
   function toggleSort(key: string) {
@@ -397,6 +575,12 @@ export default function AdminUsersPage() {
   }, [page, totalPages]);
 
   // 정렬 아이콘
+  function RoleBadge({ role }: { role: string }) {
+    if (role === 'super_admin') return <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">슈퍼관리자</span>;
+    if (role === 'admin') return <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">관리자</span>;
+    return <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">사용자</span>;
+  }
+
   function SortIcon({ columnKey }: { columnKey: string }) {
     if (sortKey !== columnKey) return <ArrowUpDown className="ml-1 inline h-3 w-3 text-gray-300" />;
     return sortDir === 'asc' ? (
@@ -425,7 +609,12 @@ export default function AdminUsersPage() {
           <h1 className="text-2xl font-bold text-gray-900">회원 관리</h1>
           <p className="text-sm text-gray-500 mt-1">총 {totalCount.toLocaleString()}명</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {enableUserTags && (
+            <Button variant="outline" onClick={() => setShowTagPanel(true)}>
+              태그 관리
+            </Button>
+          )}
           {/* 컬럼 설정 */}
           <div className="relative" ref={columnMenuRef}>
             <Button variant="outline" onClick={() => setShowColumnMenu((v) => !v)}>
@@ -470,12 +659,105 @@ export default function AdminUsersPage() {
               </div>
             )}
           </div>
-          <Button onClick={() => { setShowAddModal(true); setAddError(''); }}>
+          <Button onClick={() => setShowAddModal(true)}>
             <Plus className="mr-2 h-4 w-4" />
             회원 추가
           </Button>
         </div>
       </div>
+
+      {/* 태그 관리 슬라이드 패널 */}
+      {enableUserTags && showTagPanel && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setShowTagPanel(false)} />
+          <div className="fixed right-0 top-0 z-50 h-full w-96 bg-white shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between border-b px-5 py-4">
+              <h2 className="text-base font-semibold">태그 관리</h2>
+              <button type="button" onClick={() => setShowTagPanel(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              {/* 태그 생성 폼 */}
+              <form onSubmit={handleCreateTag} className="space-y-3">
+                <p className="text-sm font-medium text-gray-700">새 태그 만들기</p>
+                <div className="flex gap-2">
+                  <input
+                    type="color"
+                    value={tagForm.color}
+                    onChange={(e) => setTagForm((p) => ({ ...p, color: e.target.value }))}
+                    className="h-9 w-10 cursor-pointer rounded border px-0.5 py-0.5 flex-shrink-0"
+                  />
+                  <Input
+                    value={tagForm.name}
+                    onChange={(e) => setTagForm((p) => ({ ...p, name: e.target.value }))}
+                    placeholder="태그 이름"
+                    required
+                    className="flex-1"
+                  />
+                  <Button type="submit" size="sm" disabled={tagSubmitting}>
+                    {tagSubmitting ? '...' : '추가'}
+                  </Button>
+                </div>
+                {tagError && <p className="text-xs text-red-600">{tagError}</p>}
+              </form>
+
+              <div className="border-t" />
+
+              {/* 태그 목록 */}
+              {tags.length === 0 ? (
+                <p className="text-sm text-gray-400">생성된 태그가 없습니다.</p>
+              ) : (
+                <div className="space-y-2">
+                  {tags.map((tag) => (
+                    <div key={tag.id} className="flex items-center gap-2 rounded-lg border p-3">
+                      {editingTagId === tag.id ? (
+                        <>
+                          <input
+                            type="color"
+                            value={editTagForm.color}
+                            onChange={(e) => setEditTagForm((p) => ({ ...p, color: e.target.value }))}
+                            className="h-8 w-9 cursor-pointer rounded border px-0.5 flex-shrink-0"
+                          />
+                          <Input
+                            value={editTagForm.name}
+                            onChange={(e) => setEditTagForm((p) => ({ ...p, name: e.target.value }))}
+                            className="flex-1 h-8 text-sm"
+                          />
+                          <Button size="sm" className="h-8 px-2 text-xs" onClick={() => handleUpdateTag(tag.id)}>저장</Button>
+                          <Button size="sm" variant="outline" className="h-8 px-2 text-xs" onClick={() => setEditingTagId(null)}>취소</Button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="inline-block h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+                          <span className="flex-1 text-sm font-medium">{tag.name}</span>
+                          <span className="text-xs text-gray-400">{tag.memberCount ?? 0}명</span>
+                          <button
+                            type="button"
+                            className="text-xs text-gray-500 hover:text-gray-700 px-1"
+                            onClick={() => { setEditingTagId(tag.id); setEditTagForm({ name: tag.name, color: tag.color }); }}
+                          >
+                            수정
+                          </button>
+                          <button
+                            type="button"
+                            className="text-xs text-red-500 hover:text-red-700 px-1"
+                            onClick={() => handleDeleteTag(tag.id, tag.name)}
+                          >
+                            삭제
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* 본인 정보 카드 */}
 
       {/* 본인 정보 카드 */}
       {myInfo && (
@@ -552,6 +834,41 @@ export default function AdminUsersPage() {
             초기화
           </Button>
         </form>
+        {/* 태그 필터 칩 */}
+        {enableUserTags && tags.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2 border-t pt-3">
+            <button
+              type="button"
+              onClick={() => setSelectedTagId(null)}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors ${
+                selectedTagId === null
+                  ? 'bg-gray-800 text-white border-gray-800'
+                  : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+              }`}
+            >
+              전체
+            </button>
+            {tags.map((tag) => (
+              <button
+                key={tag.id}
+                type="button"
+                onClick={() => setSelectedTagId(tag.id === selectedTagId ? null : tag.id)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors ${
+                  selectedTagId === tag.id
+                    ? 'text-white border-transparent'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+                }`}
+                style={selectedTagId === tag.id ? { backgroundColor: tag.color, borderColor: tag.color } : {}}
+              >
+                <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: selectedTagId === tag.id ? 'rgba(255,255,255,0.7)' : tag.color }} />
+                {tag.name}
+                <span className={`text-xs ${selectedTagId === tag.id ? 'text-white/70' : 'text-gray-400'}`}>
+                  {tag.memberCount ?? 0}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </Card>
 
       {error && <div className="mb-4 rounded-md bg-red-50 p-4 text-red-700">{error}</div>}
@@ -571,10 +888,65 @@ export default function AdminUsersPage() {
         </Card>
       ) : (
         <Card>
+          {/* 일괄 태그 부여 바 */}
+          {enableUserTags && selectedUserIds.size > 0 && (
+            <div className="flex items-center gap-3 border-b px-4 py-3 bg-blue-50">
+              <span className="text-sm font-medium text-blue-700">{selectedUserIds.size}명 선택됨</span>
+              <select
+                value={bulkTagId}
+                onChange={(e) => setBulkTagId(e.target.value)}
+                className="rounded-md border px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">태그 선택</option>
+                {tags.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              <div className="flex rounded-md border overflow-hidden text-xs">
+                <button
+                  type="button"
+                  onClick={() => setBulkAction('add')}
+                  className={`px-2 py-1 ${bulkAction === 'add' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}
+                >부여</button>
+                <button
+                  type="button"
+                  onClick={() => setBulkAction('remove')}
+                  className={`px-2 py-1 border-l ${bulkAction === 'remove' ? 'bg-red-500 text-white' : 'bg-white text-gray-600'}`}
+                >제거</button>
+              </div>
+              <Button
+                size="sm"
+                variant={bulkAction === 'remove' ? 'destructive' : 'default'}
+                disabled={!bulkTagId || bulkSubmitting}
+                onClick={handleBulkTag}
+              >
+                {bulkSubmitting ? '처리 중...' : `태그 ${bulkAction === 'add' ? '부여' : '제거'}`}
+              </Button>
+              <button
+                type="button"
+                className="ml-auto text-xs text-gray-500 hover:text-gray-700"
+                onClick={() => setSelectedUserIds(new Set())}
+              >
+                선택 해제
+              </button>
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full table-fixed text-sm">
               <thead className="border-b bg-gray-50">
                 <tr>
+                  {enableUserTags && (
+                    <th className="w-10 px-2 py-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={users.length > 0 && selectedUserIds.size === users.length}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedUserIds(new Set(users.map((u) => u.id)));
+                          else setSelectedUserIds(new Set());
+                        }}
+                      />
+                    </th>
+                  )}
                   <th className="w-[60px] px-2 py-3 font-medium text-gray-600 text-center whitespace-nowrap">
                     No.
                   </th>
@@ -603,6 +975,12 @@ export default function AdminUsersPage() {
                       <SortIcon columnKey={f.field_key} />
                     </th>
                   ))}
+                  {enableUserTags && (
+                    <th className="px-4 py-3 font-medium text-gray-600 text-center whitespace-nowrap">역할</th>
+                  )}
+                  {enableUserTags && (
+                    <th className="px-4 py-3 font-medium text-gray-600 text-center whitespace-nowrap">태그</th>
+                  )}
                   {sortableHeader('가입일', 'created_at')}
                   <th
                     className="w-20 px-2 py-3 font-medium text-gray-600 text-center cursor-pointer select-none hover:bg-gray-100 whitespace-nowrap"
@@ -623,6 +1001,22 @@ export default function AdminUsersPage() {
                     className="cursor-pointer hover:bg-gray-50 transition-colors"
                     onClick={() => navigate(`/admin/users/${u.id}`)}
                   >
+                    {enableUserTags && (
+                      <td className="w-10 px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedUserIds.has(u.id)}
+                          onChange={(e) => {
+                            setSelectedUserIds((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(u.id);
+                              else next.delete(u.id);
+                              return next;
+                            });
+                          }}
+                        />
+                      </td>
+                    )}
                     <td className="w-[60px] px-2 py-3 text-center text-gray-500">
                       {(page - 1) * pageSize + idx + 1}
                     </td>
@@ -664,6 +1058,65 @@ export default function AdminUsersPage() {
                         </td>
                       );
                     })}
+                    {enableUserTags && (
+                      <td className="px-4 py-3 text-center">
+                        <RoleBadge role={u.role} />
+                      </td>
+                    )}
+                    {enableUserTags && (
+                      <td className="px-4 py-3 text-center relative" onClick={(e) => e.stopPropagation()}>
+                        {u.role !== 'user' ? (
+                          <span className="text-xs text-gray-300">-</span>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className="inline-flex flex-wrap gap-1 justify-center items-center min-w-[2rem] min-h-[1.5rem] cursor-pointer hover:opacity-80"
+                              onClick={() => setPopoverUserId(popoverUserId === u.id ? null : u.id)}
+                              title="클릭하여 태그 수정"
+                            >
+                              {(userTagsMap[u.id] ?? []).length > 0
+                                ? (userTagsMap[u.id] ?? []).map((tid) => {
+                                    const tag = tags.find((t) => t.id === tid);
+                                    if (!tag) return null;
+                                    return (
+                                      <span key={tid} className="inline-block rounded-full px-2 py-0.5 text-xs font-medium text-white" style={{ backgroundColor: tag.color }}>
+                                        {tag.name}
+                                      </span>
+                                    );
+                                  })
+                                : <span className="text-xs text-gray-300">+ 태그</span>
+                              }
+                            </button>
+                            {popoverUserId === u.id && (
+                              <div
+                                ref={popoverRef}
+                                className="absolute z-50 left-1/2 -translate-x-1/2 mt-1 w-44 rounded-lg border bg-white shadow-lg p-2 space-y-1"
+                                style={{ top: '100%' }}
+                              >
+                                <p className="text-xs font-medium text-gray-500 px-1 pb-1 border-b">태그 선택</p>
+                                {tags.length === 0 && <p className="text-xs text-gray-400 px-1">태그 없음</p>}
+                                {tags.map((tag) => {
+                                  const active = (userTagsMap[u.id] ?? []).includes(tag.id);
+                                  return (
+                                    <label key={tag.id} className="flex items-center gap-2 cursor-pointer rounded px-1 py-1 hover:bg-gray-50 text-sm">
+                                      <input
+                                        type="checkbox"
+                                        checked={active}
+                                        disabled={popoverTagLoading}
+                                        onChange={() => handlePopoverToggleTag(u.id, tag.id)}
+                                      />
+                                      <span className="inline-block h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+                                      <span className="truncate">{tag.name}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-gray-600 text-center truncate">
                       {u.createdAt ? format(new Date(u.createdAt), 'yyyy.MM.dd') : '-'}
                     </td>
@@ -748,86 +1201,27 @@ export default function AdminUsersPage() {
       {/* 회원 추가 모달 */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <Card className="w-full max-w-md p-6">
-            <div className="mb-4 flex items-center justify-between">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b px-6 py-4 flex-shrink-0">
               <h2 className="text-lg font-bold">회원 추가</h2>
               <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
-
-            <form onSubmit={handleAddUser} className="space-y-4">
-              <div>
-                <Label htmlFor="add-login-id">아이디 (영문/숫자 5자 이상)</Label>
-                <Input
-                  id="add-login-id"
-                  type="text"
-                  value={addForm.loginId}
-                  onChange={(e) => setAddForm({ ...addForm, loginId: e.target.value })}
-                  placeholder="영문/숫자 5자 이상"
-                />
-              </div>
-              <div>
-                <Label htmlFor="add-name">이름 *</Label>
-                <Input
-                  id="add-name"
-                  value={addForm.name}
-                  onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
-                  placeholder="홍길동"
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="add-email">이메일 *</Label>
-                <Input
-                  id="add-email"
-                  type="email"
-                  value={addForm.email}
-                  onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
-                  placeholder="user@example.com"
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="add-password">초기 비밀번호 * (8자 이상)</Label>
-                <Input
-                  id="add-password"
-                  type="password"
-                  value={addForm.password}
-                  onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
-                  placeholder="8자 이상"
-                  minLength={8}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="add-phone">전화번호</Label>
-                <Input
-                  id="add-phone"
-                  value={addForm.phone}
-                  onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })}
-                  placeholder="01012345678"
-                />
-              </div>
-
-              {addError && (
-                <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{addError}</p>
-              )}
-
-              <p className="text-xs text-gray-400">
-                * 회원이 즉시 생성되며 별도 이메일 인증 없이 바로 로그인 가능합니다.
-              </p>
-
-              <div className="flex gap-2 pt-2">
-                <Button type="submit" disabled={addSubmitting} className="flex-1">
-                  {addSubmitting ? '생성 중...' : '회원 생성'}
-                </Button>
-                <Button type="button" variant="outline" onClick={() => setShowAddModal(false)}>
-                  취소
-                </Button>
-              </div>
-            </form>
-          </Card>
+            <div className="overflow-y-auto p-6">
+              <p className="mb-4 text-xs text-gray-400">회원이 즉시 생성되며 별도 이메일 인증 없이 바로 로그인 가능합니다.</p>
+              <DynamicSignupForm
+                adminMode
+                onSuccess={async () => {
+                  setShowAddModal(false);
+                  await loadUsers();
+                }}
+              />
+              <Button type="button" variant="outline" className="mt-3 w-full" onClick={() => setShowAddModal(false)}>
+                취소
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

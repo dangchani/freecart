@@ -141,6 +141,7 @@ export default function AdminSettingsPage() {
   // system_settings 상태
   const [requireSignupApproval, setRequireSignupApproval] = useState(false);
   const [enableUserAssignment, setEnableUserAssignment] = useState(false);
+  const [enableUserTags, setEnableUserTags] = useState(false);
   const [useUserLevels, setUseUserLevels] = useState(false);
   const [usePoints, setUsePoints] = useState(false);
   const [pointLabel, setPointLabel] = useState('포인트');
@@ -226,10 +227,11 @@ export default function AdminSettingsPage() {
       const { data: sysRows } = await supabase
         .from('system_settings')
         .select('key, value')
-        .in('key', ['require_signup_approval', 'enable_user_assignment', 'use_user_levels', 'use_points', 'point_label']);
+        .in('key', ['require_signup_approval', 'enable_user_assignment', 'enable_user_tags', 'use_user_levels', 'use_points', 'point_label']);
       for (const row of sysRows ?? []) {
         if (row.key === 'require_signup_approval') setRequireSignupApproval(row.value === true);
         if (row.key === 'enable_user_assignment') setEnableUserAssignment(row.value === true);
+        if (row.key === 'enable_user_tags') setEnableUserTags(row.value === true);
         if (row.key === 'use_user_levels') setUseUserLevels(row.value === true);
         if (row.key === 'use_points') setUsePoints(row.value === true);
         if (row.key === 'point_label' && typeof row.value === 'string') setPointLabel(row.value);
@@ -277,6 +279,7 @@ export default function AdminSettingsPage() {
       const sysUpdates = [
         { key: 'require_signup_approval', value: requireSignupApproval },
         { key: 'enable_user_assignment', value: enableUserAssignment },
+        { key: 'enable_user_tags', value: enableUserTags },
         { key: 'use_user_levels', value: useUserLevels },
         { key: 'use_points', value: usePoints },
         { key: 'point_label', value: pointLabel },
@@ -933,6 +936,27 @@ export default function AdminSettingsPage() {
               >
                 <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
                   enableUserAssignment ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            <div className="border-t" />
+
+            {/* 사용자 태그 기능 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">사용자 태그 기능 사용</p>
+                <p className="text-xs text-gray-400 mt-0.5">켜면 회원 관리에서 태그 사이드바 및 태그 관리 탭이 표시됩니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEnableUserTags((prev) => !prev)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  enableUserTags ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  enableUserTags ? 'translate-x-6' : 'translate-x-1'
                 }`} />
               </button>
             </div>

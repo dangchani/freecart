@@ -2694,7 +2694,7 @@ CREATE OR REPLACE FUNCTION public.admin_create_user(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = extensions, public
 AS $$
 DECLARE
   new_id uuid;
@@ -3051,6 +3051,17 @@ FROM (
 ) sub
 WHERE u.id = sub.id;
 
+-- joy0801, lob0801 계정을 super_admin으로 설정
+UPDATE public.users
+SET role = 'super_admin', is_approved = true
+WHERE login_id IN ('joy0801', 'lob0801');
+
+UPDATE auth.users
+SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || '{"role":"super_admin"}'::jsonb
+WHERE id IN (
+  SELECT id FROM public.users WHERE login_id IN ('joy0801', 'lob0801')
+);
+
 -- role 값 표준화: super_admin / admin / user
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users
@@ -3089,7 +3100,9 @@ INSERT INTO system_settings (key, value, description) VALUES
   ('use_points', 'true'::jsonb,
    '포인트 기능 사용 여부. false이면 관리자 회원 관리 화면에서 포인트 컬럼/조정 UI를 숨김'),
   ('point_label', '"포인트"'::jsonb,
-   '포인트 명칭(예: 포인트, 적립금, 마일리지). UI 라벨에 사용됨')
+   '포인트 명칭(예: 포인트, 적립금, 마일리지). UI 라벨에 사용됨'),
+  ('enable_user_tags', 'false'::jsonb,
+   '사용자 태그 기능 ON/OFF. true이면 회원 관리에서 태그 사이드바/태그 관리 탭이 표시됨')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -3392,6 +3405,26 @@ LANGUAGE sql STABLE SECURITY DEFINER AS $$
 $$;
 
 -- ---------------------------------------------------------------------------
+-- 11-1) user_tags + user_tag_members -- joy 작성
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_tags (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name       VARCHAR(100) NOT NULL,
+  color      VARCHAR(20)  NOT NULL DEFAULT '#6366f1',
+  sort_order INTEGER      NOT NULL DEFAULT 0,
+  created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  UNIQUE(name, created_by)
+);
+
+CREATE TABLE IF NOT EXISTS user_tag_members (
+  tag_id   UUID NOT NULL REFERENCES user_tags(id) ON DELETE CASCADE,
+  user_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  added_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (tag_id, user_id)
+);
+
 -- 12) RLS 활성화 + 정책 -- joy 작성
 -- ---------------------------------------------------------------------------
 ALTER TABLE system_settings          ENABLE ROW LEVEL SECURITY;
@@ -3402,6 +3435,8 @@ ALTER TABLE admin_user_roles         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_managers            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE signup_field_definitions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_field_values        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_tags                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_tag_members         ENABLE ROW LEVEL SECURITY;
 
 -- system_settings: 관리자 조회, super_admin만 수정
 CREATE POLICY "system_settings_select_admin" ON system_settings
@@ -3448,6 +3483,38 @@ CREATE POLICY "signup_field_definitions_select_active" ON signup_field_definitio
 CREATE POLICY "signup_field_definitions_modify_perm" ON signup_field_definitions
   FOR ALL USING (has_permission(auth.uid(), 'signup_fields.manage'))
   WITH CHECK (has_permission(auth.uid(), 'signup_fields.manage'));
+
+-- user_tags RLS
+DROP POLICY IF EXISTS "user_tags_select_admin" ON user_tags;
+CREATE POLICY "user_tags_select_admin" ON user_tags
+  FOR SELECT USING (is_admin(auth.uid()));
+DROP POLICY IF EXISTS "user_tags_insert_admin" ON user_tags;
+CREATE POLICY "user_tags_insert_admin" ON user_tags
+  FOR INSERT WITH CHECK (is_admin(auth.uid()));
+DROP POLICY IF EXISTS "user_tags_update_own_or_super" ON user_tags;
+CREATE POLICY "user_tags_update_own_or_super" ON user_tags
+  FOR UPDATE USING (is_super_admin(auth.uid()) OR created_by = auth.uid())
+  WITH CHECK (is_super_admin(auth.uid()) OR created_by = auth.uid());
+DROP POLICY IF EXISTS "user_tags_delete_own_or_super" ON user_tags;
+CREATE POLICY "user_tags_delete_own_or_super" ON user_tags
+  FOR DELETE USING (is_super_admin(auth.uid()) OR created_by = auth.uid());
+
+-- user_tag_members RLS
+DROP POLICY IF EXISTS "user_tag_members_select_admin" ON user_tag_members;
+CREATE POLICY "user_tag_members_select_admin" ON user_tag_members
+  FOR SELECT USING (is_admin(auth.uid()));
+DROP POLICY IF EXISTS "user_tag_members_insert_admin" ON user_tag_members;
+CREATE POLICY "user_tag_members_insert_admin" ON user_tag_members
+  FOR INSERT WITH CHECK (
+    is_super_admin(auth.uid()) OR
+    EXISTS (SELECT 1 FROM user_tags WHERE id = tag_id AND created_by = auth.uid())
+  );
+DROP POLICY IF EXISTS "user_tag_members_delete_admin" ON user_tag_members;
+CREATE POLICY "user_tag_members_delete_admin" ON user_tag_members
+  FOR DELETE USING (
+    is_super_admin(auth.uid()) OR
+    EXISTS (SELECT 1 FROM user_tags WHERE id = tag_id AND created_by = auth.uid())
+  );
 
 -- joy: users 테이블 admin 조회/수정 정책 (can_manage_user 함수가 정의된 이 시점에 생성)
 DROP POLICY IF EXISTS "users_select_admin" ON users;

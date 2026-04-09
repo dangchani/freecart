@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ShoppingCart, User, Menu, Search, X, Shield, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/store/cart';
@@ -71,6 +71,11 @@ export function Header() {
 
   useEffect(() => {
     getSetting('site_name', 'Freecart').then(setSiteName);
+    function onSettingsChanged() {
+      getSetting('site_name', 'Freecart').then(setSiteName);
+    }
+    window.addEventListener('freecart:settings-changed', onSettingsChanged);
+    return () => window.removeEventListener('freecart:settings-changed', onSettingsChanged);
   }, []);
 
   function handleSearchSubmit(e: React.FormEvent) {
