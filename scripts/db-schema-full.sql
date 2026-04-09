@@ -1803,8 +1803,9 @@ CREATE TRIGGER trg_installed_themes_updated_at
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- skins.theme_id FK (installed_themes 생성 후 추가)
+ALTER TABLE skins DROP CONSTRAINT IF EXISTS skins_theme_id_fkey;
 ALTER TABLE skins
-  ADD CONSTRAINT IF NOT EXISTS skins_theme_id_fkey
+  ADD CONSTRAINT skins_theme_id_fkey
   FOREIGN KEY (theme_id) REFERENCES installed_themes(id) ON DELETE CASCADE;
 
 -- 15.2 installed_skins (레거시 — 현재 미사용. 스킨은 skins 테이블에서 관리)
