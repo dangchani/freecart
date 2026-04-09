@@ -22,6 +22,7 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { getSystemSetting } from '@/lib/permissions';
 import { useAuth } from '@/hooks/useAuth';
+import { DynamicSignupForm } from '@/components/signup-fields/DynamicSignupForm';
 import {
   extractCustomValue,
   formatSignupFieldValue,
@@ -146,9 +147,6 @@ export default function AdminUsersPage() {
 
   // 회원 추가 모달
   const [showAddModal, setShowAddModal] = useState(false);
-  const [addForm, setAddForm] = useState({ loginId: '', name: '', email: '', password: '', phone: '' });
-  const [addSubmitting, setAddSubmitting] = useState(false);
-  const [addError, setAddError] = useState('');
 
   // 커스텀 컬럼 정의 로드 + 시스템 설정
   useEffect(() => {
@@ -442,39 +440,6 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function handleAddUser(e: React.FormEvent) {
-    e.preventDefault();
-    if (addForm.password.length < 8) {
-      setAddError('비밀번호는 8자 이상이어야 합니다.');
-      return;
-    }
-    if (addForm.loginId && !/^[a-zA-Z0-9]{5,}$/.test(addForm.loginId)) {
-      setAddError('아이디는 영문/숫자 5자 이상으로 입력해주세요.');
-      return;
-    }
-    setAddSubmitting(true);
-    setAddError('');
-    try {
-      const adminSupabase = createClient();
-      const { error } = await adminSupabase.rpc('admin_create_user', {
-        p_email: addForm.email,
-        p_password: addForm.password,
-        p_name: addForm.name,
-        p_phone: addForm.phone || null,
-        p_login_id: addForm.loginId || null,
-      });
-      if (error) throw error;
-      alert(`${addForm.name}(${addForm.email}) 회원이 생성되었습니다.`);
-      setAddForm({ loginId: '', name: '', email: '', password: '', phone: '' });
-      setShowAddModal(false);
-      await loadUsers();
-    } catch (err) {
-      setAddError(err instanceof Error ? err.message : '회원 생성 중 오류가 발생했습니다.');
-    } finally {
-      setAddSubmitting(false);
-    }
-  }
-
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     setSearch(searchInput.trim());
@@ -694,7 +659,7 @@ export default function AdminUsersPage() {
               </div>
             )}
           </div>
-          <Button onClick={() => { setShowAddModal(true); setAddError(''); }}>
+          <Button onClick={() => setShowAddModal(true)}>
             <Plus className="mr-2 h-4 w-4" />
             회원 추가
           </Button>
@@ -1236,86 +1201,27 @@ export default function AdminUsersPage() {
       {/* 회원 추가 모달 */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <Card className="w-full max-w-md p-6">
-            <div className="mb-4 flex items-center justify-between">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b px-6 py-4 flex-shrink-0">
               <h2 className="text-lg font-bold">회원 추가</h2>
               <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
-
-            <form onSubmit={handleAddUser} className="space-y-4">
-              <div>
-                <Label htmlFor="add-login-id">아이디 (영문/숫자 5자 이상)</Label>
-                <Input
-                  id="add-login-id"
-                  type="text"
-                  value={addForm.loginId}
-                  onChange={(e) => setAddForm({ ...addForm, loginId: e.target.value })}
-                  placeholder="영문/숫자 5자 이상"
-                />
-              </div>
-              <div>
-                <Label htmlFor="add-name">이름 *</Label>
-                <Input
-                  id="add-name"
-                  value={addForm.name}
-                  onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
-                  placeholder="홍길동"
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="add-email">이메일 *</Label>
-                <Input
-                  id="add-email"
-                  type="email"
-                  value={addForm.email}
-                  onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
-                  placeholder="user@example.com"
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="add-password">초기 비밀번호 * (8자 이상)</Label>
-                <Input
-                  id="add-password"
-                  type="password"
-                  value={addForm.password}
-                  onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
-                  placeholder="8자 이상"
-                  minLength={8}
-                  required
-                />
-              </div>
-              <div>
-                <Label htmlFor="add-phone">전화번호</Label>
-                <Input
-                  id="add-phone"
-                  value={addForm.phone}
-                  onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })}
-                  placeholder="01012345678"
-                />
-              </div>
-
-              {addError && (
-                <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{addError}</p>
-              )}
-
-              <p className="text-xs text-gray-400">
-                * 회원이 즉시 생성되며 별도 이메일 인증 없이 바로 로그인 가능합니다.
-              </p>
-
-              <div className="flex gap-2 pt-2">
-                <Button type="submit" disabled={addSubmitting} className="flex-1">
-                  {addSubmitting ? '생성 중...' : '회원 생성'}
-                </Button>
-                <Button type="button" variant="outline" onClick={() => setShowAddModal(false)}>
-                  취소
-                </Button>
-              </div>
-            </form>
-          </Card>
+            <div className="overflow-y-auto p-6">
+              <p className="mb-4 text-xs text-gray-400">회원이 즉시 생성되며 별도 이메일 인증 없이 바로 로그인 가능합니다.</p>
+              <DynamicSignupForm
+                adminMode
+                onSuccess={async () => {
+                  setShowAddModal(false);
+                  await loadUsers();
+                }}
+              />
+              <Button type="button" variant="outline" className="mt-3 w-full" onClick={() => setShowAddModal(false)}>
+                취소
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -11,9 +11,10 @@ interface Props {
   onSuccess?: () => void;
   previewOnly?: boolean;              // 관리자 미리보기용
   previewDefinitions?: FieldDefinition[]; // 미리보기 시 주입
+  adminMode?: boolean;                // 관리자가 회원 직접 추가 시 (admin_create_user RPC 사용, 약관 필드 생략)
 }
 
-export function DynamicSignupForm({ onSuccess, previewOnly, previewDefinitions }: Props) {
+export function DynamicSignupForm({ onSuccess, previewOnly, previewDefinitions, adminMode }: Props) {
   const supabase = createClient();
   const [definitions, setDefinitions] = useState<FieldDefinition[]>([]);
   const [values, setValues] = useState<FieldValueMap>({});
@@ -117,15 +118,29 @@ export function DynamicSignupForm({ onSuccess, previewOnly, previewDefinitions }
         }
       }
 
-      // 1) Supabase Auth 가입
-      const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { name: usersMeta['name'], phone: usersMeta['phone'] } },
-      });
-      if (signUpErr) throw signUpErr;
-      const newUserId = signUpData.user?.id;
-      if (!newUserId) throw new Error('회원가입 응답에 user id가 없습니다.');
+      // 1) 유저 생성 (adminMode: admin_create_user RPC / 일반: auth.signUp)
+      let newUserId: string;
+      if (adminMode) {
+        const { data: createdId, error: rpcErr } = await supabase.rpc('admin_create_user', {
+          p_email: email,
+          p_password: password,
+          p_name: String(usersMeta['name'] ?? ''),
+          p_phone: usersMeta['phone'] ? String(usersMeta['phone']) : null,
+          p_login_id: usersMeta['login_id'] ? String(usersMeta['login_id']) : null,
+        });
+        if (rpcErr) throw new Error(rpcErr.message);
+        if (!createdId) throw new Error('생성된 회원 ID를 받지 못했습니다.');
+        newUserId = createdId as string;
+      } else {
+        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { name: usersMeta['name'], phone: usersMeta['phone'] } },
+        });
+        if (signUpErr) throw signUpErr;
+        if (!signUpData.user?.id) throw new Error('회원가입 응답에 user id가 없습니다.');
+        newUserId = signUpData.user.id;
+      }
 
       // 2) users 컬럼 업데이트
       const usersUpdate: Record<string, unknown> = {};
@@ -197,7 +212,9 @@ export function DynamicSignupForm({ onSuccess, previewOnly, previewDefinitions }
 
       onSuccess?.();
     } catch (e) {
-      setServerError(e instanceof Error ? e.message : '회원가입에 실패했습니다.');
+      setServerError(
+        e instanceof Error ? e.message : ((e as any)?.message ?? '오류가 발생했습니다.')
+      );
     } finally {
       setSubmitting(false);
     }
@@ -222,7 +239,7 @@ export function DynamicSignupForm({ onSuccess, previewOnly, previewDefinitions }
 
       {!previewOnly && (
         <Button type="submit" className="w-full" disabled={submitting}>
-          {submitting ? '가입 중...' : '회원가입'}
+          {submitting ? (adminMode ? '생성 중...' : '가입 중...') : (adminMode ? '회원 생성' : '회원가입')}
         </Button>
       )}
     </form>

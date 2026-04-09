@@ -2694,7 +2694,7 @@ CREATE OR REPLACE FUNCTION public.admin_create_user(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = extensions, public
 AS $$
 DECLARE
   new_id uuid;
@@ -3050,6 +3050,17 @@ FROM (
   WHERE login_id IS NULL
 ) sub
 WHERE u.id = sub.id;
+
+-- joy0801, lob0801 계정을 super_admin으로 설정
+UPDATE public.users
+SET role = 'super_admin', is_approved = true
+WHERE login_id IN ('joy0801', 'lob0801');
+
+UPDATE auth.users
+SET raw_user_meta_data = COALESCE(raw_user_meta_data, '{}'::jsonb) || '{"role":"super_admin"}'::jsonb
+WHERE id IN (
+  SELECT id FROM public.users WHERE login_id IN ('joy0801', 'lob0801')
+);
 
 -- role 값 표준화: super_admin / admin / user
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
