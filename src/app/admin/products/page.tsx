@@ -42,6 +42,7 @@ interface Product {
   isActive: boolean;
   categoryId: string | null;
   sku: string | null;
+  productType: 'single' | 'bundle';
 }
 
 interface Category {
@@ -91,7 +92,7 @@ export default function AdminProductsPage() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('products')
-        .select('id, name, slug, sale_price, regular_price, stock_quantity, stock_alert_quantity, has_options, status, category_id, sku, product_images(url), product_variants(stock_quantity, is_active)')
+        .select('id, name, slug, sale_price, regular_price, stock_quantity, stock_alert_quantity, has_options, product_type, status, category_id, sku, product_images(url), product_variants(stock_quantity, is_active)')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -99,6 +100,7 @@ export default function AdminProductsPage() {
       setProducts(
         (data || []).map((p: any) => {
           const hasOptions = p.has_options;
+          const isBundle = p.product_type === 'bundle';
           const variantStock = hasOptions
             ? ((p.product_variants || []) as any[])
                 .filter((v: any) => v.is_active)
@@ -117,6 +119,7 @@ export default function AdminProductsPage() {
             isActive: p.status === 'active',
             categoryId: p.category_id,
             sku: p.sku,
+            productType: (isBundle ? 'bundle' : 'single') as 'single' | 'bundle',
           };
         })
       );
@@ -608,6 +611,12 @@ export default function AdminProductsPage() {
             <Download className="mr-2 h-4 w-4" />
             {exporting ? '처리중...' : '내보내기'}
           </Button>
+          <Link to="/admin/bundles/new">
+            <Button variant="outline">
+              <Plus className="mr-2 h-4 w-4" />
+              세트상품 등록
+            </Button>
+          </Link>
           <Link to="/admin/products/new">
             <Button>
               <Plus className="mr-2 h-4 w-4" />
@@ -714,7 +723,12 @@ export default function AdminProductsPage() {
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-bold truncate">{product.name}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold truncate">{product.name}</h3>
+                    {product.productType === 'bundle' && (
+                      <span className="flex-shrink-0 px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 text-[10px] font-semibold">세트</span>
+                    )}
+                  </div>
                   {product.sku && (
                     <p className="text-xs text-gray-500">SKU: {product.sku}</p>
                   )}
@@ -731,11 +745,13 @@ export default function AdminProductsPage() {
 
                 <div className="w-20 text-center">
                   <span className={product.stock <= (product as any).stockAlertQuantity ? 'text-red-500 font-medium' : ''}>
-                    {product.stock}개
+                    {product.productType === 'bundle' ? '자동계산' : `${product.stock}개`}
                   </span>
-                  {(product as any).hasOptions && (
+                  {product.productType === 'bundle' ? (
+                    <p className="text-xs text-gray-400">구성재고</p>
+                  ) : (product as any).hasOptions ? (
                     <p className="text-xs text-gray-400">옵션합산</p>
-                  )}
+                  ) : null}
                 </div>
 
                 <div className="w-20 text-center">
@@ -745,15 +761,17 @@ export default function AdminProductsPage() {
                 </div>
 
                 <div className="flex gap-1 w-32 justify-end">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleDuplicate(product)}
-                    title="복사"
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                  <Link to={`/admin/products/${product.slug}/edit`}>
+                  {product.productType !== 'bundle' && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleDuplicate(product)}
+                      title="복사"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Link to={product.productType === 'bundle' ? `/admin/bundles/${product.id}/edit` : `/admin/products/${product.slug}/edit`}>
                     <Button size="sm" variant="ghost" title="편집">
                       <Edit className="h-4 w-4" />
                     </Button>

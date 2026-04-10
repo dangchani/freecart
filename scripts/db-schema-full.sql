@@ -40,7 +40,7 @@ DROP TABLE IF EXISTS
   payments, order_memos, order_status_history, order_items, orders,
   cart_items, carts, user_coupons, coupons, user_recently_viewed, user_wishlist,
   product_subscriptions, product_qna, product_quantity_discounts, product_level_prices,
-  product_discounts, product_stock_alerts, product_gift_set_items, product_gift_sets, product_sets, product_related,
+  product_discounts, bundle_items, product_stock_alerts, product_gift_set_items, product_gift_tiers, product_gift_sets, product_sets, product_related,
   product_attribute_values, product_attributes, product_tag_map, product_tags,
   product_images, product_variants, product_option_values, product_options, products,
   product_brands, product_categories, notification_settings, user_messages,
@@ -327,6 +327,7 @@ CREATE TABLE IF NOT EXISTS products (
   tags                  TEXT[],
   video_url             VARCHAR(500),
   has_options           BOOLEAN NOT NULL DEFAULT false,
+  product_type          TEXT NOT NULL DEFAULT 'single' CHECK (product_type IN ('single', 'bundle')),
   shipping_type         VARCHAR(20) NOT NULL DEFAULT 'default',
   shipping_fee          INTEGER,
   seo_title             VARCHAR(255),
@@ -352,9 +353,10 @@ CREATE TRIGGER trg_products_updated_at
 
 -- 2.4 product_options (상품 옵션 그룹)
 CREATE TABLE IF NOT EXISTS product_options (
-  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  product_id  UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  id          UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id  UUID    NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   name        VARCHAR(50) NOT NULL,
+  is_required BOOLEAN NOT NULL DEFAULT true,
   sort_order  INTEGER NOT NULL DEFAULT 0,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -375,16 +377,19 @@ CREATE INDEX IF NOT EXISTS idx_product_option_values_option_id ON product_option
 
 -- 2.6 product_variants (상품 변형/SKU)
 CREATE TABLE IF NOT EXISTS product_variants (
-  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  product_id        UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  sku               VARCHAR(100),
-  option_values     JSONB NOT NULL DEFAULT '[]',
-  additional_price  INTEGER NOT NULL DEFAULT 0,
-  stock_quantity    INTEGER NOT NULL DEFAULT 0,
-  image_url         VARCHAR(500),
-  is_active         BOOLEAN NOT NULL DEFAULT true,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                    UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id            UUID    NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  sku                   VARCHAR(100),
+  option_values         JSONB   NOT NULL DEFAULT '[]',
+  additional_price      INTEGER NOT NULL DEFAULT 0,
+  stock_quantity        INTEGER NOT NULL DEFAULT 0,
+  image_url             VARCHAR(500),
+  is_active             BOOLEAN NOT NULL DEFAULT true,
+  min_purchase_quantity INTEGER DEFAULT NULL CHECK (min_purchase_quantity >= 1),
+  max_purchase_quantity INTEGER DEFAULT NULL CHECK (max_purchase_quantity >= 1),
+  daily_purchase_limit  INTEGER DEFAULT NULL CHECK (daily_purchase_limit >= 1),
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_product_variants_product_id ON product_variants(product_id);
@@ -465,22 +470,18 @@ CREATE TABLE IF NOT EXISTS product_sets (
 CREATE INDEX IF NOT EXISTS idx_product_sets_product_id ON product_sets(product_id);
 
 -- 2.11 product_gift_sets (사은품 세트)
--- gift_mode: 'auto' = 조건 충족 시 풀 전체 자동 추가, 'select' = 고객이 풀에서 선택
 CREATE TABLE IF NOT EXISTS product_gift_sets (
-  id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  product_id         UUID        NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  name               VARCHAR(200) NOT NULL,
-  gift_mode          VARCHAR(10) NOT NULL DEFAULT 'auto'
-                     CHECK (gift_mode IN ('auto', 'select')),
-  trigger_quantity   INTEGER     NOT NULL DEFAULT 1 CHECK (trigger_quantity >= 1),
-  max_gift_quantity  INTEGER     NOT NULL DEFAULT 1 CHECK (max_gift_quantity >= 1),
-  max_distinct_items INTEGER     CHECK (max_distinct_items >= 1),
-  is_active          BOOLEAN     NOT NULL DEFAULT true,
-  starts_at          TIMESTAMPTZ,
-  ends_at            TIMESTAMPTZ,
-  sort_order         INTEGER     NOT NULL DEFAULT 0,
-  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id  UUID         NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  name        VARCHAR(200) NOT NULL,
+  gift_type   TEXT         NOT NULL DEFAULT 'select'
+                CHECK (gift_type IN ('select', 'auto_same', 'auto_specific')),
+  is_active   BOOLEAN      NOT NULL DEFAULT true,
+  starts_at   TIMESTAMPTZ,
+  ends_at     TIMESTAMPTZ,
+  sort_order  INTEGER      NOT NULL DEFAULT 0,
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_product_gift_sets_product_id
@@ -490,12 +491,25 @@ CREATE TRIGGER trg_product_gift_sets_updated_at
   BEFORE UPDATE ON product_gift_sets
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- 2.11-b product_gift_set_items (사은품 풀)
+-- 2.11-b product_gift_tiers (사은품 구간)
+--   min_quantity 이상 구매 시 free_count 개 선택 가능
+CREATE TABLE IF NOT EXISTS product_gift_tiers (
+  id            UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
+  gift_set_id   UUID    NOT NULL REFERENCES product_gift_sets(id) ON DELETE CASCADE,
+  min_quantity  INTEGER NOT NULL CHECK (min_quantity >= 1),
+  free_count    INTEGER NOT NULL CHECK (free_count >= 1),
+  sort_order    INTEGER NOT NULL DEFAULT 0,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_gift_tiers_gift_set_id
+  ON product_gift_tiers(gift_set_id);
+
+-- 2.11-c product_gift_set_items (사은품 풀)
 CREATE TABLE IF NOT EXISTS product_gift_set_items (
   id              UUID    PRIMARY KEY DEFAULT gen_random_uuid(),
   gift_set_id     UUID    NOT NULL REFERENCES product_gift_sets(id) ON DELETE CASCADE,
   gift_product_id UUID    NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  max_per_item    INTEGER CHECK (max_per_item >= 1),
   sort_order      INTEGER NOT NULL DEFAULT 0,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (gift_set_id, gift_product_id)
@@ -504,7 +518,31 @@ CREATE TABLE IF NOT EXISTS product_gift_set_items (
 CREATE INDEX IF NOT EXISTS idx_product_gift_set_items_gift_set_id
   ON product_gift_set_items(gift_set_id);
 
--- 2.12 product_stock_alerts (재입고 알림)
+-- 2.12 bundle_items (묶음상품 구성)
+CREATE TABLE IF NOT EXISTS bundle_items (
+  id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  bundle_product_id UUID        NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  product_id        UUID        NOT NULL REFERENCES products(id),
+  variant_id        UUID        REFERENCES product_variants(id) ON DELETE SET NULL,
+  quantity          INTEGER     NOT NULL CHECK (quantity >= 1),
+  sort_order        INTEGER     NOT NULL DEFAULT 0,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bundle_items_bundle_product_id ON bundle_items(bundle_product_id);
+CREATE INDEX IF NOT EXISTS idx_bundle_items_product_id        ON bundle_items(product_id);
+
+ALTER TABLE bundle_items ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "bundle_items_public_read" ON bundle_items;
+DROP POLICY IF EXISTS "bundle_items_admin_all"   ON bundle_items;
+
+CREATE POLICY "bundle_items_public_read" ON bundle_items FOR SELECT USING (true);
+CREATE POLICY "bundle_items_admin_all"   ON bundle_items FOR ALL USING (
+  EXISTS (SELECT 1 FROM users WHERE users.id = auth.uid() AND users.role IN ('admin', 'super_admin'))
+);
+
+-- 2.13 product_stock_alerts (재입고 알림)
 CREATE TABLE IF NOT EXISTS product_stock_alerts (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -546,11 +584,13 @@ CREATE INDEX IF NOT EXISTS idx_product_level_prices_product_id ON product_level_
 
 -- 2.15 product_quantity_discounts (수량별 할인)
 CREATE TABLE IF NOT EXISTS product_quantity_discounts (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  product_id      UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-  min_quantity    INTEGER NOT NULL,
-  discount_type   VARCHAR(20) NOT NULL,
-  discount_value  INTEGER NOT NULL,
+  id              UUID     PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id      UUID     NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  min_quantity    INTEGER  NOT NULL CHECK (min_quantity >= 1),
+  discount_type   VARCHAR(20) NOT NULL CHECK (discount_type IN ('percent', 'fixed')),
+  discount_value  INTEGER  NOT NULL CHECK (discount_value >= 1),
+  is_active       BOOLEAN  NOT NULL DEFAULT true,
+  sort_order      INTEGER  NOT NULL DEFAULT 0,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -765,6 +805,10 @@ CREATE TABLE IF NOT EXISTS order_items (
   discount_amount  INTEGER NOT NULL DEFAULT 0,
   total_price      INTEGER NOT NULL,
   status           VARCHAR(30) NOT NULL DEFAULT 'pending',
+  item_type        TEXT NOT NULL DEFAULT 'purchase'
+                     CHECK (item_type IN ('purchase', 'gift', 'bundle_component')),
+  gift_set_id      UUID REFERENCES product_gift_sets(id) ON DELETE SET NULL,
+  bundle_item_id   UUID REFERENCES bundle_items(id) ON DELETE SET NULL,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -2211,19 +2255,35 @@ ALTER TABLE inquiries              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_subscriptions     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE product_gift_sets      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE product_gift_tiers     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE product_gift_set_items ENABLE ROW LEVEL SECURITY;
 
--- product_gift_sets: 누구나 조회, 관리자만 수정
+-- product_gift_sets
 CREATE POLICY "gift_sets_select_public" ON product_gift_sets
   FOR SELECT USING (true);
 CREATE POLICY "gift_sets_modify_admin" ON product_gift_sets
   FOR ALL USING (is_admin(auth.uid()))
   WITH CHECK (is_admin(auth.uid()));
 
--- product_gift_set_items: 누구나 조회, 관리자만 수정
+-- product_gift_tiers
+CREATE POLICY "gift_tiers_select_public" ON product_gift_tiers
+  FOR SELECT USING (true);
+CREATE POLICY "gift_tiers_modify_admin" ON product_gift_tiers
+  FOR ALL USING (is_admin(auth.uid()))
+  WITH CHECK (is_admin(auth.uid()));
+
+-- product_gift_set_items
 CREATE POLICY "gift_set_items_select_public" ON product_gift_set_items
   FOR SELECT USING (true);
 CREATE POLICY "gift_set_items_modify_admin" ON product_gift_set_items
+  FOR ALL USING (is_admin(auth.uid()))
+  WITH CHECK (is_admin(auth.uid()));
+
+-- product_quantity_discounts
+ALTER TABLE product_quantity_discounts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "qty_discounts_select_public" ON product_quantity_discounts
+  FOR SELECT USING (true);
+CREATE POLICY "qty_discounts_modify_admin" ON product_quantity_discounts
   FOR ALL USING (is_admin(auth.uid()))
   WITH CHECK (is_admin(auth.uid()));
 

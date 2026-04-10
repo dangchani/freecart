@@ -4,7 +4,14 @@ import { createClient } from '@/lib/supabase/client';
 // Types
 // =============================================================================
 
-export type GiftMode = 'auto' | 'select';
+export type GiftType = 'select' | 'auto_same' | 'auto_specific';
+
+export interface GiftTier {
+  id: string;
+  minQuantity: number;
+  freeCount: number;
+  sortOrder: number;
+}
 
 export interface GiftSetItem {
   id: string;
@@ -12,7 +19,6 @@ export interface GiftSetItem {
   giftProductName: string;
   giftProductImageUrl: string | null;
   giftProductSalePrice: number;
-  maxPerItem: number | null;
   sortOrder: number;
 }
 
@@ -20,31 +26,33 @@ export interface GiftSet {
   id: string;
   productId: string;
   name: string;
-  giftMode: GiftMode;
-  triggerQuantity: number;
-  // select 모드 전용 (auto 모드에서는 무시)
-  maxGiftQuantity: number;
-  maxDistinctItems: number | null;
+  giftType: GiftType;
   isActive: boolean;
   startsAt: string | null;
   endsAt: string | null;
   sortOrder: number;
+  tiers: GiftTier[];
   items: GiftSetItem[];
 }
 
 // 관리자 UI 로컬 상태용 (저장 전 draft)
 export interface GiftSetDraft {
-  localId: string;          // 신규 세트 임시 식별자 (DB id 없는 상태)
-  dbId: string | null;      // 저장 후 할당되는 실제 UUID
+  localId: string;
+  dbId: string | null;
   name: string;
-  giftMode: GiftMode;
-  triggerQuantity: number;
-  maxGiftQuantity: number;
-  maxDistinctItems: number | null;
+  giftType: GiftType;
   isActive: boolean;
   startsAt: string;
   endsAt: string;
+  tiers: GiftTierDraft[];
   items: GiftSetItemDraft[];
+}
+
+export interface GiftTierDraft {
+  localId: string;
+  dbId: string | null;
+  minQuantity: number;
+  freeCount: number;
 }
 
 export interface GiftSetItemDraft {
@@ -54,13 +62,34 @@ export interface GiftSetItemDraft {
   giftProductName: string;
   giftProductImageUrl: string | null;
   giftProductSalePrice: number;
-  maxPerItem: number | null;
-  sortOrder: number;
+}
+
+/** 자동 증정 계산 결과 */
+export interface AutoGiftResult {
+  giftSetId: string;
+  giftSetName: string;
+  giftType: 'auto_same' | 'auto_specific';
+  giftProductId: string;
+  giftProductName: string;
+  giftProductImageUrl: string | null;
+  quantity: number;
 }
 
 // =============================================================================
 // Read
 // =============================================================================
+
+const GIFT_SET_QUERY = `
+  id, product_id, name, gift_type, is_active, starts_at, ends_at, sort_order,
+  product_gift_tiers(id, min_quantity, free_count, sort_order),
+  product_gift_set_items(
+    id, gift_product_id, sort_order,
+    gift_product:products!product_gift_set_items_gift_product_id_fkey(
+      id, name, sale_price,
+      product_images(url, is_primary)
+    )
+  )
+`;
 
 /** 특정 상품의 활성 사은품 세트 목록 조회 (사용자 화면용) */
 export async function getGiftSets(productId: string): Promise<GiftSet[]> {
@@ -69,18 +98,7 @@ export async function getGiftSets(productId: string): Promise<GiftSet[]> {
 
   const { data } = await supabase
     .from('product_gift_sets')
-    .select(`
-      id, product_id, name, gift_mode,
-      trigger_quantity, max_gift_quantity, max_distinct_items,
-      is_active, starts_at, ends_at, sort_order,
-      product_gift_set_items(
-        id, gift_product_id, max_per_item, sort_order,
-        gift_product:products!product_gift_set_items_gift_product_id_fkey(
-          id, name, sale_price,
-          product_images(url, is_primary)
-        )
-      )
-    `)
+    .select(GIFT_SET_QUERY)
     .eq('product_id', productId)
     .eq('is_active', true)
     .or(`starts_at.is.null,starts_at.lte.${now}`)
@@ -96,18 +114,7 @@ export async function getGiftSetsAdmin(productId: string): Promise<GiftSet[]> {
 
   const { data } = await supabase
     .from('product_gift_sets')
-    .select(`
-      id, product_id, name, gift_mode,
-      trigger_quantity, max_gift_quantity, max_distinct_items,
-      is_active, starts_at, ends_at, sort_order,
-      product_gift_set_items(
-        id, gift_product_id, max_per_item, sort_order,
-        gift_product:products!product_gift_set_items_gift_product_id_fkey(
-          id, name, sale_price,
-          product_images(url, is_primary)
-        )
-      )
-    `)
+    .select(GIFT_SET_QUERY)
     .eq('product_id', productId)
     .order('sort_order', { ascending: true });
 
@@ -115,6 +122,15 @@ export async function getGiftSetsAdmin(productId: string): Promise<GiftSet[]> {
 }
 
 function mapGiftSet(s: any): GiftSet {
+  const tiers: GiftTier[] = ((s.product_gift_tiers as any[]) || [])
+    .sort((a: any, b: any) => a.sort_order - b.sort_order)
+    .map((t: any) => ({
+      id: t.id,
+      minQuantity: t.min_quantity,
+      freeCount: t.free_count,
+      sortOrder: t.sort_order,
+    }));
+
   const items: GiftSetItem[] = ((s.product_gift_set_items as any[]) || [])
     .sort((a: any, b: any) => a.sort_order - b.sort_order)
     .map((item: any) => {
@@ -128,7 +144,6 @@ function mapGiftSet(s: any): GiftSet {
         giftProductName: p?.name ?? '',
         giftProductImageUrl: primaryImg?.url ?? null,
         giftProductSalePrice: p?.sale_price ?? 0,
-        maxPerItem: item.max_per_item ?? null,
         sortOrder: item.sort_order,
       };
     });
@@ -137,14 +152,12 @@ function mapGiftSet(s: any): GiftSet {
     id: s.id,
     productId: s.product_id,
     name: s.name,
-    giftMode: s.gift_mode as GiftMode,
-    triggerQuantity: s.trigger_quantity,
-    maxGiftQuantity: s.max_gift_quantity,
-    maxDistinctItems: s.max_distinct_items ?? null,
+    giftType: (s.gift_type as GiftType) ?? 'select',
     isActive: s.is_active,
     startsAt: s.starts_at ?? null,
     endsAt: s.ends_at ?? null,
     sortOrder: s.sort_order,
+    tiers,
     items,
   };
 }
@@ -160,7 +173,7 @@ export async function saveGiftSets(
 ): Promise<void> {
   const supabase = createClient();
 
-  // 기존 세트 전체 삭제 (CASCADE로 items도 삭제됨)
+  // 기존 세트 전체 삭제 (CASCADE로 tiers, items도 삭제됨)
   await supabase
     .from('product_gift_sets')
     .delete()
@@ -176,11 +189,7 @@ export async function saveGiftSets(
       .insert({
         product_id: productId,
         name: draft.name,
-        gift_mode: draft.giftMode,
-        trigger_quantity: draft.triggerQuantity,
-        max_gift_quantity: draft.maxGiftQuantity,
-        max_distinct_items:
-          draft.giftMode === 'select' ? draft.maxDistinctItems : null,
+        gift_type: draft.giftType,
         is_active: draft.isActive,
         starts_at: draft.startsAt || null,
         ends_at: draft.endsAt || null,
@@ -191,26 +200,105 @@ export async function saveGiftSets(
 
     if (setError) throw setError;
 
-    if (draft.items.length > 0) {
+    if (draft.tiers.length > 0) {
+      const tierInserts = draft.tiers.map((tier, j) => ({
+        gift_set_id: setData.id,
+        min_quantity: tier.minQuantity,
+        free_count: tier.freeCount,
+        sort_order: j,
+      }));
+      const { error: tierError } = await supabase
+        .from('product_gift_tiers')
+        .insert(tierInserts);
+      if (tierError) throw tierError;
+    }
+
+    // auto_same은 items 저장 불필요
+    if (draft.giftType !== 'auto_same' && draft.items.length > 0) {
       const itemInserts = draft.items.map((item, j) => ({
         gift_set_id: setData.id,
         gift_product_id: item.giftProductId,
-        max_per_item:
-          draft.giftMode === 'select' ? item.maxPerItem : null,
         sort_order: j,
       }));
-
       const { error: itemError } = await supabase
         .from('product_gift_set_items')
         .insert(itemInserts);
-
       if (itemError) throw itemError;
     }
   }
 }
 
 // =============================================================================
-// Select 모드 검증 유틸 (사용자 UI에서 사용)
+// 사은품 개수 계산 유틸
+// =============================================================================
+
+/**
+ * 구매수량에 해당하는 tier의 free_count 반환
+ * - min_quantity <= purchaseQty 를 만족하는 tier 중 min_quantity가 가장 큰 것 적용
+ * - 해당 tier 없으면 0 반환
+ */
+export function getApplicableFreeCount(
+  tiers: GiftTier[],
+  purchaseQty: number
+): number {
+  const applicable = tiers
+    .filter((t) => t.minQuantity <= purchaseQty)
+    .sort((a, b) => b.minQuantity - a.minQuantity);
+  return applicable[0]?.freeCount ?? 0;
+}
+
+/**
+ * 자동 증정 타입(auto_same / auto_specific) 세트에서
+ * 현재 구매수량에 해당하는 증정품 목록 반환
+ *
+ * @param giftSets  - 해당 상품의 활성 gift set 목록
+ * @param purchaseProductId - 구매 상품 ID (auto_same용)
+ * @param purchaseQty       - 구매 수량
+ */
+export function resolveAutoGifts(
+  giftSets: GiftSet[],
+  purchaseProductId: string,
+  purchaseQty: number
+): AutoGiftResult[] {
+  const results: AutoGiftResult[] = [];
+
+  for (const set of giftSets) {
+    if (set.giftType !== 'auto_same' && set.giftType !== 'auto_specific') continue;
+
+    const freeCount = getApplicableFreeCount(set.tiers, purchaseQty);
+    if (freeCount === 0) continue;
+
+    if (set.giftType === 'auto_same') {
+      results.push({
+        giftSetId: set.id,
+        giftSetName: set.name,
+        giftType: 'auto_same',
+        giftProductId: purchaseProductId,
+        giftProductName: '구매 상품 동일',
+        giftProductImageUrl: null,
+        quantity: freeCount,
+      });
+    } else {
+      // auto_specific: items[0] 사용
+      const item = set.items[0];
+      if (!item) continue;
+      results.push({
+        giftSetId: set.id,
+        giftSetName: set.name,
+        giftType: 'auto_specific',
+        giftProductId: item.giftProductId,
+        giftProductName: item.giftProductName,
+        giftProductImageUrl: item.giftProductImageUrl,
+        quantity: freeCount,
+      });
+    }
+  }
+
+  return results;
+}
+
+// =============================================================================
+// 사용자 선택 상태 (select 타입용)
 // =============================================================================
 
 export interface GiftSelection {
@@ -219,29 +307,10 @@ export interface GiftSelection {
 }
 
 /** + 버튼 disabled 여부 판단 */
-export function isGiftItemAddDisabled(
-  giftSet: GiftSet,
-  selections: GiftSelection[],
-  targetProductId: string
+export function isGiftAddDisabled(
+  freeCount: number,
+  selections: GiftSelection[]
 ): boolean {
-  const totalSelected = selections.reduce((s, g) => s + g.quantity, 0);
-  const targetQty =
-    selections.find((g) => g.giftProductId === targetProductId)?.quantity ?? 0;
-
-  // A. 총 수량 상한 도달
-  if (totalSelected >= giftSet.maxGiftQuantity) return true;
-
-  // B. 품목 종류 상한 도달 (새 품목 추가 불가 — 기존 선택 품목은 허용)
-  if (giftSet.maxDistinctItems !== null && targetQty === 0) {
-    const distinctCount = selections.filter((g) => g.quantity > 0).length;
-    if (distinctCount >= giftSet.maxDistinctItems) return true;
-  }
-
-  // C. 품목 개별 상한 도달
-  const item = giftSet.items.find((i) => i.giftProductId === targetProductId);
-  if (item?.maxPerItem !== null && item?.maxPerItem !== undefined) {
-    if (targetQty >= item.maxPerItem) return true;
-  }
-
-  return false;
+  const total = selections.reduce((s, g) => s + g.quantity, 0);
+  return total >= freeCount;
 }
