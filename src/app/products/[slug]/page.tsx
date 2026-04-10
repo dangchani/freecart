@@ -6,6 +6,7 @@ import {
   getProductOptions,
   getProductVariants,
   findVariantByOptions,
+  OPTION_NONE_VALUE_ID,
   type ProductOption,
   type ProductVariant,
 } from '@/services/products';
@@ -29,11 +30,11 @@ import {
 import {
   getRelatedProducts,
   getProductSets,
-  getProductGifts,
   type RelatedProduct,
   type ProductSet,
-  type ProductGift,
 } from '@/services/relatedProducts';
+import { getGiftSets, getApplicableFreeCount, isGiftAddDisabled, resolveAutoGifts, type GiftSet, type GiftSelection, type AutoGiftResult } from '@/services/giftSets';
+import { getBundleItems, type BundleItem } from '@/services/bundles';
 import { requestStockAlert } from '@/services/stockAlert';
 import { addToRecentlyViewed } from '@/services/recentlyViewed';
 import { dispatchThemeEvent } from '@/lib/theme';
@@ -75,6 +76,9 @@ interface Product {
   summary?: string;
   stockQuantity: number;
   hasOptions?: boolean;
+  productType?: 'single' | 'bundle';
+  minPurchaseQuantity?: number | null;
+  maxPurchaseQuantity?: number | null;
   images?: { id: string; url: string; alt?: string; isPrimary: boolean; sortOrder: number }[];
 }
 
@@ -109,6 +113,10 @@ export default function ProductDetailPage() {
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [optionsLoading, setOptionsLoading] = useState(false);
 
+  // 묶음상품 / 자동증정 state
+  const [bundleItems, setBundleItems] = useState<BundleItem[]>([]);
+  const [autoGifts, setAutoGifts] = useState<AutoGiftResult[]>([]);
+
   // 회원 등급 가격 관련 state
   const [useLevels, setUseLevels] = useState(true);
   const [userLevel, setUserLevel] = useState<UserLevel | null>(null);
@@ -122,7 +130,9 @@ export default function ProductDetailPage() {
   // 관련 상품 관련 state
   const [relatedProducts, setRelatedProducts] = useState<RelatedProduct[]>([]);
   const [productSets, setProductSets] = useState<ProductSet[]>([]);
-  const [productGifts, setProductGifts] = useState<ProductGift[]>([]);
+  const [giftSets, setGiftSets] = useState<GiftSet[]>([]);
+  // 선택 모드 사은품 선택 상태: { [giftSetId]: GiftSelection[] }
+  const [giftSelections, setGiftSelections] = useState<Record<string, GiftSelection[]>>({});
 
   // 재고 알림 state
   const [stockAlertEmail, setStockAlertEmail] = useState('');
@@ -220,7 +230,16 @@ export default function ProductDetailPage() {
     if (!product) return;
     getRelatedProducts(product.id).then(setRelatedProducts);
     getProductSets(product.id).then(setProductSets);
-    getProductGifts(product.id).then(setProductGifts);
+    getGiftSets(product.id).then((sets) => {
+      setGiftSets(sets);
+      const initSelections: Record<string, GiftSelection[]> = {};
+      sets.forEach((s) => { initSelections[s.id] = []; });
+      setGiftSelections(initSelections);
+    });
+    // 묶음상품이면 구성 아이템 로드
+    if (product.productType === 'bundle') {
+      getBundleItems(product.id).then(setBundleItems);
+    }
   }, [product]);
 
   // 상품 옵션 로드
@@ -236,12 +255,14 @@ export default function ProductDetailPage() {
         setOptions(opts);
         setVariants(vars);
 
-        // 첫 번째 옵션값으로 기본 선택
+        // 필수 옵션: 첫 번째 값 기본 선택, 선택 옵션: "선택 안 함" 기본 선택
         if (opts.length > 0) {
           const defaultSelections: Record<string, string> = {};
           opts.forEach((opt) => {
-            if (opt.values.length > 0) {
-              defaultSelections[opt.id] = opt.values[0].id;
+            if (opt.isRequired) {
+              if (opt.values.length > 0) defaultSelections[opt.id] = opt.values[0].id;
+            } else {
+              defaultSelections[opt.id] = OPTION_NONE_VALUE_ID;
             }
           });
           setSelectedOptions(defaultSelections);
@@ -424,6 +445,13 @@ export default function ProductDetailPage() {
     }
   }
 
+  // 수량/gift set 변경 시 자동증정 재계산
+  useEffect(() => {
+    if (!product) return;
+    const autoResults = resolveAutoGifts(giftSets, product.id, quantity);
+    setAutoGifts(autoResults);
+  }, [quantity, giftSets, product]);
+
   // variant 변경 시 quantity 조정
   useEffect(() => {
     const stock = selectedVariant?.stockQuantity ?? product?.stockQuantity ?? 0;
@@ -488,14 +516,24 @@ export default function ProductDetailPage() {
     : product.stockQuantity;
   const isSoldOut = currentStock === 0;
 
-  // 옵션 선택이 완료되었는지 확인
-  const isOptionSelectionComplete = !hasProductOptions || (options.length === Object.keys(selectedOptions).length && selectedVariant !== null);
-  const isVariantUnavailable = hasProductOptions && options.length === Object.keys(selectedOptions).length && selectedVariant === null;
+  // 옵션 선택이 완료되었는지 확인 (필수 옵션만 체크)
+  const requiredOptions = options.filter((opt) => opt.isRequired);
+  const allRequiredSelected = requiredOptions.every(
+    (opt) => selectedOptions[opt.id] && selectedOptions[opt.id] !== OPTION_NONE_VALUE_ID
+  );
+  const isOptionSelectionComplete = !hasProductOptions || (allRequiredSelected && selectedVariant !== null);
+  const isVariantUnavailable = hasProductOptions && allRequiredSelected && selectedVariant === null;
+
+  // variant 또는 상품 기본값에서 구매 수량 제한 결정
+  const effectiveMin = selectedVariant?.minPurchaseQuantity ?? product?.minPurchaseQuantity ?? 1;
+  const effectiveMax = selectedVariant?.maxPurchaseQuantity ?? product?.maxPurchaseQuantity ?? currentStock;
+  const effectiveDailyLimit = selectedVariant?.dailyPurchaseLimit ?? null;
 
   function changeQuantity(delta: number) {
     setQuantity((prev) => {
       const next = prev + delta;
-      if (next < 1) return 1;
+      if (next < effectiveMin) return effectiveMin;
+      if (next > effectiveMax) return effectiveMax;
       if (next > currentStock) return currentStock;
       return next;
     });
@@ -602,6 +640,42 @@ export default function ProductDetailPage() {
           </div>
 
           {/* 상품 옵션 선택 UI */}
+          {/* 묶음상품 구성 목록 */}
+          {product.productType === 'bundle' && bundleItems.length > 0 && (
+            <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <p className="mb-3 text-sm font-semibold text-gray-700">이 상품의 구성</p>
+              <div className="space-y-2">
+                {bundleItems.map((item) => (
+                  <div key={item.id} className="flex items-center gap-3">
+                    {item.productImageUrl && (
+                      <img src={item.productImageUrl} className="h-9 w-9 rounded object-cover border" />
+                    )}
+                    <span className="flex-1 text-sm">{item.productName}</span>
+                    <span className="text-sm font-semibold text-gray-600">× {item.quantity}개</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 자동증정 배지 */}
+          {autoGifts.length > 0 && (
+            <div className="mb-6 space-y-2">
+              {autoGifts.map((gift) => (
+                <div key={gift.giftSetId} className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5">
+                  <span className="text-base">🎁</span>
+                  <div className="text-sm text-green-800">
+                    <span className="font-semibold">{gift.giftSetName}</span>
+                    {' — '}
+                    {gift.giftType === 'auto_same'
+                      ? `동일 상품 ${gift.quantity}개 자동 증정`
+                      : `${gift.giftProductName} ${gift.quantity}개 자동 증정`}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {hasProductOptions && (
             <div className="mb-6 space-y-4">
               {optionsLoading ? (
@@ -612,8 +686,11 @@ export default function ProductDetailPage() {
               ) : (
                 options.map((option) => (
                   <div key={option.id}>
-                    <label className="mb-2 block text-sm font-medium text-gray-700">
+                    <label className="mb-2 flex items-center gap-1 text-sm font-medium text-gray-700">
                       {option.name}
+                      {!option.isRequired && (
+                        <span className="text-xs font-normal text-gray-400">(선택)</span>
+                      )}
                     </label>
                     <div className="flex flex-wrap gap-2">
                       {option.values.map((value) => {
@@ -688,17 +765,49 @@ export default function ProductDetailPage() {
               <p className="mb-2 text-sm font-medium text-gray-700">수량</p>
               <div className="flex items-center gap-3">
                 <div className="flex items-center rounded-md border">
-                  <button className="flex h-10 w-10 items-center justify-center hover:bg-gray-50 disabled:opacity-50" onClick={() => changeQuantity(-1)} disabled={quantity <= 1}>
+                  <button className="flex h-10 w-10 items-center justify-center hover:bg-gray-50 disabled:opacity-50" onClick={() => changeQuantity(-1)} disabled={quantity <= effectiveMin}>
                     <Minus className="h-4 w-4" />
                   </button>
                   <span className="w-12 text-center text-sm font-medium">{quantity}</span>
-                  <button className="flex h-10 w-10 items-center justify-center hover:bg-gray-50 disabled:opacity-50" onClick={() => changeQuantity(1)} disabled={quantity >= currentStock}>
+                  <button className="flex h-10 w-10 items-center justify-center hover:bg-gray-50 disabled:opacity-50" onClick={() => changeQuantity(1)} disabled={quantity >= Math.min(effectiveMax, currentStock)}>
                     <Plus className="h-4 w-4" />
                   </button>
                 </div>
-                <span className="text-sm text-gray-500">최대 {currentStock}개</span>
+                <div className="flex flex-col text-sm text-gray-500">
+                  {effectiveMin > 1 && <span>최소 {effectiveMin}개</span>}
+                  <span>최대 {Math.min(effectiveMax, currentStock)}개</span>
+                  {effectiveDailyLimit && <span>1일 {effectiveDailyLimit}개 제한</span>}
+                </div>
               </div>
-              <p className="mt-2 text-sm font-medium text-gray-700">합계: <span className="text-lg font-bold text-blue-600">{formatCurrency(finalSalePrice * quantity)}</span></p>
+              {/* 수량 할인 적용 시 가격 분해 표시 */}
+              {hasQuantityDiscount && discountResult.appliedQuantityDiscount ? (
+                <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-1">
+                  <div className="flex justify-between text-sm text-gray-600">
+                    <span>단가</span>
+                    <span>{formatCurrency(priceAfterLevel)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-blue-700 font-medium">
+                    <span>
+                      수량 할인 ({discountResult.appliedQuantityDiscount.minQuantity}개 이상 —{' '}
+                      {discountResult.appliedQuantityDiscount.discountType === 'percent'
+                        ? `${discountResult.appliedQuantityDiscount.discountValue}%`
+                        : formatCurrency(discountResult.appliedQuantityDiscount.discountValue)}{' '}
+                      할인)
+                    </span>
+                    <span>−{formatCurrency(discountResult.quantityDiscount)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm font-semibold border-t border-blue-200 pt-1">
+                    <span>할인 단가 × {quantity}개</span>
+                    <span className="text-blue-700">{formatCurrency(finalSalePrice)} × {quantity}</span>
+                  </div>
+                  <div className="flex justify-between font-bold">
+                    <span>합계</span>
+                    <span className="text-lg text-blue-700">{formatCurrency(finalSalePrice * quantity)}</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm font-medium text-gray-700">합계: <span className="text-lg font-bold text-blue-600">{formatCurrency(finalSalePrice * quantity)}</span></p>
+              )}
             </div>
           )}
 
@@ -742,25 +851,125 @@ export default function ProductDetailPage() {
             </div>
           )}
 
-          {/* 사은품 안내 */}
-          {productGifts.length > 0 && (
-            <div className="mb-6 rounded-xl border-2 border-dashed border-green-300 bg-green-50 p-4">
-              <p className="mb-2 font-semibold text-green-800">🎁 사은품 증정</p>
-              {productGifts.map((gift) => (
-                <div key={gift.id} className="flex items-center gap-3">
-                  {gift.giftProduct.imageUrl && (
-                    <img src={gift.giftProduct.imageUrl} alt={gift.giftProduct.name} className="h-12 w-12 rounded object-cover" />
-                  )}
-                  <div>
-                    <p className="text-sm font-medium text-green-900">{gift.giftProduct.name}</p>
-                    {gift.minOrderAmount > 0 && (
-                      <p className="text-xs text-green-700">{formatCurrency(gift.minOrderAmount)} 이상 구매 시</p>
+          {/* 사은품 */}
+          {giftSets.length > 0 && giftSets.map((giftSet) => {
+            const freeCount = getApplicableFreeCount(giftSet.tiers, quantity);
+            const hasActiveTier = freeCount > 0;
+            const selections = giftSelections[giftSet.id] ?? [];
+            const totalSelected = selections.reduce((s, g) => s + g.quantity, 0);
+
+            // 해당 구매수량에 tier가 없으면 — 최소 tier 정보를 힌트로 표시
+            const minTier = giftSet.tiers.length > 0
+              ? giftSet.tiers.reduce((a, b) => a.minQuantity < b.minQuantity ? a : b)
+              : null;
+
+            function changeGiftQty(productId: string, delta: number) {
+              setGiftSelections((prev) => {
+                const cur = prev[giftSet.id] ?? [];
+                const existing = cur.find((g) => g.giftProductId === productId);
+                const newQty = (existing?.quantity ?? 0) + delta;
+                if (newQty <= 0) {
+                  return { ...prev, [giftSet.id]: cur.filter((g) => g.giftProductId !== productId) };
+                }
+                if (existing) {
+                  return { ...prev, [giftSet.id]: cur.map((g) => g.giftProductId === productId ? { ...g, quantity: newQty } : g) };
+                }
+                return { ...prev, [giftSet.id]: [...cur, { giftProductId: productId, quantity: newQty }] };
+              });
+            }
+
+            return (
+              <div
+                key={giftSet.id}
+                className={`mb-4 rounded-xl border-2 border-dashed p-4 ${hasActiveTier ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-gray-50 opacity-70'}`}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <p className="font-semibold text-blue-800">
+                    🎁 {giftSet.name}
+                    {!hasActiveTier && minTier && (
+                      <span className="ml-2 text-xs font-normal text-gray-500">
+                        ({minTier.minQuantity}개 이상 구매 시 선택 가능)
+                      </span>
                     )}
-                  </div>
+                  </p>
+                  {hasActiveTier && (
+                    <span className={`text-sm font-bold ${totalSelected >= freeCount ? 'text-orange-600' : 'text-blue-600'}`}>
+                      {totalSelected} / {freeCount}개 선택
+                    </span>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
+
+                {/* 구간 안내 */}
+                {giftSet.tiers.length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {[...giftSet.tiers]
+                      .sort((a, b) => a.minQuantity - b.minQuantity)
+                      .map((tier) => (
+                        <span
+                          key={tier.id}
+                          className={`rounded-full px-2 py-0.5 text-xs ${quantity >= tier.minQuantity ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-500'}`}
+                        >
+                          {tier.minQuantity}개 이상 → {tier.freeCount}개 선택
+                        </span>
+                      ))}
+                  </div>
+                )}
+
+                {/* 진행 바 */}
+                {hasActiveTier && (
+                  <div className="mb-3 h-1.5 w-full rounded-full bg-gray-200">
+                    <div
+                      className={`h-1.5 rounded-full transition-all ${totalSelected >= freeCount ? 'bg-orange-400' : 'bg-blue-400'}`}
+                      style={{ width: `${Math.min((totalSelected / freeCount) * 100, 100)}%` }}
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  {giftSet.items.map((item) => {
+                    const selectedQty = selections.find((g) => g.giftProductId === item.giftProductId)?.quantity ?? 0;
+                    const plusDisabled = !hasActiveTier || isGiftAddDisabled(freeCount, selections);
+                    const minusDisabled = !hasActiveTier || selectedQty <= 0;
+
+                    return (
+                      <div key={item.id} className="flex items-center gap-3 rounded-lg border bg-white p-2">
+                        {item.giftProductImageUrl && (
+                          <img src={item.giftProductImageUrl} alt={item.giftProductName} className="h-10 w-10 rounded object-cover flex-shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{item.giftProductName}</p>
+                          <p className="text-xs text-gray-400">사은품 0원</p>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            type="button"
+                            disabled={minusDisabled}
+                            onClick={() => changeGiftQty(item.giftProductId, -1)}
+                            className="flex h-7 w-7 items-center justify-center rounded border text-sm font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50"
+                          >
+                            −
+                          </button>
+                          <span className="w-6 text-center text-sm font-medium">{selectedQty}</span>
+                          <button
+                            type="button"
+                            disabled={plusDisabled}
+                            onClick={() => changeGiftQty(item.giftProductId, 1)}
+                            className="flex h-7 w-7 items-center justify-center rounded border text-sm font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {hasActiveTier && (
+                  <p className="mt-2 text-xs text-gray-500">총 {freeCount}개까지 선택할 수 있습니다.</p>
+                )}
+              </div>
+            );
+          })}
 
           {/* 세트 상품 안내 */}
           {productSets.length > 0 && (

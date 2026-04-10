@@ -27,9 +27,85 @@ import {
   X,
   Search,
   Filter,
-  MoreHorizontal,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+
+// =============================================================================
+// Detail Types
+// =============================================================================
+
+interface ProductDetailOption {
+  name: string;
+  isRequired: boolean;
+  values: string[];
+}
+
+interface ProductDetailVariant {
+  label: string;
+  sku: string | null;
+  stock: number;
+  isActive: boolean;
+  minPurchaseQuantity: number | null;
+  maxPurchaseQuantity: number | null;
+}
+
+interface ProductDetailQtyDiscount {
+  minQuantity: number;
+  discountType: 'percent' | 'fixed';
+  discountValue: number;
+  isActive: boolean;
+}
+
+interface ProductDetailGiftSet {
+  name: string;
+  giftType: string;
+  isActive: boolean;
+  tiers: { minQuantity: number; freeCount: number }[];
+}
+
+interface ProductDetailBundleItem {
+  productName: string;
+  imageUrl: string | null;
+  quantity: number;
+}
+
+interface ProductDetailTimeSale {
+  name: string;
+  discountType: 'percent' | 'fixed';
+  discountValue: number;
+  endsAt: string;
+}
+
+interface ProductDetail {
+  images: { url: string; isPrimary: boolean }[];
+  summary: string | null;
+  description: string | null;
+  categoryName: string | null;
+  brandName: string | null;
+  regularPrice: number;
+  salePrice: number;
+  costPrice: number | null;
+  pointRate: number | null;
+  manufacturer: string | null;
+  origin: string | null;
+  weight: number | null;
+  shippingType: string;
+  shippingFee: number | null;
+  minPurchaseQuantity: number | null;
+  maxPurchaseQuantity: number | null;
+  dailyPurchaseLimit: number | null;
+  tags: string[];
+  hasOptions: boolean;
+  productType: 'single' | 'bundle';
+  options: ProductDetailOption[];
+  variants: ProductDetailVariant[];
+  quantityDiscounts: ProductDetailQtyDiscount[];
+  giftSets: ProductDetailGiftSet[];
+  bundleItems: ProductDetailBundleItem[];
+  activeTimeSale: ProductDetailTimeSale | null;
+}
 
 interface Product {
   id: string;
@@ -42,6 +118,7 @@ interface Product {
   isActive: boolean;
   categoryId: string | null;
   sku: string | null;
+  productType: 'single' | 'bundle';
 }
 
 interface Category {
@@ -75,6 +152,11 @@ export default function AdminProductsPage() {
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
 
+  // 아코디언 상세 보기
+  const [expandedProductId, setExpandedProductId] = useState<string | null>(null);
+  const [productDetails, setProductDetails] = useState<Record<string, ProductDetail>>({});
+  const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
+
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
@@ -91,7 +173,7 @@ export default function AdminProductsPage() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('products')
-        .select('id, name, slug, sale_price, regular_price, stock_quantity, stock_alert_quantity, has_options, status, category_id, sku, product_images(url), product_variants(stock_quantity, is_active)')
+        .select('id, name, slug, sale_price, regular_price, stock_quantity, stock_alert_quantity, has_options, product_type, status, category_id, sku, product_images(url), product_variants(stock_quantity, is_active)')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -99,6 +181,7 @@ export default function AdminProductsPage() {
       setProducts(
         (data || []).map((p: any) => {
           const hasOptions = p.has_options;
+          const isBundle = p.product_type === 'bundle';
           const variantStock = hasOptions
             ? ((p.product_variants || []) as any[])
                 .filter((v: any) => v.is_active)
@@ -117,6 +200,7 @@ export default function AdminProductsPage() {
             isActive: p.status === 'active',
             categoryId: p.category_id,
             sku: p.sku,
+            productType: (isBundle ? 'bundle' : 'single') as 'single' | 'bundle',
           };
         })
       );
@@ -137,6 +221,155 @@ export default function AdminProductsPage() {
       setCategories(data || []);
     } catch (error) {
       console.error('Failed to load categories:', error);
+    }
+  }
+
+  async function toggleProductDetail(productId: string) {
+    // 같은 행 다시 클릭 → 닫기
+    if (expandedProductId === productId) {
+      setExpandedProductId(null);
+      return;
+    }
+
+    setExpandedProductId(productId);
+
+    // 이미 캐시된 경우 재조회 생략
+    if (productDetails[productId]) return;
+
+    setLoadingDetailId(productId);
+    try {
+      const supabase = createClient();
+
+      // 1. 메인 상품 상세 조회
+      const { data: p } = await supabase
+        .from('products')
+        .select(`
+          summary, description, sku,
+          regular_price, sale_price, cost_price, point_rate,
+          has_options, product_type, tags,
+          manufacturer, origin, weight,
+          shipping_type, shipping_fee,
+          min_purchase_quantity, max_purchase_quantity, daily_purchase_limit,
+          category:product_categories!products_category_id_fkey(name),
+          brand:product_brands!products_brand_id_fkey(name),
+          product_images(url, is_primary, sort_order),
+          product_options(name, is_required, sort_order, product_option_values(value, sort_order)),
+          product_variants(sku, option_values, stock_quantity, is_active, min_purchase_quantity, max_purchase_quantity),
+          product_quantity_discounts(min_quantity, discount_type, discount_value, is_active),
+          product_gift_sets(name, gift_type, is_active, product_gift_tiers(min_quantity, free_count))
+        `)
+        .eq('id', productId)
+        .single();
+
+      if (!p) return;
+
+      // 2. 세트상품이면 구성상품 조회
+      let bundleItems: ProductDetailBundleItem[] = [];
+      if ((p as any).product_type === 'bundle') {
+        const { data: items } = await supabase
+          .from('bundle_items')
+          .select(`
+            quantity,
+            product:products!bundle_items_product_id_fkey(
+              name,
+              product_images(url, is_primary)
+            )
+          `)
+          .eq('bundle_product_id', productId)
+          .order('sort_order', { ascending: true });
+
+        bundleItems = (items || []).map((item: any) => {
+          const prod = item.product;
+          const img = (prod?.product_images || []).find((i: any) => i.is_primary) || prod?.product_images?.[0];
+          return { productName: prod?.name ?? '', imageUrl: img?.url ?? null, quantity: item.quantity };
+        });
+      }
+
+      // 3. 진행 중인 타임세일 조회
+      const now = new Date().toISOString();
+      const { data: timeSaleData } = await supabase
+        .from('product_time_sales')
+        .select('name, discount_type, discount_value, ends_at')
+        .eq('product_id', productId)
+        .eq('is_active', true)
+        .lte('starts_at', now)
+        .gte('ends_at', now)
+        .limit(1)
+        .maybeSingle();
+
+      // 옵션 정리
+      const options: ProductDetailOption[] = ((p as any).product_options || [])
+        .sort((a: any, b: any) => a.sort_order - b.sort_order)
+        .map((opt: any) => ({
+          name: opt.name,
+          isRequired: opt.is_required ?? true,
+          values: (opt.product_option_values || [])
+            .sort((a: any, b: any) => a.sort_order - b.sort_order)
+            .map((v: any) => v.value),
+        }));
+
+      // variant 정리 (valueIdToText 없이 option_values 배열의 텍스트만 join)
+      const variants: ProductDetailVariant[] = ((p as any).product_variants || []).map((v: any) => ({
+        label: ((v.option_values as any[]) || []).map((o: any) => o.valueId || '').join(' / '),
+        sku: v.sku || null,
+        stock: v.stock_quantity,
+        isActive: v.is_active,
+        minPurchaseQuantity: v.min_purchase_quantity ?? null,
+        maxPurchaseQuantity: v.max_purchase_quantity ?? null,
+      }));
+
+      setProductDetails((prev) => ({
+        ...prev,
+        [productId]: {
+          images: ((p as any).product_images || [])
+            .sort((a: any, b: any) => a.sort_order - b.sort_order)
+            .map((img: any) => ({ url: img.url, isPrimary: img.is_primary })),
+          summary: (p as any).summary || null,
+          description: (p as any).description || null,
+          categoryName: (p as any).category?.name ?? null,
+          brandName: (p as any).brand?.name ?? null,
+          regularPrice: (p as any).regular_price,
+          salePrice: (p as any).sale_price,
+          costPrice: (p as any).cost_price ?? null,
+          pointRate: (p as any).point_rate ?? null,
+          manufacturer: (p as any).manufacturer ?? null,
+          origin: (p as any).origin ?? null,
+          weight: (p as any).weight ?? null,
+          shippingType: (p as any).shipping_type || 'default',
+          shippingFee: (p as any).shipping_fee ?? null,
+          minPurchaseQuantity: (p as any).min_purchase_quantity ?? null,
+          maxPurchaseQuantity: (p as any).max_purchase_quantity ?? null,
+          dailyPurchaseLimit: (p as any).daily_purchase_limit ?? null,
+          tags: (p as any).tags || [],
+          hasOptions: (p as any).has_options,
+          productType: (p as any).product_type || 'single',
+          options,
+          variants,
+          quantityDiscounts: ((p as any).product_quantity_discounts || []).map((d: any) => ({
+            minQuantity: d.min_quantity,
+            discountType: d.discount_type,
+            discountValue: d.discount_value,
+            isActive: d.is_active,
+          })),
+          giftSets: ((p as any).product_gift_sets || []).map((s: any) => ({
+            name: s.name,
+            giftType: s.gift_type,
+            isActive: s.is_active,
+            tiers: (s.product_gift_tiers || []).map((t: any) => ({
+              minQuantity: t.min_quantity,
+              freeCount: t.free_count,
+            })),
+          })),
+          bundleItems,
+          activeTimeSale: timeSaleData
+            ? { name: timeSaleData.name, discountType: timeSaleData.discount_type, discountValue: timeSaleData.discount_value, endsAt: timeSaleData.ends_at }
+            : null,
+        },
+      }));
+    } catch (error) {
+      console.error('Failed to load product detail:', error);
+    } finally {
+      setLoadingDetailId(null);
     }
   }
 
@@ -608,6 +841,12 @@ export default function AdminProductsPage() {
             <Download className="mr-2 h-4 w-4" />
             {exporting ? '처리중...' : '내보내기'}
           </Button>
+          <Link to="/admin/bundles/new">
+            <Button variant="outline">
+              <Plus className="mr-2 h-4 w-4" />
+              세트상품 등록
+            </Button>
+          </Link>
           <Link to="/admin/products/new">
             <Button>
               <Plus className="mr-2 h-4 w-4" />
@@ -693,82 +932,332 @@ export default function AdminProductsPage() {
             <div className="w-24 text-center font-medium text-sm text-gray-600">가격</div>
             <div className="w-20 text-center font-medium text-sm text-gray-600">재고</div>
             <div className="w-20 text-center font-medium text-sm text-gray-600">상태</div>
-            <div className="w-32"></div>
+            <div className="w-36"></div>
           </div>
 
           <div className="divide-y">
-            {filteredProducts.map((product) => (
-              <div key={product.id} className="flex items-center gap-4 p-4 hover:bg-gray-50">
-                <input
-                  type="checkbox"
-                  checked={selectedIds.has(product.id)}
-                  onChange={() => toggleSelect(product.id)}
-                  className="h-4 w-4 rounded"
-                />
-                <div className="relative h-16 w-16 overflow-hidden rounded-lg bg-gray-100 shrink-0">
-                  <img
-                    src={product.thumbnail || '/placeholder.png'}
-                    alt={product.name}
-                    className="object-cover w-full h-full"
+            {filteredProducts.map((product) => {
+              const isExpanded = expandedProductId === product.id;
+              const detail = productDetails[product.id];
+              const isLoadingDetail = loadingDetailId === product.id;
+
+              return (
+              <div key={product.id}>
+                {/* ── 목록 행 ── */}
+                <div className={`flex items-center gap-4 p-4 hover:bg-gray-50 ${isExpanded ? 'bg-blue-50 border-b border-blue-100' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(product.id)}
+                    onChange={() => toggleSelect(product.id)}
+                    className="h-4 w-4 rounded"
                   />
-                </div>
+                  <div className="relative h-16 w-16 overflow-hidden rounded-lg bg-gray-100 shrink-0">
+                    <img
+                      src={product.thumbnail || '/placeholder.png'}
+                      alt={product.name}
+                      className="object-cover w-full h-full"
+                    />
+                  </div>
 
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-bold truncate">{product.name}</h3>
-                  {product.sku && (
-                    <p className="text-xs text-gray-500">SKU: {product.sku}</p>
-                  )}
-                </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-bold truncate">{product.name}</h3>
+                      {product.productType === 'bundle' && (
+                        <span className="flex-shrink-0 px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 text-[10px] font-semibold">세트</span>
+                      )}
+                    </div>
+                    {product.sku && (
+                      <p className="text-xs text-gray-500">SKU: {product.sku}</p>
+                    )}
+                  </div>
 
-                <div className="w-24 text-center">
-                  <p className="font-medium">{formatCurrency(product.price)}</p>
-                  {product.regularPrice > product.price && (
-                    <p className="text-xs text-gray-400 line-through">
-                      {formatCurrency(product.regularPrice)}
-                    </p>
-                  )}
-                </div>
+                  <div className="w-24 text-center">
+                    <p className="font-medium">{formatCurrency(product.price)}</p>
+                    {product.regularPrice > product.price && (
+                      <p className="text-xs text-gray-400 line-through">
+                        {formatCurrency(product.regularPrice)}
+                      </p>
+                    )}
+                  </div>
 
-                <div className="w-20 text-center">
-                  <span className={product.stock <= (product as any).stockAlertQuantity ? 'text-red-500 font-medium' : ''}>
-                    {product.stock}개
-                  </span>
-                  {(product as any).hasOptions && (
-                    <p className="text-xs text-gray-400">옵션합산</p>
-                  )}
-                </div>
+                  <div className="w-20 text-center">
+                    <span className={product.stock <= (product as any).stockAlertQuantity ? 'text-red-500 font-medium' : ''}>
+                      {product.productType === 'bundle' ? '자동계산' : `${product.stock}개`}
+                    </span>
+                    {product.productType === 'bundle' ? (
+                      <p className="text-xs text-gray-400">구성재고</p>
+                    ) : (product as any).hasOptions ? (
+                      <p className="text-xs text-gray-400">옵션합산</p>
+                    ) : null}
+                  </div>
 
-                <div className="w-20 text-center">
-                  <Badge variant={product.isActive ? 'default' : 'secondary'}>
-                    {product.isActive ? '판매중' : '판매중지'}
-                  </Badge>
-                </div>
+                  <div className="w-20 text-center">
+                    <Badge variant={product.isActive ? 'default' : 'secondary'}>
+                      {product.isActive ? '판매중' : '판매중지'}
+                    </Badge>
+                  </div>
 
-                <div className="flex gap-1 w-32 justify-end">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleDuplicate(product)}
-                    title="복사"
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
-                  <Link to={`/admin/products/${product.slug}/edit`}>
-                    <Button size="sm" variant="ghost" title="편집">
-                      <Edit className="h-4 w-4" />
+                  <div className="flex gap-1 w-36 justify-end">
+                    <Button
+                      size="sm"
+                      variant={isExpanded ? 'secondary' : 'ghost'}
+                      onClick={() => toggleProductDetail(product.id)}
+                      title={isExpanded ? '접기' : '상세 보기'}
+                    >
+                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </Button>
-                  </Link>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleDelete(product.id)}
-                    title="삭제"
-                  >
-                    <Trash2 className="h-4 w-4 text-red-500" />
-                  </Button>
+                    {product.productType !== 'bundle' && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDuplicate(product)}
+                        title="복사"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    )}
+                    <Link to={product.productType === 'bundle' ? `/admin/bundles/${product.id}/edit` : `/admin/products/${product.slug}/edit`}>
+                      <Button size="sm" variant="ghost" title="편집">
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    </Link>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleDelete(product.id)}
+                      title="삭제"
+                    >
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
+                  </div>
                 </div>
+
+                {/* ── 아코디언 상세 영역 ── */}
+                {isExpanded && (
+                  <div className="border-b bg-gray-50">
+                    {isLoadingDetail ? (
+                      <div className="flex items-center justify-center py-10 text-sm text-gray-400">
+                        <svg className="animate-spin h-5 w-5 mr-2 text-gray-400" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                        </svg>
+                        불러오는 중...
+                      </div>
+                    ) : detail ? (
+                      <div className="p-5 space-y-5">
+
+                        {/* 이미지 */}
+                        {detail.images.length > 0 && (
+                          <div className="flex gap-2 flex-wrap">
+                            {detail.images.map((img, idx) => (
+                              <div key={idx} className={`relative h-20 w-20 rounded-lg overflow-hidden border-2 shrink-0 ${img.isPrimary ? 'border-blue-400' : 'border-gray-200'}`}>
+                                <img src={img.url} alt="" className="w-full h-full object-cover" />
+                                {img.isPrimary && (
+                                  <span className="absolute bottom-0 left-0 right-0 text-center bg-blue-500 text-white text-[9px] font-bold py-0.5">대표</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* 기본정보 + 가격정보 2단 */}
+                        <div className="grid grid-cols-2 gap-5">
+                          {/* 기본 정보 */}
+                          <div className="space-y-1.5 text-sm">
+                            <p className="font-semibold text-gray-700 mb-2">기본 정보</p>
+                            {detail.categoryName && <p className="text-gray-600"><span className="text-gray-400 w-20 inline-block">카테고리</span>{detail.categoryName}</p>}
+                            {detail.brandName && <p className="text-gray-600"><span className="text-gray-400 w-20 inline-block">브랜드</span>{detail.brandName}</p>}
+                            {detail.manufacturer && <p className="text-gray-600"><span className="text-gray-400 w-20 inline-block">제조사</span>{detail.manufacturer}</p>}
+                            {detail.origin && <p className="text-gray-600"><span className="text-gray-400 w-20 inline-block">원산지</span>{detail.origin}</p>}
+                            {detail.weight != null && <p className="text-gray-600"><span className="text-gray-400 w-20 inline-block">무게</span>{detail.weight}kg</p>}
+                            {detail.summary && <p className="text-gray-600"><span className="text-gray-400 w-20 inline-block">요약</span><span className="text-gray-600">{detail.summary}</span></p>}
+                            {detail.tags.length > 0 && (
+                              <div className="flex items-start gap-1 flex-wrap">
+                                <span className="text-gray-400 w-20 inline-block shrink-0">태그</span>
+                                {detail.tags.map((tag) => (
+                                  <span key={tag} className="px-1.5 py-0.5 bg-gray-200 rounded text-xs text-gray-600">#{tag}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 가격 정보 */}
+                          <div className="space-y-1.5 text-sm">
+                            <p className="font-semibold text-gray-700 mb-2">가격 정보</p>
+                            <p className="text-gray-600"><span className="text-gray-400 w-20 inline-block">정가</span>{formatCurrency(detail.regularPrice)}</p>
+                            <p className="text-gray-600"><span className="text-gray-400 w-20 inline-block">판매가</span><span className="font-semibold text-blue-600">{formatCurrency(detail.salePrice)}</span></p>
+                            {detail.costPrice != null && <p className="text-gray-600"><span className="text-gray-400 w-20 inline-block">원가</span>{formatCurrency(detail.costPrice)}</p>}
+                            {detail.pointRate != null && <p className="text-gray-600"><span className="text-gray-400 w-20 inline-block">적립률</span>{detail.pointRate}%</p>}
+                            {detail.activeTimeSale && (
+                              <div className="mt-2 rounded-md bg-orange-50 border border-orange-200 px-3 py-2">
+                                <p className="text-xs font-semibold text-orange-600">🔥 타임세일 진행 중</p>
+                                <p className="text-xs text-orange-500 mt-0.5">
+                                  {detail.activeTimeSale.name} —&nbsp;
+                                  {detail.activeTimeSale.discountType === 'percent'
+                                    ? `${detail.activeTimeSale.discountValue}% 할인`
+                                    : `${formatCurrency(detail.activeTimeSale.discountValue)} 할인`}
+                                </p>
+                                <p className="text-xs text-orange-400 mt-0.5">
+                                  종료: {new Date(detail.activeTimeSale.endsAt).toLocaleString('ko-KR')}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 재고 / 옵션 / 구성상품 */}
+                        <div className="space-y-3">
+                          {detail.productType === 'bundle' ? (
+                            /* 세트상품: 구성상품 목록 */
+                            detail.bundleItems.length > 0 && (
+                              <div>
+                                <p className="text-sm font-semibold text-gray-700 mb-2">구성 상품</p>
+                                <div className="rounded-lg border divide-y bg-white">
+                                  {detail.bundleItems.map((item, idx) => (
+                                    <div key={idx} className="flex items-center gap-3 px-3 py-2 text-sm">
+                                      {item.imageUrl && <img src={item.imageUrl} className="h-8 w-8 rounded object-cover flex-shrink-0" alt="" />}
+                                      <span className="flex-1 truncate">{item.productName}</span>
+                                      <span className="text-gray-400 text-xs shrink-0">×{item.quantity}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )
+                          ) : detail.hasOptions && detail.variants.length > 0 ? (
+                            /* 옵션상품: variant 테이블 */
+                            <div>
+                              <p className="text-sm font-semibold text-gray-700 mb-2">옵션 조합 재고</p>
+                              <div className="rounded-lg border overflow-hidden bg-white">
+                                <table className="w-full text-xs">
+                                  <thead className="bg-gray-50 border-b">
+                                    <tr>
+                                      <th className="text-left px-3 py-1.5 text-gray-500 font-medium">옵션</th>
+                                      <th className="text-left px-3 py-1.5 text-gray-500 font-medium w-24">SKU</th>
+                                      <th className="text-center px-3 py-1.5 text-gray-500 font-medium w-16">재고</th>
+                                      <th className="text-center px-3 py-1.5 text-gray-500 font-medium w-16">상태</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y">
+                                    {detail.variants.map((v, idx) => (
+                                      <tr key={idx} className={!v.isActive ? 'opacity-40' : ''}>
+                                        <td className="px-3 py-1.5">{v.label || '—'}</td>
+                                        <td className="px-3 py-1.5 text-gray-400">{v.sku || '—'}</td>
+                                        <td className="px-3 py-1.5 text-center">{v.stock}</td>
+                                        <td className="px-3 py-1.5 text-center">
+                                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${v.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                            {v.isActive ? '활성' : '비활성'}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          ) : (
+                            /* 단일상품: 옵션 목록만 */
+                            detail.options.length > 0 && (
+                              <div>
+                                <p className="text-sm font-semibold text-gray-700 mb-2">상품 옵션</p>
+                                <div className="space-y-1">
+                                  {detail.options.map((opt, idx) => (
+                                    <div key={idx} className="text-sm">
+                                      <span className="font-medium text-gray-700">{opt.name}</span>
+                                      {!opt.isRequired && <span className="ml-1 text-xs text-gray-400">(선택)</span>}
+                                      <span className="text-gray-400 mx-1">:</span>
+                                      <span className="text-gray-600">{opt.values.join(', ')}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )
+                          )}
+                        </div>
+
+                        {/* 구매수량 / 배송 / 수량할인 / 사은품 — 2단 */}
+                        <div className="grid grid-cols-2 gap-5">
+                          {/* 구매수량 + 배송 */}
+                          <div className="space-y-3 text-sm">
+                            {(detail.minPurchaseQuantity != null || detail.maxPurchaseQuantity != null || detail.dailyPurchaseLimit != null) && (
+                              <div>
+                                <p className="font-semibold text-gray-700 mb-1.5">구매 수량 설정</p>
+                                {detail.minPurchaseQuantity != null && detail.minPurchaseQuantity > 1 && (
+                                  <p className="text-gray-600"><span className="text-gray-400 w-20 inline-block">최소</span>{detail.minPurchaseQuantity}개</p>
+                                )}
+                                {detail.maxPurchaseQuantity != null && (
+                                  <p className="text-gray-600"><span className="text-gray-400 w-20 inline-block">최대</span>{detail.maxPurchaseQuantity}개</p>
+                                )}
+                                {detail.dailyPurchaseLimit != null && (
+                                  <p className="text-gray-600"><span className="text-gray-400 w-20 inline-block">1일제한</span>{detail.dailyPurchaseLimit}개</p>
+                                )}
+                              </div>
+                            )}
+                            <div>
+                              <p className="font-semibold text-gray-700 mb-1.5">배송 정보</p>
+                              <p className="text-gray-600">
+                                {{default: '기본 배송비 적용', free: '무료 배송', custom: `개별 배송비 (${formatCurrency(detail.shippingFee ?? 0)})`}[detail.shippingType] ?? detail.shippingType}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* 수량별 할인 + 사은품 */}
+                          <div className="space-y-3 text-sm">
+                            {detail.quantityDiscounts.filter((d) => d.isActive).length > 0 && (
+                              <div>
+                                <p className="font-semibold text-gray-700 mb-1.5">수량별 할인</p>
+                                <div className="space-y-1">
+                                  {detail.quantityDiscounts.filter((d) => d.isActive).map((d, idx) => (
+                                    <p key={idx} className="text-gray-600">
+                                      {d.minQuantity}개 이상 →&nbsp;
+                                      <span className="text-blue-600 font-medium">
+                                        {d.discountType === 'percent' ? `${d.discountValue}% 할인` : `${formatCurrency(d.discountValue)} 할인`}
+                                      </span>
+                                    </p>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {detail.giftSets.filter((s) => s.isActive).length > 0 && (
+                              <div>
+                                <p className="font-semibold text-gray-700 mb-1.5">사은품 설정</p>
+                                <div className="space-y-1">
+                                  {detail.giftSets.filter((s) => s.isActive).map((s, idx) => (
+                                    <div key={idx} className="text-gray-600">
+                                      <span className="font-medium">{s.name}</span>
+                                      <span className="ml-1 text-xs text-gray-400">
+                                        ({s.giftType === 'select' ? '고객선택' : s.giftType === 'auto_same' ? '동일상품자동' : '특정상품자동'})
+                                      </span>
+                                      {s.tiers.length > 0 && (
+                                        <div className="ml-2 mt-0.5 space-y-0.5">
+                                          {s.tiers.map((t, ti) => (
+                                            <p key={ti} className="text-xs text-gray-500">{t.minQuantity}개 이상 → {t.freeCount}개 증정</p>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 편집 버튼 */}
+                        <div className="flex justify-end pt-1">
+                          <Link to={product.productType === 'bundle' ? `/admin/bundles/${product.id}/edit` : `/admin/products/${product.slug}/edit`}>
+                            <Button size="sm">
+                              <Edit className="h-4 w-4 mr-1.5" />
+                              편집하기
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
       )}

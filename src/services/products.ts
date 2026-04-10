@@ -5,6 +5,7 @@ import type { Product, PaginatedResponse } from '@/types';
 export interface ProductOption {
   id: string;
   name: string;
+  isRequired: boolean;
   sortOrder: number;
   values: ProductOptionValue[];
 }
@@ -24,7 +25,13 @@ export interface ProductVariant {
   stockQuantity: number;
   imageUrl: string | null;
   isActive: boolean;
+  minPurchaseQuantity: number | null;
+  maxPurchaseQuantity: number | null;
+  dailyPurchaseLimit: number | null;
 }
+
+/** 선택 옵션에서 "선택 안 함"을 나타내는 sentinel valueId */
+export const OPTION_NONE_VALUE_ID = '__none__';
 
 function mapProduct(p: any): Product {
   return {
@@ -167,19 +174,34 @@ export async function getProductOptions(productId: string): Promise<ProductOptio
 
   if (valuesError) throw valuesError;
 
-  return options.map((opt) => ({
-    id: opt.id,
-    name: opt.name,
-    sortOrder: opt.sort_order,
-    values: (values || [])
+  return options.map((opt) => {
+    const optValues = (values || [])
       .filter((v) => v.option_id === opt.id)
       .map((v) => ({
         id: v.id,
         value: v.value,
         additionalPrice: v.additional_price,
         sortOrder: v.sort_order,
-      })),
-  }));
+      }));
+
+    // 선택 옵션이면 "선택 안 함" 항목을 맨 앞에 추가
+    if (!opt.is_required) {
+      optValues.unshift({
+        id: OPTION_NONE_VALUE_ID,
+        value: '선택 안 함',
+        additionalPrice: 0,
+        sortOrder: -1,
+      });
+    }
+
+    return {
+      id: opt.id,
+      name: opt.name,
+      isRequired: opt.is_required,
+      sortOrder: opt.sort_order,
+      values: optValues,
+    };
+  });
 }
 
 /**
@@ -229,6 +251,9 @@ export async function getProductVariants(productId: string): Promise<ProductVari
       stockQuantity: v.stock_quantity,
       imageUrl: v.image_url,
       isActive: v.is_active,
+      minPurchaseQuantity: v.min_purchase_quantity ?? null,
+      maxPurchaseQuantity: v.max_purchase_quantity ?? null,
+      dailyPurchaseLimit: v.daily_purchase_limit ?? null,
     };
   });
 }
@@ -240,12 +265,14 @@ export function findVariantByOptions(
   variants: ProductVariant[],
   selectedOptions: Record<string, string> // { optionId: valueId }
 ): ProductVariant | null {
-  const selectedEntries = Object.entries(selectedOptions);
+  // "선택 안 함"(__none__)은 variant 매칭에서 해당 옵션을 포함하지 않음
+  const effectiveSelections = Object.entries(selectedOptions).filter(
+    ([, valueId]) => valueId !== OPTION_NONE_VALUE_ID
+  );
 
   return variants.find((variant) => {
-    if (variant.optionValues.length !== selectedEntries.length) return false;
-
-    return selectedEntries.every(([optionId, valueId]) =>
+    if (variant.optionValues.length !== effectiveSelections.length) return false;
+    return effectiveSelections.every(([optionId, valueId]) =>
       variant.optionValues.some((ov) => ov.optionId === optionId && ov.valueId === valueId)
     );
   }) || null;

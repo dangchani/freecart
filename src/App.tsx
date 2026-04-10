@@ -110,6 +110,8 @@ import AdminRolesPage from './app/admin/settings/roles/page';
 import AdminPendingApprovalPage from './app/admin/users/pending/page';
 import AdminSignupFieldsPage from './app/admin/settings/signup-fields/page';
 import AdminProductsBulkPage from './app/admin/products/bulk/page';
+import AdminNewBundlePage from './app/admin/bundles/new/page';
+import AdminEditBundlePage from './app/admin/bundles/[id]/edit/page';
 import AdminOrdersBulkShipmentPage from './app/admin/orders/bulk-shipment/page';
 import AdminLogsPage from './app/admin/logs/page';
 import AdminIpBlocksPage from './app/admin/ip-blocks/page';
@@ -250,6 +252,8 @@ export default function App() {
               <Route path="/admin/products/new" element={<AdminNewProductPage />} />
               <Route path="/admin/products/:slug/edit" element={<AdminEditProductPage />} />
               <Route path="/admin/products/bulk" element={<AdminProductsBulkPage />} />
+              <Route path="/admin/bundles/new" element={<AdminNewBundlePage />} />
+              <Route path="/admin/bundles/:id/edit" element={<AdminEditBundlePage />} />
               <Route path="/admin/categories" element={<AdminCategoriesPage />} />
               <Route path="/admin/orders" element={<AdminOrdersPage />} />
               <Route path="/admin/orders/bulk-shipment" element={<AdminOrdersBulkShipmentPage />} />

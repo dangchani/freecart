@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -30,6 +30,9 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { generateVariantCombinations, type VariantRow } from '@/utils/variants';
+import { saveGiftSets, type GiftSetDraft, type GiftSetItemDraft, type GiftTierDraft, type GiftType } from '@/services/giftSets';
+import { saveBundleItems, type BundleItemDraft } from '@/services/bundles';
+import { saveQuantityDiscounts, type QuantityDiscountDraft } from '@/services/discounts';
 
 // =============================================================================
 // Schema
@@ -42,6 +45,7 @@ const optionValueSchema = z.object({
 
 const optionSchema = z.object({
   name: z.string().min(1, '옵션명을 입력하세요'),
+  isRequired: z.boolean().default(true),
   values: z.array(optionValueSchema).min(1, '최소 1개의 옵션값이 필요합니다'),
 });
 
@@ -63,8 +67,11 @@ const productSchema = z.object({
   // 재고 (옵션 없는 상품만 필수, 옵션 있으면 variant에서 관리)
   stockQuantity: z.number().int().min(0).default(0),
   stockAlertQuantity: z.number().int().min(0).default(10),
+
+  // 구매 수량 설정
   minPurchaseQuantity: z.number().int().min(1).default(1),
   maxPurchaseQuantity: z.number().int().min(1).optional().nullable(),
+  dailyPurchaseLimit: z.number().int().min(1).optional().nullable(),
 
   // 상품 정보
   sku: z.string().optional(),
@@ -112,6 +119,8 @@ interface UploadedImage {
 
 export default function NewProductPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isBundle = searchParams.get('type') === 'bundle';
   const { user, loading: authLoading } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -127,10 +136,193 @@ export default function NewProductPage() {
     basic: true,
     price: true,
     stock: true,
+    purchaseQty: true,
     options: false,
+    bundleItems: true,
+    qtyDiscount: false,
+    giftSets: false,
     shipping: false,
     seo: false,
   });
+
+  // 묶음상품 구성 로컬 상태
+  const [bundleItemDrafts, setBundleItemDrafts] = useState<BundleItemDraft[]>([]);
+  const [bundleSearchQuery, setBundleSearchQuery] = useState('');
+  const [bundleSearchResults, setBundleSearchResults] = useState<any[]>([]);
+  const [bundleSearchLoading, setBundleSearchLoading] = useState(false);
+
+  async function searchBundleProducts(query: string) {
+    if (!query.trim()) { setBundleSearchResults([]); return; }
+    setBundleSearchLoading(true);
+    try {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('products')
+        .select('id, name, product_type, product_images(url, is_primary)')
+        .neq('product_type', 'bundle')
+        .ilike('name', `%${query}%`)
+        .eq('status', 'active')
+        .limit(20);
+      setBundleSearchResults(data || []);
+    } finally {
+      setBundleSearchLoading(false);
+    }
+  }
+
+  function addBundleItem(product: any) {
+    if (bundleItemDrafts.some((d) => d.productId === product.id)) return;
+    const primaryImg = (product.product_images || []).find((i: any) => i.is_primary) || product.product_images?.[0];
+    setBundleItemDrafts((prev) => [
+      ...prev,
+      {
+        localId: crypto.randomUUID(),
+        dbId: null,
+        productId: product.id,
+        productName: product.name,
+        productImageUrl: primaryImg?.url ?? null,
+        variantId: null,
+        variantLabel: null,
+        quantity: 1,
+      },
+    ]);
+    setBundleSearchQuery('');
+    setBundleSearchResults([]);
+  }
+
+  function updateBundleItem(localId: string, patch: Partial<BundleItemDraft>) {
+    setBundleItemDrafts((prev) => prev.map((d) => (d.localId === localId ? { ...d, ...patch } : d)));
+  }
+
+  function removeBundleItem(localId: string) {
+    setBundleItemDrafts((prev) => prev.filter((d) => d.localId !== localId));
+  }
+
+  // 수량별 할인 로컬 상태
+  const [qtyDiscountDrafts, setQtyDiscountDrafts] = useState<QuantityDiscountDraft[]>([]);
+
+  function addQtyDiscount() {
+    setQtyDiscountDrafts((prev) => [
+      ...prev,
+      { localId: crypto.randomUUID(), dbId: null, minQuantity: 1, discountType: 'percent', discountValue: 10, isActive: true },
+    ]);
+  }
+
+  function updateQtyDiscount(localId: string, patch: Partial<QuantityDiscountDraft>) {
+    setQtyDiscountDrafts((prev) => prev.map((d) => (d.localId === localId ? { ...d, ...patch } : d)));
+  }
+
+  function removeQtyDiscount(localId: string) {
+    setQtyDiscountDrafts((prev) => prev.filter((d) => d.localId !== localId));
+  }
+
+  // 사은품 세트 로컬 상태
+  const [giftSetDrafts, setGiftSetDrafts] = useState<GiftSetDraft[]>([]);
+  const [giftProductParentCat, setGiftProductParentCat] = useState<Record<string, string>>({});
+  const [giftProductChildCat, setGiftProductChildCat] = useState<Record<string, string>>({});
+  const [giftProductResults, setGiftProductResults] = useState<Record<string, any[]>>({});
+
+  function newGiftSetDraft(): GiftSetDraft {
+    return {
+      localId: crypto.randomUUID(),
+      dbId: null,
+      name: '',
+      giftType: 'select',
+      isActive: true,
+      startsAt: '',
+      endsAt: '',
+      tiers: [],
+      items: [],
+    };
+  }
+
+  function updateGiftSet(localId: string, patch: Partial<GiftSetDraft>) {
+    setGiftSetDrafts((prev) =>
+      prev.map((s) => (s.localId === localId ? { ...s, ...patch } : s))
+    );
+  }
+
+  function removeGiftSet(localId: string) {
+    setGiftSetDrafts((prev) => prev.filter((s) => s.localId !== localId));
+  }
+
+  function addGiftTier(setLocalId: string) {
+    const newTier: GiftTierDraft = {
+      localId: crypto.randomUUID(),
+      dbId: null,
+      minQuantity: 1,
+      freeCount: 1,
+    };
+    setGiftSetDrafts((prev) =>
+      prev.map((s) =>
+        s.localId === setLocalId ? { ...s, tiers: [...s.tiers, newTier] } : s
+      )
+    );
+  }
+
+  function updateGiftTier(setLocalId: string, tierLocalId: string, patch: Partial<GiftTierDraft>) {
+    setGiftSetDrafts((prev) =>
+      prev.map((s) =>
+        s.localId === setLocalId
+          ? { ...s, tiers: s.tiers.map((t) => (t.localId === tierLocalId ? { ...t, ...patch } : t)) }
+          : s
+      )
+    );
+  }
+
+  function removeGiftTier(setLocalId: string, tierLocalId: string) {
+    setGiftSetDrafts((prev) =>
+      prev.map((s) =>
+        s.localId === setLocalId
+          ? { ...s, tiers: s.tiers.filter((t) => t.localId !== tierLocalId) }
+          : s
+      )
+    );
+  }
+
+  function addGiftItem(setLocalId: string, product: any) {
+    const img = (product.product_images || []).find((i: any) => i.is_primary) || product.product_images?.[0];
+    const newItem: GiftSetItemDraft = {
+      localId: crypto.randomUUID(),
+      dbId: null,
+      giftProductId: product.id,
+      giftProductName: product.name,
+      giftProductImageUrl: img?.url ?? null,
+      giftProductSalePrice: product.sale_price,
+    };
+    setGiftSetDrafts((prev) =>
+      prev.map((s) =>
+        s.localId === setLocalId
+          ? { ...s, items: [...s.items, newItem] }
+          : s
+      )
+    );
+    setGiftProductResults((prev) => ({ ...prev, [setLocalId]: [] }));
+  }
+
+  function removeGiftItem(setLocalId: string, itemLocalId: string) {
+    setGiftSetDrafts((prev) =>
+      prev.map((s) =>
+        s.localId === setLocalId
+          ? { ...s, items: s.items.filter((i) => i.localId !== itemLocalId) }
+          : s
+      )
+    );
+  }
+
+  async function loadGiftProductsByCategory(setLocalId: string, categoryId: string) {
+    if (!categoryId) {
+      setGiftProductResults((prev) => ({ ...prev, [setLocalId]: [] }));
+      return;
+    }
+    const supabase = createClient();
+    const { data } = await supabase
+      .from('products')
+      .select('id, name, sale_price, product_images(url, is_primary)')
+      .eq('status', 'active')
+      .eq('category_id', categoryId)
+      .order('name', { ascending: true });
+    setGiftProductResults((prev) => ({ ...prev, [setLocalId]: data || [] }));
+  }
 
   const {
     register,
@@ -308,7 +500,7 @@ export default function NewProductPage() {
   // =============================================================================
 
   function addOption() {
-    appendOption({ name: '', values: [{ value: '', additionalPrice: 0 }] });
+    appendOption({ name: '', isRequired: true, values: [{ value: '', additionalPrice: 0 }] });
   }
 
   function addOptionValue(optionIndex: number) {
@@ -398,6 +590,7 @@ export default function NewProductPage() {
           stock_alert_quantity: data.stockAlertQuantity,
           min_purchase_quantity: data.minPurchaseQuantity,
           max_purchase_quantity: data.maxPurchaseQuantity || null,
+          daily_purchase_limit: data.dailyPurchaseLimit || null,
           sku: data.sku || null,
           manufacturer: data.manufacturer || null,
           origin: data.origin || null,
@@ -412,7 +605,8 @@ export default function NewProductPage() {
           seo_title: data.seoTitle || null,
           seo_description: data.seoDescription || null,
           seo_keywords: data.seoKeywords || null,
-          has_options: data.hasOptions,
+          has_options: isBundle ? false : data.hasOptions,
+          product_type: isBundle ? 'bundle' : 'single',
           tags: data.tags || [],
         })
         .select('id')
@@ -446,7 +640,7 @@ export default function NewProductPage() {
 
           const { data: optionData, error: optionError } = await supabase
             .from('product_options')
-            .insert({ product_id: productId, name: option.name, sort_order: i })
+            .insert({ product_id: productId, name: option.name, is_required: option.isRequired ?? true, sort_order: i })
             .select('id')
             .single();
 
@@ -472,12 +666,15 @@ export default function NewProductPage() {
         // variant 저장 (각 조합별 SKU, 재고)
         if (variants.length > 0) {
           const variantInserts = variants.map((variant) => {
-            const optionValues = variant.combination.map(({ optionIndex, valueIndex }) => {
-              const found = optionIdMap.find(
-                (m) => m.optionIndex === optionIndex && m.valueIndex === valueIndex
-              );
-              return { optionId: found?.optionId, valueId: found?.valueId };
-            });
+            // valueIndex === -1은 "선택 안 함" (선택 옵션 미선택) → option_values에서 제외
+            const optionValues = variant.combination
+              .filter(({ valueIndex }) => valueIndex !== -1)
+              .map(({ optionIndex, valueIndex }) => {
+                const found = optionIdMap.find(
+                  (m) => m.optionIndex === optionIndex && m.valueIndex === valueIndex
+                );
+                return { optionId: found?.optionId, valueId: found?.valueId };
+              });
             return {
               product_id: productId,
               sku: variant.sku || null,
@@ -485,6 +682,9 @@ export default function NewProductPage() {
               additional_price: variant.additionalPrice,
               stock_quantity: variant.stockQuantity,
               is_active: variant.isActive,
+              min_purchase_quantity: variant.minPurchaseQuantity || null,
+              max_purchase_quantity: variant.maxPurchaseQuantity || null,
+              daily_purchase_limit: variant.dailyPurchaseLimit || null,
             };
           });
 
@@ -504,6 +704,19 @@ export default function NewProductPage() {
         }));
 
         await supabase.from('product_tags').insert(tagInserts);
+      }
+
+      // 5. 수량별 할인 저장
+      await saveQuantityDiscounts(productId, qtyDiscountDrafts);
+
+      // 6. 사은품 세트 저장
+      if (giftSetDrafts.length > 0) {
+        await saveGiftSets(productId, giftSetDrafts);
+      }
+
+      // 7. 묶음상품 구성 저장
+      if (isBundle && bundleItemDrafts.length > 0) {
+        await saveBundleItems(productId, bundleItemDrafts);
       }
 
       alert('상품이 등록되었습니다.');
@@ -560,7 +773,7 @@ export default function NewProductPage() {
         상품 관리로 돌아가기
       </Link>
 
-      <h1 className="mb-8 text-2xl font-bold">상품 등록</h1>
+      <h1 className="mb-8 text-2xl font-bold">{isBundle ? '세트상품 등록' : '상품 등록'}</h1>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {/* ============================================= */}
@@ -940,35 +1153,98 @@ export default function NewProductPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="minPurchaseQuantity">최소 구매 수량</Label>
-                  <Input
-                    id="minPurchaseQuantity"
-                    type="number"
-                    {...register('minPurchaseQuantity', { valueAsNumber: true })}
-                    placeholder="1"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="maxPurchaseQuantity">최대 구매 수량 (선택)</Label>
-                  <Input
-                    id="maxPurchaseQuantity"
-                    type="number"
-                    {...register('maxPurchaseQuantity', { valueAsNumber: true })}
-                    placeholder="제한 없음"
-                  />
-                </div>
-              </div>
             </div>
           )}
         </Card>
 
         {/* ============================================= */}
-        {/* 상품 옵션 */}
+        {/* 구성 상품 설정 (세트상품 전용) */}
         {/* ============================================= */}
-        <Card className="overflow-hidden">
+        {isBundle && (
+          <Card className="overflow-hidden">
+            <SectionHeader title="구성 상품 설정" section="bundleItems" />
+            {expandedSections.bundleItems && (
+              <div className="p-4 space-y-4">
+                <p className="text-sm text-gray-500">세트에 포함할 상품을 검색하여 추가하세요. 옵션은 구성 상품에서 이미 결정됩니다.</p>
+
+                {/* 상품 검색 */}
+                <div className="flex gap-2">
+                  <Input
+                    value={bundleSearchQuery}
+                    onChange={(e) => setBundleSearchQuery(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); searchBundleProducts(bundleSearchQuery); }}}
+                    placeholder="상품명으로 검색"
+                    className="flex-1"
+                  />
+                  <Button type="button" variant="outline" onClick={() => searchBundleProducts(bundleSearchQuery)} disabled={bundleSearchLoading}>
+                    {bundleSearchLoading ? '검색 중...' : '검색'}
+                  </Button>
+                </div>
+
+                {/* 검색 결과 */}
+                {bundleSearchResults.length > 0 && (
+                  <div className="border rounded-lg divide-y max-h-48 overflow-y-auto">
+                    {bundleSearchResults.map((p) => {
+                      const alreadyAdded = bundleItemDrafts.some((d) => d.productId === p.id);
+                      const primaryImg = (p.product_images || []).find((i: any) => i.is_primary) || p.product_images?.[0];
+                      return (
+                        <div key={p.id} className="flex items-center gap-3 px-3 py-2">
+                          {primaryImg && <img src={primaryImg.url} className="h-8 w-8 rounded object-cover" />}
+                          <span className="flex-1 text-sm">{p.name}</span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={alreadyAdded}
+                            onClick={() => addBundleItem(p)}
+                          >
+                            {alreadyAdded ? '추가됨' : '추가'}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 구성 상품 목록 */}
+                {bundleItemDrafts.length > 0 && (
+                  <div className="border rounded-lg divide-y">
+                    {bundleItemDrafts.map((item) => (
+                      <div key={item.localId} className="flex items-center gap-3 px-3 py-2">
+                        {item.productImageUrl && (
+                          <img src={item.productImageUrl} className="h-8 w-8 rounded object-cover" />
+                        )}
+                        <span className="flex-1 text-sm font-medium">{item.productName}</span>
+                        <div className="flex items-center gap-1">
+                          <Label className="text-xs text-gray-500">수량</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={item.quantity}
+                            onChange={(e) => updateBundleItem(item.localId, { quantity: Math.max(1, Number(e.target.value)) })}
+                            className="h-8 w-20 text-sm"
+                          />
+                        </div>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => removeBundleItem(item.localId)}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {bundleItemDrafts.length === 0 && (
+                  <p className="text-sm text-gray-400 text-center py-4">구성 상품이 없습니다. 위에서 검색하여 추가하세요.</p>
+                )}
+              </div>
+            )}
+          </Card>
+        )}
+
+        {/* ============================================= */}
+        {/* 상품 옵션 (단일상품 전용) */}
+        {/* ============================================= */}
+        {!isBundle && <Card className="overflow-hidden">
           <SectionHeader title="상품 옵션" section="options" />
           {expandedSections.options && (
             <div className="p-4 space-y-4">
@@ -993,6 +1269,14 @@ export default function NewProductPage() {
                           placeholder="옵션명 (예: 색상, 사이즈)"
                           className="flex-1"
                         />
+                        <label className="flex items-center gap-1 text-sm whitespace-nowrap cursor-pointer">
+                          <input
+                            type="checkbox"
+                            {...register(`options.${optionIndex}.isRequired`)}
+                            className="rounded"
+                          />
+                          필수
+                        </label>
                         <Button
                           type="button"
                           variant="ghost"
@@ -1052,8 +1336,11 @@ export default function NewProductPage() {
                             <tr>
                               <th className="text-left px-3 py-2 font-medium text-gray-600">옵션 조합</th>
                               <th className="text-left px-3 py-2 font-medium text-gray-600 w-32">SKU</th>
-                              <th className="text-left px-3 py-2 font-medium text-gray-600 w-28">추가금액</th>
-                              <th className="text-left px-3 py-2 font-medium text-gray-600 w-24">재고</th>
+                              <th className="text-left px-3 py-2 font-medium text-gray-600 w-24">추가금액</th>
+                              <th className="text-left px-3 py-2 font-medium text-gray-600 w-20">재고</th>
+                              <th className="text-left px-3 py-2 font-medium text-gray-600 w-20">최소수량</th>
+                              <th className="text-left px-3 py-2 font-medium text-gray-600 w-20">최대수량</th>
+                              <th className="text-left px-3 py-2 font-medium text-gray-600 w-20">1일제한</th>
                               <th className="text-center px-3 py-2 font-medium text-gray-600 w-16">활성</th>
                             </tr>
                           </thead>
@@ -1087,6 +1374,36 @@ export default function NewProductPage() {
                                     className="h-8 text-sm"
                                   />
                                 </td>
+                                <td className="px-3 py-2">
+                                  <Input
+                                    type="number"
+                                    value={variant.minPurchaseQuantity ?? ''}
+                                    onChange={(e) => updateVariant(idx, 'minPurchaseQuantity', e.target.value ? Number(e.target.value) : null)}
+                                    placeholder="-"
+                                    min={1}
+                                    className="h-8 text-sm"
+                                  />
+                                </td>
+                                <td className="px-3 py-2">
+                                  <Input
+                                    type="number"
+                                    value={variant.maxPurchaseQuantity ?? ''}
+                                    onChange={(e) => updateVariant(idx, 'maxPurchaseQuantity', e.target.value ? Number(e.target.value) : null)}
+                                    placeholder="-"
+                                    min={1}
+                                    className="h-8 text-sm"
+                                  />
+                                </td>
+                                <td className="px-3 py-2">
+                                  <Input
+                                    type="number"
+                                    value={variant.dailyPurchaseLimit ?? ''}
+                                    onChange={(e) => updateVariant(idx, 'dailyPurchaseLimit', e.target.value ? Number(e.target.value) : null)}
+                                    placeholder="-"
+                                    min={1}
+                                    className="h-8 text-sm"
+                                  />
+                                </td>
                                 <td className="px-3 py-2 text-center">
                                   <input
                                     type="checkbox"
@@ -1104,7 +1421,7 @@ export default function NewProductPage() {
                               <td className="px-3 py-2 font-bold text-sm">
                                 {variants.filter((v) => v.isActive).reduce((s, v) => s + v.stockQuantity, 0)}
                               </td>
-                              <td />
+                              <td colSpan={4} />
                             </tr>
                           </tfoot>
                         </table>
@@ -1113,6 +1430,370 @@ export default function NewProductPage() {
                   )}
                 </div>
               )}
+            </div>
+          )}
+        </Card>}
+
+        {/* ============================================= */}
+        {/* 사은품 설정 */}
+        {/* ============================================= */}
+        <Card className="overflow-hidden">
+          <SectionHeader title="사은품 설정" section="giftSets" />
+          {expandedSections.giftSets && (
+            <div className="p-4 space-y-4">
+              {giftSetDrafts.map((giftSet) => (
+                <div key={giftSet.localId} className="rounded-lg border border-gray-200 p-4 space-y-4 bg-gray-50">
+                  {/* 세트명 + 증정유형 + 활성 + 삭제 */}
+                  <div className="flex items-start gap-2">
+                    <div className="flex-1">
+                      <Label>세트명</Label>
+                      <Input
+                        value={giftSet.name}
+                        onChange={(e) => updateGiftSet(giftSet.localId, { name: e.target.value })}
+                        placeholder="예: 3+1 사은품 이벤트"
+                      />
+                    </div>
+                    <div className="w-44">
+                      <Label>증정 유형</Label>
+                      <select
+                        value={giftSet.giftType}
+                        onChange={(e) => updateGiftSet(giftSet.localId, { giftType: e.target.value as GiftType, items: [] })}
+                        className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        <option value="select">고객 선택</option>
+                        <option value="auto_same">동일상품 자동</option>
+                        <option value="auto_specific">특정상품 자동</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2 pt-6">
+                      <label className="flex items-center gap-1 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={giftSet.isActive}
+                          onChange={(e) => updateGiftSet(giftSet.localId, { isActive: e.target.checked })}
+                          className="rounded"
+                        />
+                        활성
+                      </label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeGiftSet(giftSet.localId)}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* 사은품 구간 (tier) */}
+                  <div>
+                    <Label>사은품 구간</Label>
+                    <p className="mb-2 text-xs text-gray-500">
+                      {giftSet.giftType === 'select'
+                        ? '구매 수량에 따라 고객이 선택 가능한 사은품 개수를 설정합니다.'
+                        : '구매 수량에 따라 자동으로 증정될 사은품 개수를 설정합니다.'}
+                    </p>
+                    <div className="space-y-2">
+                      {giftSet.tiers.map((tier) => (
+                        <div key={tier.localId} className="flex items-center gap-2">
+                          <span className="text-sm text-gray-600 whitespace-nowrap">구매</span>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={tier.minQuantity}
+                            onChange={(e) => updateGiftTier(giftSet.localId, tier.localId, { minQuantity: Number(e.target.value) || 1 })}
+                            className="w-20"
+                          />
+                          <span className="text-sm text-gray-600 whitespace-nowrap">개 이상 →</span>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={tier.freeCount}
+                            onChange={(e) => updateGiftTier(giftSet.localId, tier.localId, { freeCount: Number(e.target.value) || 1 })}
+                            className="w-20"
+                          />
+                          <span className="text-sm text-gray-600 whitespace-nowrap">개 선택 가능</span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeGiftTier(giftSet.localId, tier.localId)}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => addGiftTier(giftSet.localId)}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        구간 추가
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* 사은품 풀 — auto_same이면 숨김 */}
+                  {giftSet.giftType === 'auto_same' ? (
+                    <div className="rounded-md bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-700">
+                      구매 수량 충족 시 <strong>구매한 상품과 동일한 상품</strong>이 자동으로 증정됩니다.
+                    </div>
+                  ) : (
+                  <div>
+                    <Label>
+                      {giftSet.giftType === 'auto_specific' ? '증정 상품 (1개 선택)' : '사은품 상품 목록'}
+                    </Label>
+                    <p className="mb-2 text-xs text-gray-500">
+                      {giftSet.giftType === 'auto_specific'
+                        ? '구매 수량 충족 시 자동으로 증정할 특정 상품 1개를 등록합니다.'
+                        : '고객이 선택할 수 있는 사은품 상품을 등록합니다. (실제 가격과 무관하게 0원 처리)'}
+                    </p>
+                    <div className="space-y-2">
+                      {giftSet.items.map((item) => (
+                        <div key={item.localId} className="flex items-center gap-2 rounded border bg-white p-2">
+                          {item.giftProductImageUrl && (
+                            <img src={item.giftProductImageUrl} alt={item.giftProductName} className="h-8 w-8 rounded object-cover flex-shrink-0" />
+                          )}
+                          <span className="flex-1 text-sm truncate">{item.giftProductName}</span>
+                          <span className="text-xs text-gray-400 flex-shrink-0">
+                            {item.giftProductSalePrice.toLocaleString()}원 → <span className="text-blue-600 font-medium">0원</span>
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeGiftItem(giftSet.localId, item.localId)}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ))}
+
+                      {/* 카테고리 선택으로 상품 추가 */}
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          {/* 대분류 */}
+                          <select
+                            value={giftProductParentCat[giftSet.localId] ?? ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setGiftProductParentCat((prev) => ({ ...prev, [giftSet.localId]: val }));
+                              setGiftProductChildCat((prev) => ({ ...prev, [giftSet.localId]: '' }));
+                              // 중분류가 없는 대분류라면 바로 상품 로드
+                              const hasChildren = categories.some(
+                                (c) => (c.depth ?? 0) === 1 && c.parent_id === val
+                              );
+                              if (val && !hasChildren) {
+                                loadGiftProductsByCategory(giftSet.localId, val);
+                              } else {
+                                setGiftProductResults((prev) => ({ ...prev, [giftSet.localId]: [] }));
+                              }
+                            }}
+                            className="h-9 rounded-md border border-input bg-white px-2 text-sm flex-1 min-w-0"
+                          >
+                            <option value="">대분류 선택</option>
+                            {categories.filter((c) => (c.depth ?? 0) === 0).map((c) => (
+                              <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                          </select>
+                          {/* 중분류 — 해당 대분류에 자식이 있을 때만 표시 */}
+                          {giftProductParentCat[giftSet.localId] && (() => {
+                            const children = categories.filter(
+                              (c) => (c.depth ?? 0) === 1 && c.parent_id === giftProductParentCat[giftSet.localId]
+                            );
+                            return children.length > 0 ? (
+                              <select
+                                value={giftProductChildCat[giftSet.localId] ?? ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setGiftProductChildCat((prev) => ({ ...prev, [giftSet.localId]: val }));
+                                  loadGiftProductsByCategory(giftSet.localId, val);
+                                }}
+                                className="h-9 rounded-md border border-input bg-white px-2 text-sm flex-1 min-w-0"
+                              >
+                                <option value="">중분류 선택</option>
+                                {children.map((c) => (
+                                  <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                              </select>
+                            ) : null;
+                          })()}
+                        </div>
+                        {/* 상품 목록 */}
+                        {(giftProductResults[giftSet.localId] || []).length > 0 && (
+                          <div className="rounded-md border bg-white overflow-y-auto" style={{ maxHeight: '250px' }}>
+                            {(giftProductResults[giftSet.localId] || []).map((p: any) => {
+                              const alreadyAdded = giftSet.items.some((i) => i.giftProductId === p.id);
+                              return (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  disabled={alreadyAdded || (giftSet.giftType === 'auto_specific' && giftSet.items.length >= 1 && !alreadyAdded)}
+                                  onClick={() => addGiftItem(giftSet.localId, p)}
+                                  className={`w-full flex items-center gap-2 px-3 py-2 text-left text-sm border-b last:border-b-0 hover:bg-gray-50 ${(alreadyAdded || (giftSet.giftType === 'auto_specific' && giftSet.items.length >= 1 && !alreadyAdded)) ? 'opacity-40 cursor-not-allowed bg-gray-50' : ''}`}
+                                >
+                                  <span className="flex-1 truncate">{p.name}</span>
+                                  <span className="text-xs text-gray-400 shrink-0">{(p.sale_price || 0).toLocaleString()}원</span>
+                                  {alreadyAdded && <span className="text-xs text-green-600 shrink-0">추가됨</span>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {giftProductParentCat[giftSet.localId] && (giftProductResults[giftSet.localId] || []).length === 0 && (() => {
+                          const hasChildren = categories.some(
+                            (c) => (c.depth ?? 0) === 1 && c.parent_id === giftProductParentCat[giftSet.localId]
+                          );
+                          const childSelected = !!giftProductChildCat[giftSet.localId];
+                          return (!hasChildren || childSelected) ? (
+                            <p className="text-xs text-gray-400 py-1">해당 카테고리에 상품이 없습니다.</p>
+                          ) : null;
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                  )}
+
+                  {/* 기간 설정 */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>시작일시 (선택)</Label>
+                      <Input
+                        type="datetime-local"
+                        value={giftSet.startsAt}
+                        onChange={(e) => updateGiftSet(giftSet.localId, { startsAt: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label>종료일시 (선택)</Label>
+                      <Input
+                        type="datetime-local"
+                        value={giftSet.endsAt}
+                        onChange={(e) => updateGiftSet(giftSet.localId, { endsAt: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setGiftSetDrafts((prev) => [...prev, newGiftSetDraft()])}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                사은품 세트 추가
+              </Button>
+            </div>
+          )}
+        </Card>
+
+        {/* ============================================= */}
+        {/* 구매 수량 설정 */}
+        {/* ============================================= */}
+        <Card className="overflow-hidden">
+          <SectionHeader title="구매 수량 설정" section="purchaseQty" />
+          {expandedSections.purchaseQty && (
+            <div className="p-4 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="minPurchaseQuantity">최소 구매 수량</Label>
+                  <Input
+                    id="minPurchaseQuantity"
+                    type="number"
+                    min={1}
+                    {...register('minPurchaseQuantity', { valueAsNumber: true })}
+                    placeholder="1"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">1회 주문 시 최소 구매 수량</p>
+                </div>
+                <div>
+                  <Label htmlFor="maxPurchaseQuantity">최대 구매 수량 (선택)</Label>
+                  <Input
+                    id="maxPurchaseQuantity"
+                    type="number"
+                    min={1}
+                    {...register('maxPurchaseQuantity', { valueAsNumber: true })}
+                    placeholder="제한 없음"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">1회 주문 시 최대 구매 수량</p>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <div className="max-w-xs">
+                  <Label htmlFor="dailyPurchaseLimit">1일 최대 구매 수량 (선택)</Label>
+                  <Input
+                    id="dailyPurchaseLimit"
+                    type="number"
+                    min={1}
+                    {...register('dailyPurchaseLimit', { valueAsNumber: true })}
+                    placeholder="제한 없음"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">동일 계정이 하루에 구매할 수 있는 최대 수량</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* ============================================= */}
+        {/* 수량별 할인 설정 */}
+        {/* ============================================= */}
+        <Card className="overflow-hidden">
+          <SectionHeader title="수량별 할인 설정" section="qtyDiscount" />
+          {expandedSections.qtyDiscount && (
+            <div className="p-4 space-y-3">
+              <p className="text-xs text-gray-500">
+                구매 수량에 따라 단가를 할인합니다. 여러 구간을 추가하면 해당 수량에서 가장 높은 구간이 자동 적용됩니다.
+              </p>
+              {qtyDiscountDrafts.map((draft) => (
+                <div key={draft.localId} className="flex items-center gap-2 rounded-lg border bg-gray-50 p-3">
+                  <span className="text-sm text-gray-600 whitespace-nowrap">구매</span>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={draft.minQuantity}
+                    onChange={(e) => updateQtyDiscount(draft.localId, { minQuantity: Number(e.target.value) || 1 })}
+                    className="w-20"
+                  />
+                  <span className="text-sm text-gray-600 whitespace-nowrap">개 이상 →</span>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={draft.discountValue}
+                    onChange={(e) => updateQtyDiscount(draft.localId, { discountValue: Number(e.target.value) || 1 })}
+                    className="w-20"
+                  />
+                  <select
+                    value={draft.discountType}
+                    onChange={(e) => updateQtyDiscount(draft.localId, { discountType: e.target.value as 'percent' | 'fixed' })}
+                    className="h-9 rounded-md border border-input bg-white px-2 text-sm"
+                  >
+                    <option value="percent">% 할인</option>
+                    <option value="fixed">원 할인</option>
+                  </select>
+                  <label className="flex items-center gap-1 text-sm cursor-pointer whitespace-nowrap">
+                    <input
+                      type="checkbox"
+                      checked={draft.isActive}
+                      onChange={(e) => updateQtyDiscount(draft.localId, { isActive: e.target.checked })}
+                      className="rounded"
+                    />
+                    활성
+                  </label>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => removeQtyDiscount(draft.localId)}>
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </Button>
+                </div>
+              ))}
+              <Button type="button" variant="outline" size="sm" onClick={addQtyDiscount}>
+                <Plus className="h-3 w-3 mr-1" />
+                구간 추가
+              </Button>
             </div>
           )}
         </Card>
