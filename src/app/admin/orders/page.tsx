@@ -30,7 +30,21 @@ import {
   PlayCircle,
   Clock,
   Plus,
+  Calendar,
+  ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
+  SlidersHorizontal,
+  MessageSquare,
+  MapPin,
+  Lock,
 } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { createClient } from '@/lib/supabase/client';
 import {
   ORDER_STATUS_LABELS,
@@ -68,6 +82,16 @@ interface OrderRow {
   paymentMethod: string | null;
   createdAt: string;
   shipment?: Shipment;
+  // Phase 2 확장
+  recipientName: string;
+  address: string;
+  subtotal: number;
+  discountTotal: number;
+  shippingFee: number;
+  hasAdminMemo: boolean;
+  paymentDeadline: string | null;
+  isAdminOrder: boolean;
+  productSummary: string;
 }
 
 interface OrderStats {
@@ -90,6 +114,82 @@ const ALL_STATUSES: OrderStatus[] = [
   'confirmed', 'cancelled', 'return_requested', 'returned',
 ];
 
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  all: '전체 결제수단',
+  card: '신용카드',
+  virtual_account: '가상계좌',
+  bank_transfer: '무통장입금',
+  deposit: '예치금',
+  point: '포인트',
+};
+
+function getDateRange(preset: 'today' | 'yesterday' | 'week' | 'month') {
+  const d = new Date();
+  const fmt = (x: Date) => x.toISOString().slice(0, 10);
+  const today = fmt(d);
+  if (preset === 'today') return { from: today, to: today };
+  if (preset === 'yesterday') {
+    const y = new Date(d); y.setDate(d.getDate() - 1);
+    return { from: fmt(y), to: fmt(y) };
+  }
+  if (preset === 'week') {
+    const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return { from: fmt(mon), to: today };
+  }
+  return { from: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`, to: today };
+}
+
+type SortField = 'created_at' | 'total_amount' | 'order_number';
+type SortDir   = 'asc' | 'desc';
+
+// 항상 표시되는 고정 컬럼 (비활성 체크박스로 표시)
+const FIXED_COLUMNS = [
+  { key: 'order_number', label: '주문번호' },
+  { key: 'customer',     label: '고객정보' },
+  { key: 'total_amount', label: '결제금액' },
+  { key: 'status',       label: '주문상태' },
+  { key: 'created_at',   label: '주문일시' },
+  { key: 'actions',      label: '액션'     },
+] as const;
+
+// 독립 셀로 노출/순서 변경 가능한 선택 컬럼
+const COLUMN_DEFS = [
+  { key: 'product',   label: '상품 요약',   defaultVisible: true  },
+  { key: 'recipient', label: '수령인',      defaultVisible: false },
+  { key: 'address',   label: '배송주소',    defaultVisible: false },
+  { key: 'discount',  label: '할인/배송비', defaultVisible: false },
+] as const;
+
+// 독립 셀 없이 기존 셀 내부에 표시되는 인디케이터 컬럼
+const INDICATOR_DEFS = [
+  { key: 'memo',     label: '메모 아이콘',  description: '결제금액 셀 내 표시', defaultVisible: true  },
+  { key: 'deadline', label: '입금마감',     description: '주문상태 셀 내 표시', defaultVisible: true  },
+] as const;
+
+type ColumnKey    = typeof COLUMN_DEFS[number]['key'];
+type IndicatorKey = typeof INDICATOR_DEFS[number]['key'];
+type AnyColumnKey = ColumnKey | IndicatorKey;
+
+const DEFAULT_COLUMN_ORDER: ColumnKey[] = ['product', 'recipient', 'address', 'discount'];
+
+const COLUMN_PRESETS: Record<string, { label: string; visible: AnyColumnKey[]; order: ColumnKey[] }> = {
+  default: {
+    label: '기본',
+    visible: ['product', 'memo', 'deadline'],
+    order: [...DEFAULT_COLUMN_ORDER],
+  },
+  simple: {
+    label: '간단히',
+    visible: [],
+    order: [...DEFAULT_COLUMN_ORDER],
+  },
+  detail: {
+    label: '상세',
+    visible: ['product', 'recipient', 'address', 'discount', 'memo', 'deadline'],
+    order: [...DEFAULT_COLUMN_ORDER],
+  },
+};
+
 export default function AdminOrdersPage() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
@@ -100,9 +200,22 @@ export default function AdminOrdersPage() {
 
   const [shippingCompanies, setShippingCompanies] = useState<ShippingCompany[]>([]);
 
-  // 필터
+  // 필터 — 통합 검색
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [committedSearch, setCommittedSearch] = useState('');
+
+  // 필터 — 상세 검색
+  const [detailSearchOpen, setDetailSearchOpen] = useState(false);
+  const [detailFields, setDetailFields] = useState({
+    orderNumber: '', customerName: '', phone: '', productName: '',
+  });
+  const [committedDetailFields, setCommittedDetailFields] = useState<{
+    orderNumber: string; customerName: string; phone: string; productName: string;
+  } | null>(null);
+
+  // 필터 — 공통
+  const [statusFilters, setStatusFilters] = useState<Set<string>>(new Set());
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
@@ -135,6 +248,37 @@ export default function AdminOrdersPage() {
     isBulk: boolean;
   }>({ open: false, orderId: '', orderNumber: '', amount: 0, isBulk: false });
 
+  // 정렬
+  const [sortField, setSortField] = useState<SortField>('created_at');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  // 컬럼 가시성 (선택 컬럼 + 인디케이터 컬럼 통합 관리)
+  const [visibleColumns, setVisibleColumns] = useState<Set<AnyColumnKey>>(() => {
+    try {
+      const saved = localStorage.getItem('admin_orders_columns');
+      if (saved) return new Set(JSON.parse(saved) as AnyColumnKey[]);
+    } catch {}
+    return new Set([
+      ...COLUMN_DEFS.filter((c) => c.defaultVisible).map((c) => c.key),
+      ...INDICATOR_DEFS.filter((c) => c.defaultVisible).map((c) => c.key),
+    ]);
+  });
+
+  // 선택 컬럼 순서
+  const [columnOrder, setColumnOrder] = useState<ColumnKey[]>(() => {
+    try {
+      const saved = localStorage.getItem('admin_orders_column_order');
+      if (saved) {
+        const parsed = JSON.parse(saved) as ColumnKey[];
+        const missing = DEFAULT_COLUMN_ORDER.filter((k) => !parsed.includes(k));
+        return [...parsed, ...missing];
+      }
+    } catch {}
+    return [...DEFAULT_COLUMN_ORDER];
+  });
+
+  const [columnPickerOpen, setColumnPickerOpen] = useState(false);
+
   // 자동 구매확정 배치
   const [autoConfirmPending, setAutoConfirmPending] = useState(0);
   const [runningBatch, setRunningBatch] = useState(false);
@@ -156,7 +300,14 @@ export default function AdminOrdersPage() {
 
   useEffect(() => {
     if (!authLoading && user) loadOrders();
-  }, [page, statusFilter, dateFrom, dateTo]);
+  }, [page, statusFilters, dateFrom, dateTo, committedSearch, committedDetailFields, paymentMethodFilter, sortField, sortDir]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('admin_orders_columns', JSON.stringify([...visibleColumns]));
+      localStorage.setItem('admin_orders_column_order', JSON.stringify(columnOrder));
+    } catch {}
+  }, [visibleColumns, columnOrder]);
 
   async function loadOrders() {
     try {
@@ -165,13 +316,48 @@ export default function AdminOrdersPage() {
 
       let query = supabase
         .from('orders')
-        .select('id, order_number, status, total_amount, orderer_name, orderer_phone, created_at, payment_method', { count: 'exact' })
-        .order('created_at', { ascending: false })
+        .select(
+          `id, order_number, status, total_amount, orderer_name, orderer_phone, payment_method, created_at,
+           recipient_name, postal_code, address1,
+           subtotal, discount_amount, coupon_discount, shipping_fee, used_points, used_deposit,
+           admin_memo, payment_deadline, is_admin_order`,
+          { count: 'exact' }
+        )
+        .order(sortField, { ascending: sortDir === 'asc' })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-      if (statusFilter !== 'all') query = query.eq('status', statusFilter);
+      if (statusFilters.size > 0) query = query.in('status', Array.from(statusFilters));
       if (dateFrom) query = query.gte('created_at', dateFrom);
       if (dateTo) query = query.lte('created_at', dateTo + 'T23:59:59');
+      if (paymentMethodFilter !== 'all') query = query.eq('payment_method', paymentMethodFilter);
+
+      // 통합 검색 — 주문번호·고객명·전화번호 OR
+      if (committedSearch) {
+        query = query.or(
+          `order_number.ilike.%${committedSearch}%,` +
+          `orderer_name.ilike.%${committedSearch}%,` +
+          `orderer_phone.ilike.%${committedSearch}%`
+        );
+      }
+
+      // 상세 검색 — 각 필드 AND
+      if (committedDetailFields) {
+        const { orderNumber, customerName, phone, productName } = committedDetailFields;
+        if (orderNumber)  query = query.ilike('order_number',  `%${orderNumber}%`);
+        if (customerName) query = query.ilike('orderer_name',  `%${customerName}%`);
+        if (phone)        query = query.ilike('orderer_phone', `%${phone}%`);
+        if (productName) {
+          const { data: productSearchIds } = await supabase.rpc('search_orders_by_product', { keyword: productName });
+          const ids = (productSearchIds ?? []).map((r: any) => r.order_id);
+          if (ids.length === 0) {
+            setOrders([]);
+            setTotalCount(0);
+            setLoading(false);
+            return;
+          }
+          query = query.in('id', ids);
+        }
+      }
 
       const { data, error, count } = await query;
       if (error) throw error;
@@ -179,14 +365,27 @@ export default function AdminOrdersPage() {
       setTotalCount(count ?? 0);
 
       const orderIds = (data ?? []).map((o: any) => o.id);
-      let shipmentMap = new Map<string, Shipment>();
-      if (orderIds.length > 0) {
-        const { data: shipmentsData } = await supabase
-          .from('shipments')
-          .select('id, order_id, tracking_number, shipping_company_id, status, company:shipping_companies(name, tracking_url)')
-          .in('order_id', orderIds);
 
-        (shipmentsData ?? []).forEach((s: any) => {
+      // 배송 정보
+      let shipmentMap = new Map<string, Shipment>();
+      // 상품 요약
+      let productSummaryMap = new Map<string, string>();
+
+      if (orderIds.length > 0) {
+        const [shipmentsRes, itemsRes] = await Promise.all([
+          supabase
+            .from('shipments')
+            .select('id, order_id, tracking_number, shipping_company_id, status, company:shipping_companies(name, tracking_url)')
+            .in('order_id', orderIds),
+          supabase
+            .from('order_items')
+            .select('order_id, product_name, option_text, quantity')
+            .in('order_id', orderIds)
+            .neq('item_type', 'gift')
+            .order('created_at', { ascending: true }),
+        ]);
+
+        (shipmentsRes.data ?? []).forEach((s: any) => {
           shipmentMap.set(s.order_id, {
             id: s.id,
             trackingNumber: s.tracking_number,
@@ -194,6 +393,19 @@ export default function AdminOrdersPage() {
             status: s.status,
             company: s.company ? { name: s.company.name, trackingUrl: s.company.tracking_url } : undefined,
           });
+        });
+
+        const grouped = new Map<string, any[]>();
+        (itemsRes.data ?? []).forEach((item: any) => {
+          if (!grouped.has(item.order_id)) grouped.set(item.order_id, []);
+          grouped.get(item.order_id)!.push(item);
+        });
+        grouped.forEach((items, orderId) => {
+          const first = items[0];
+          const label = first.option_text
+            ? `${first.product_name} (${first.option_text}) ${first.quantity}개`
+            : `${first.product_name} ${first.quantity}개`;
+          productSummaryMap.set(orderId, items.length > 1 ? `${label} 외 ${items.length - 1}건` : label);
         });
       }
 
@@ -207,6 +419,16 @@ export default function AdminOrdersPage() {
         paymentMethod: o.payment_method,
         createdAt: o.created_at,
         shipment: shipmentMap.get(o.id),
+        recipientName: o.recipient_name ?? '',
+        address: o.postal_code ? `(${o.postal_code}) ${o.address1 ?? ''}` : (o.address1 ?? ''),
+        subtotal: o.subtotal ?? 0,
+        discountTotal: (o.discount_amount ?? 0) + (o.coupon_discount ?? 0)
+                     + (o.used_points ?? 0) + (o.used_deposit ?? 0),
+        shippingFee: o.shipping_fee ?? 0,
+        hasAdminMemo: !!o.admin_memo,
+        paymentDeadline: o.payment_deadline ?? null,
+        isAdminOrder: o.is_admin_order ?? false,
+        productSummary: productSummaryMap.get(o.id) ?? '',
       })));
     } catch (err) {
       console.error('Failed to load orders:', err);
@@ -352,21 +574,10 @@ export default function AdminOrdersPage() {
     );
   }
 
-  // 검색 필터 (클라이언트 측, 페이지 내에서)
-  const filteredOrders = orders.filter((o) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      o.orderNumber.toLowerCase().includes(q) ||
-      o.customerName.toLowerCase().includes(q) ||
-      o.customerPhone.includes(q)
-    );
-  });
-
   // 선택
   function toggleSelectAll() {
-    if (selectedIds.size === filteredOrders.length) setSelectedIds(new Set());
-    else setSelectedIds(new Set(filteredOrders.map((o) => o.id)));
+    if (selectedIds.size === orders.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(orders.map((o) => o.id)));
   }
   function toggleSelect(id: string) {
     const s = new Set(selectedIds);
@@ -504,29 +715,224 @@ export default function AdminOrdersPage() {
     }
   }
 
-  // CSV 내보내기
+  // 컬럼 ON/OFF 토글
+  function toggleColumn(key: AnyColumnKey) {
+    setVisibleColumns((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
+  // 선택 컬럼 순서 이동 (direction: -1=위, +1=아래)
+  function moveColumn(index: number, direction: -1 | 1) {
+    setColumnOrder((prev) => {
+      const next = [...prev];
+      const target = index + direction;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  // 프리셋 적용
+  function applyPreset(key: keyof typeof COLUMN_PRESETS) {
+    const preset = COLUMN_PRESETS[key];
+    setVisibleColumns(new Set(preset.visible));
+    setColumnOrder([...preset.order]);
+  }
+
+  // 통합 검색 실행
+  function handleQuickSearch() {
+    setDetailFields({ orderNumber: '', customerName: '', phone: '', productName: '' });
+    setCommittedDetailFields(null);
+    setCommittedSearch(searchQuery);
+    setPage(0);
+  }
+
+  // 상세 검색 실행
+  function handleDetailSearch() {
+    const hasAny = Object.values(detailFields).some((v) => v.trim() !== '');
+    setSearchQuery('');
+    setCommittedSearch('');
+    setCommittedDetailFields(hasAny ? { ...detailFields } : null);
+    setPage(0);
+  }
+
+  // 상세 검색 전체 초기화
+  function handleDetailClear() {
+    setDetailFields({ orderNumber: '', customerName: '', phone: '', productName: '' });
+    setCommittedDetailFields(null);
+    setPaymentMethodFilter('all');
+    setDateFrom('');
+    setDateTo('');
+    setPage(0);
+  }
+
+  // 상세 검색 필드 개별 초기화 (태그 × 클릭 시)
+  function clearDetailField(key: keyof typeof detailFields) {
+    const next = { ...detailFields, [key]: '' };
+    setDetailFields(next);
+    const hasAny = Object.values(next).some((v) => v.trim() !== '');
+    setCommittedDetailFields(hasAny ? next : null);
+    setPage(0);
+  }
+
+  // 현재 필터 조건으로 orders 전체 조회 (페이지 무관, 1000건씩 페이지네이션)
+  async function fetchAllOrdersForExport() {
+    const supabase = createClient();
+
+    // 상품명 검색 시 order_id 목록 선취
+    let productSearchIds: string[] | undefined;
+    if (committedDetailFields?.productName) {
+      const { data } = await supabase.rpc('search_orders_by_product', { keyword: committedDetailFields.productName });
+      const ids = (data ?? []).map((r: any) => r.order_id as string);
+      if (ids.length === 0) return [];
+      productSearchIds = ids;
+    }
+
+    const FETCH_SIZE = 1000;
+    const allOrders: any[] = [];
+    let offset = 0;
+
+    while (true) {
+      let q = supabase
+        .from('orders')
+        .select('id, order_number, status, total_amount, orderer_name, orderer_phone, created_at, payment_method, recipient_name')
+        .order('created_at', { ascending: false })
+        .range(offset, offset + FETCH_SIZE - 1);
+
+      if (statusFilters.size > 0) q = q.in('status', Array.from(statusFilters));
+      if (dateFrom) q = q.gte('created_at', dateFrom);
+      if (dateTo) q = q.lte('created_at', dateTo + 'T23:59:59');
+      if (paymentMethodFilter !== 'all') q = q.eq('payment_method', paymentMethodFilter);
+      if (committedSearch) {
+        q = q.or(
+          `order_number.ilike.%${committedSearch}%,` +
+          `orderer_name.ilike.%${committedSearch}%,` +
+          `orderer_phone.ilike.%${committedSearch}%`
+        );
+      }
+      if (committedDetailFields) {
+        const { orderNumber, customerName, phone } = committedDetailFields;
+        if (orderNumber)  q = q.ilike('order_number',  `%${orderNumber}%`);
+        if (customerName) q = q.ilike('orderer_name',  `%${customerName}%`);
+        if (phone)        q = q.ilike('orderer_phone', `%${phone}%`);
+      }
+      if (productSearchIds) q = q.in('id', productSearchIds);
+
+      const { data, error } = await q;
+      if (error) throw error;
+      allOrders.push(...(data ?? []));
+      if ((data ?? []).length < FETCH_SIZE) break;
+      offset += FETCH_SIZE;
+    }
+
+    return allOrders;
+  }
+
+  // CSV 내보내기 — 주문별 (1행 = 1주문)
   async function handleExport() {
-    const headers = ['주문번호', '주문일시', '고객명', '전화번호', '결제방법', '금액', '상태', '운송장번호'];
-    const rows = filteredOrders.map((o) => [
-      o.orderNumber,
-      format(new Date(o.createdAt), 'yyyy-MM-dd HH:mm'),
-      o.customerName,
-      o.customerPhone,
-      o.paymentMethod ?? '',
-      o.totalAmount,
-      ORDER_STATUS_LABELS[o.status as OrderStatus] ?? o.status,
-      o.shipment?.trackingNumber ?? '',
-    ]);
-    const csv = [headers, ...rows]
-      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `orders_${format(new Date(), 'yyyyMMdd')}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const exportData = await fetchAllOrdersForExport();
+      if (exportData.length === 0) { alert('내보낼 주문이 없습니다.'); return; }
+
+      const headers = ['주문번호', '주문일시', '고객명', '전화번호', '결제방법', '금액', '상태'];
+      const rows = exportData.map((o: any) => [
+        o.order_number,
+        format(new Date(o.created_at), 'yyyy-MM-dd HH:mm'),
+        o.orderer_name,
+        o.orderer_phone ?? '',
+        PAYMENT_METHOD_LABELS[o.payment_method] ?? o.payment_method ?? '',
+        o.total_amount,
+        ORDER_STATUS_LABELS[o.status as OrderStatus] ?? o.status,
+      ]);
+      const csv = [headers, ...rows]
+        .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `orders_${format(new Date(), 'yyyyMMdd')}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+    }
+  }
+
+  const ITEM_TYPE_LABELS: Record<string, string> = {
+    normal: '일반', set: '세트', bundle: '묶음', gift: '증정',
+  };
+
+  // CSV 내보내기 — SKU별 (1행 = 1 order_item)
+  async function handleExportSku() {
+    try {
+      const allOrders = await fetchAllOrdersForExport();
+      if (allOrders.length === 0) { alert('내보낼 주문이 없습니다.'); return; }
+
+      const orderMap = new Map<string, any>(allOrders.map((o) => [o.id, o]));
+      const orderIds = allOrders.map((o) => o.id);
+
+      // order_items + SKU 를 500건 배치로 조회
+      const BATCH = 500;
+      const supabase = createClient();
+      const allItems: any[] = [];
+
+      for (let i = 0; i < orderIds.length; i += BATCH) {
+        const batch = orderIds.slice(i, i + BATCH);
+        const { data, error } = await supabase
+          .from('order_items')
+          .select('order_id, product_name, option_text, unit_price, quantity, discount_amount, total_price, item_type, status, variant_id, product_variants(sku)')
+          .in('order_id', batch)
+          .order('created_at', { ascending: true });
+        if (error) throw error;
+        allItems.push(...(data ?? []));
+      }
+
+      if (allItems.length === 0) { alert('내보낼 상품 항목이 없습니다.'); return; }
+
+      const headers = [
+        '주문번호', '주문일시', '고객명', '수령인', '전화번호', '결제수단', '주문상태',
+        '상품명', '옵션', 'SKU', '단가', '수량', '할인금액', '소계', '상품유형', '아이템상태',
+      ];
+      const rows = allItems.map((item: any) => {
+        const order = orderMap.get(item.order_id);
+        const sku = (item.product_variants as any)?.sku ?? '-';
+        return [
+          order?.order_number ?? '',
+          order ? format(new Date(order.created_at), 'yyyy-MM-dd HH:mm') : '',
+          order?.orderer_name ?? '',
+          order?.recipient_name ?? '',
+          order?.orderer_phone ?? '',
+          PAYMENT_METHOD_LABELS[order?.payment_method] ?? order?.payment_method ?? '',
+          ORDER_STATUS_LABELS[order?.status as OrderStatus] ?? order?.status ?? '',
+          item.product_name ?? '',
+          item.option_text ?? '',
+          sku,
+          item.unit_price ?? 0,
+          item.quantity ?? 0,
+          item.discount_amount ?? 0,
+          item.total_price ?? 0,
+          ITEM_TYPE_LABELS[item.item_type] ?? item.item_type ?? '',
+          ORDER_STATUS_LABELS[item.status as OrderStatus] ?? item.status ?? '',
+        ];
+      });
+
+      const csv = [headers, ...rows]
+        .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `orders_sku_${format(new Date(), 'yyyyMMdd_HHmm')}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('SKU export failed:', err);
+    }
   }
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
@@ -555,7 +961,10 @@ export default function AdminOrdersPage() {
             <Upload className="mr-2 h-4 w-4" />일괄 송장 등록
           </Button>
           <Button variant="outline" onClick={handleExport}>
-            <Download className="mr-2 h-4 w-4" />내보내기
+            <Download className="mr-2 h-4 w-4" />주문별 내보내기
+          </Button>
+          <Button variant="outline" onClick={handleExportSku}>
+            <Download className="mr-2 h-4 w-4" />SKU별 내보내기
           </Button>
           <Button variant="outline" onClick={() => { loadOrders(); loadStats(); loadAutoConfirmPending(); loadUnpaidExpired(); }}>
             <RefreshCw className="mr-2 h-4 w-4" />새로고침
@@ -614,8 +1023,15 @@ export default function AdminOrdersPage() {
         {ALL_STATUSES.map((s) => (
           <Card
             key={s}
-            className={`p-3 text-center cursor-pointer transition-all ${statusFilter === s ? 'ring-2 ring-blue-500' : ''}`}
-            onClick={() => { setStatusFilter(s === statusFilter ? 'all' : s); setPage(0); }}
+            className={`p-3 text-center cursor-pointer transition-all ${statusFilters.has(s) ? 'ring-2 ring-blue-500' : ''}`}
+            onClick={() => {
+              setStatusFilters((prev) => {
+                const next = new Set(prev);
+                next.has(s) ? next.delete(s) : next.add(s);
+                return next;
+              });
+              setPage(0);
+            }}
           >
             <p className="text-xs text-gray-500 truncate">{ORDER_STATUS_LABELS[s]}</p>
             <p className="text-xl font-bold">{(stats as any)[s] ?? 0}</p>
@@ -632,32 +1048,203 @@ export default function AdminOrdersPage() {
       </div>
 
       {/* 필터 */}
-      <Card className="mb-4 p-4">
-        <div className="flex flex-wrap gap-3">
-          <div className="relative flex-1 min-w-[220px]">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+      <Card className="mb-4 p-4 space-y-3">
+        {/* 기본 검색 행 */}
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
-              placeholder="주문번호 / 고객명 / 전화번호"
+              placeholder="주문번호 · 고객명 · 전화번호 통합 검색"
               value={searchQuery}
+              disabled={!!committedDetailFields}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+              onKeyDown={(e) => e.key === 'Enter' && handleQuickSearch()}
+              className={`pl-10 ${committedDetailFields ? 'bg-gray-50 text-gray-400' : ''}`}
             />
           </div>
-          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(0); }}>
-            <SelectTrigger className="w-[150px]">
-              <Filter className="mr-2 h-4 w-4" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">전체 상태</SelectItem>
-              {ALL_STATUSES.map((s) => (
-                <SelectItem key={s} value={s}>{ORDER_STATUS_LABELS[s]}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0); }} className="w-[150px]" />
-          <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0); }} className="w-[150px]" />
+          <Button onClick={handleQuickSearch} disabled={!!committedDetailFields}>
+            검색
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setDetailSearchOpen((v) => !v)}
+            className={`flex items-center gap-1 ${detailSearchOpen || !!committedDetailFields ? 'border-blue-400 text-blue-600 bg-blue-50' : ''}`}
+          >
+            상세검색
+            {detailSearchOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            {/* 패널 닫혀있지만 상세검색 활성 중 표시 */}
+            {committedDetailFields && !detailSearchOpen && (
+              <span className="h-2 w-2 rounded-full bg-blue-500 flex-shrink-0" />
+            )}
+          </Button>
         </div>
+
+        {/* 상세 검색 패널 */}
+        {detailSearchOpen && (
+          <div className="border-t pt-3 space-y-3">
+            {/* 검색 필드 2열 그리드 */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-600">주문번호</label>
+                <Input
+                  placeholder="주문번호 일부 입력"
+                  value={detailFields.orderNumber}
+                  onChange={(e) => setDetailFields((p) => ({ ...p, orderNumber: e.target.value }))}
+                  onKeyDown={(e) => e.key === 'Enter' && handleDetailSearch()}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-600">고객명</label>
+                <Input
+                  placeholder="주문자명 / 수령인명"
+                  value={detailFields.customerName}
+                  onChange={(e) => setDetailFields((p) => ({ ...p, customerName: e.target.value }))}
+                  onKeyDown={(e) => e.key === 'Enter' && handleDetailSearch()}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-600">전화번호</label>
+                <Input
+                  placeholder="'-' 없이 입력"
+                  value={detailFields.phone}
+                  onChange={(e) => setDetailFields((p) => ({ ...p, phone: e.target.value }))}
+                  onKeyDown={(e) => e.key === 'Enter' && handleDetailSearch()}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-gray-600">상품명</label>
+                <Input
+                  placeholder="상품명 또는 옵션명"
+                  value={detailFields.productName}
+                  onChange={(e) => setDetailFields((p) => ({ ...p, productName: e.target.value }))}
+                  onKeyDown={(e) => e.key === 'Enter' && handleDetailSearch()}
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+
+            {/* 결제수단 + 날짜 */}
+            <div className="flex flex-wrap items-center gap-3 pt-1 border-t">
+              <Select value={paymentMethodFilter} onValueChange={(v) => setPaymentMethodFilter(v)}>
+                <SelectTrigger className="w-[160px] h-8 text-sm">
+                  <Filter className="mr-1 h-3.5 w-3.5" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(PAYMENT_METHOD_LABELS).map(([v, label]) => (
+                    <SelectItem key={v} value={v}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <div className="flex gap-1">
+                {(['today', 'yesterday', 'week', 'month'] as const).map((preset) => {
+                  const labels = { today: '오늘', yesterday: '어제', week: '이번 주', month: '이번 달' };
+                  return (
+                    <Button key={preset} size="sm" variant="outline" className="h-8 text-xs"
+                      onClick={() => { const { from, to } = getDateRange(preset); setDateFrom(from); setDateTo(to); }}>
+                      {labels[preset]}
+                    </Button>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center gap-1 ml-auto">
+                <Calendar className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-[130px] h-8 text-sm" />
+                <span className="text-gray-400 text-sm">~</span>
+                <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-[130px] h-8 text-sm" />
+              </div>
+            </div>
+
+            {/* 실행 버튼 */}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="ghost" size="sm" onClick={handleDetailClear}>
+                전체 초기화
+              </Button>
+              <Button size="sm" onClick={handleDetailSearch}>
+                상세검색 실행
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* 적용된 필터 태그 */}
+        {(() => {
+          const tags = [
+            committedSearch && {
+              key: 'search',
+              label: `검색: ${committedSearch}`,
+              clear: () => { setCommittedSearch(''); setSearchQuery(''); setPage(0); },
+            },
+            committedDetailFields?.orderNumber && {
+              key: 'detail_order',
+              label: `주문번호: ${committedDetailFields.orderNumber}`,
+              clear: () => clearDetailField('orderNumber'),
+            },
+            committedDetailFields?.customerName && {
+              key: 'detail_name',
+              label: `고객명: ${committedDetailFields.customerName}`,
+              clear: () => clearDetailField('customerName'),
+            },
+            committedDetailFields?.phone && {
+              key: 'detail_phone',
+              label: `전화번호: ${committedDetailFields.phone}`,
+              clear: () => clearDetailField('phone'),
+            },
+            committedDetailFields?.productName && {
+              key: 'detail_product',
+              label: `상품명: ${committedDetailFields.productName}`,
+              clear: () => clearDetailField('productName'),
+            },
+            statusFilters.size > 0 && {
+              key: 'status',
+              label: `상태: ${Array.from(statusFilters).map((s) => ORDER_STATUS_LABELS[s as OrderStatus]).join(', ')}`,
+              clear: () => { setStatusFilters(new Set()); setPage(0); },
+            },
+            paymentMethodFilter !== 'all' && {
+              key: 'payment',
+              label: `결제: ${PAYMENT_METHOD_LABELS[paymentMethodFilter]}`,
+              clear: () => { setPaymentMethodFilter('all'); setPage(0); },
+            },
+            (dateFrom || dateTo) && {
+              key: 'date',
+              label: `기간: ${dateFrom || '~'} ~ ${dateTo || '~'}`,
+              clear: () => { setDateFrom(''); setDateTo(''); setPage(0); },
+            },
+          ].filter(Boolean) as { key: string; label: string; clear: () => void }[];
+
+          if (tags.length === 0) return null;
+          return (
+            <div className="flex flex-wrap items-center gap-2 pt-1 border-t">
+              <span className="text-xs text-gray-400 flex-shrink-0">적용된 필터:</span>
+              {tags.map((tag) => (
+                <span key={tag.key}
+                  className="inline-flex items-center gap-1 rounded-full bg-blue-50 border border-blue-200 px-2.5 py-0.5 text-xs text-blue-700">
+                  {tag.label}
+                  <button onClick={tag.clear} className="ml-0.5 hover:text-blue-900">
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              <button
+                onClick={() => {
+                  setCommittedSearch(''); setSearchQuery('');
+                  setDetailFields({ orderNumber: '', customerName: '', phone: '', productName: '' });
+                  setCommittedDetailFields(null);
+                  setStatusFilters(new Set());
+                  setPaymentMethodFilter('all'); setDateFrom(''); setDateTo(''); setPage(0);
+                }}
+                className="text-xs text-gray-400 hover:text-gray-700 underline"
+              >
+                전체 초기화
+              </button>
+            </div>
+          );
+        })()}
       </Card>
 
       {/* 선택 액션바 */}
@@ -693,26 +1280,87 @@ export default function AdminOrdersPage() {
       {/* 주문 목록 */}
       {loading ? (
         <Card className="p-12 text-center text-gray-400">로딩 중...</Card>
-      ) : filteredOrders.length === 0 ? (
+      ) : orders.length === 0 ? (
         <Card className="p-12 text-center text-gray-500">
-          {orders.length === 0 ? '주문 내역이 없습니다.' : '검색 결과가 없습니다.'}
+          주문 내역이 없습니다.
         </Card>
       ) : (
         <Card>
           {/* 헤더 */}
           <div className="flex items-center gap-4 p-4 border-b bg-gray-50 text-sm font-medium text-gray-600">
             <input type="checkbox"
-              checked={selectedIds.size === filteredOrders.length && filteredOrders.length > 0}
+              checked={selectedIds.size === orders.length && orders.length > 0}
               onChange={toggleSelectAll} className="h-4 w-4 rounded" />
-            <div className="w-36">주문번호</div>
+            {/* 주문번호 — 정렬 가능 */}
+            <div className="w-36">
+              <button
+                className="flex items-center gap-1 hover:text-gray-900"
+                onClick={() => {
+                  if (sortField === 'order_number') setSortDir((d) => d === 'asc' ? 'desc' : 'asc');
+                  else { setSortField('order_number'); setSortDir('desc'); }
+                  setPage(0);
+                }}
+              >
+                주문번호
+                {sortField === 'order_number'
+                  ? (sortDir === 'desc' ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />)
+                  : <ChevronsUpDown className="h-3 w-3 text-gray-300" />}
+              </button>
+            </div>
             <div className="flex-1">고객정보</div>
-            <div className="w-24 text-center">결제금액</div>
+            {columnOrder
+              .filter((key) => visibleColumns.has(key))
+              .map((key) => {
+                if (key === 'product')   return <div key={key} className="w-48 min-w-0">상품 요약</div>;
+                if (key === 'recipient') return <div key={key} className="w-24">수령인</div>;
+                if (key === 'address')   return <div key={key} className="w-36 min-w-0">배송주소</div>;
+                if (key === 'discount')  return <div key={key} className="w-28 text-right">할인/배송비</div>;
+                return null;
+              })}
+            {/* 결제금액 — 정렬 가능 */}
+            <div className="w-24 text-center">
+              <button
+                className="flex items-center gap-1 hover:text-gray-900 mx-auto"
+                onClick={() => {
+                  if (sortField === 'total_amount') setSortDir((d) => d === 'asc' ? 'desc' : 'asc');
+                  else { setSortField('total_amount'); setSortDir('desc'); }
+                  setPage(0);
+                }}
+              >
+                결제금액
+                {sortField === 'total_amount'
+                  ? (sortDir === 'desc' ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />)
+                  : <ChevronsUpDown className="h-3 w-3 text-gray-300" />}
+              </button>
+            </div>
             <div className="w-28 text-center">상태</div>
-            <div className="w-52"></div>
+            {/* 주문일시 — 정렬 가능 */}
+            <div className="w-24 text-center">
+              <button
+                className="flex items-center gap-1 hover:text-gray-900 mx-auto"
+                onClick={() => {
+                  if (sortField === 'created_at') setSortDir((d) => d === 'asc' ? 'desc' : 'asc');
+                  else { setSortField('created_at'); setSortDir('desc'); }
+                  setPage(0);
+                }}
+              >
+                주문일시
+                {sortField === 'created_at'
+                  ? (sortDir === 'desc' ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />)
+                  : <ChevronsUpDown className="h-3 w-3 text-gray-300" />}
+              </button>
+            </div>
+            <div className="w-52 flex items-center justify-end gap-1">
+              <span>액션</span>
+              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 ml-1"
+                onClick={() => setColumnPickerOpen(true)} title="컬럼 설정">
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
 
           <div className="divide-y">
-            {filteredOrders.map((order) => {
+            {orders.map((order) => {
               const statusColor = ORDER_STATUS_COLORS[order.status as OrderStatus] ?? 'bg-gray-100 text-gray-700';
               const nextStates = ORDER_STATUS_TRANSITIONS[order.status as OrderStatus] ?? [];
               const isFinal = nextStates.length === 0;
@@ -725,28 +1373,82 @@ export default function AdminOrdersPage() {
                   <input type="checkbox" checked={selectedIds.has(order.id)}
                     onChange={() => toggleSelect(order.id)} className="h-4 w-4 rounded" />
 
-                  <div className="w-36">
+                  {/* 주문번호 */}
+                  <div className="w-36 flex-shrink-0">
                     <p className="font-mono text-sm font-medium">{order.orderNumber}</p>
-                    <p className="text-xs text-gray-500">{format(new Date(order.createdAt), 'MM/dd HH:mm')}</p>
+                    {order.isAdminOrder && (
+                      <span className="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 mt-0.5">
+                        관리자
+                      </span>
+                    )}
                   </div>
 
+                  {/* 고객정보 */}
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{order.customerName}</p>
                     <p className="text-xs text-gray-500">{order.customerPhone}</p>
                     {order.paymentMethod && (
                       <p className="text-xs text-gray-400">
-                        {order.paymentMethod === 'card' && '카드'}
-                        {order.paymentMethod === 'virtual_account' && '가상계좌'}
-                        {order.paymentMethod === 'bank_transfer' && '무통장'}
+                        {PAYMENT_METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod}
                       </p>
                     )}
                   </div>
 
-                  <div className="w-24 text-center">
+                  {/* 선택 컬럼 — columnOrder 순서로 렌더링 */}
+                  {columnOrder
+                    .filter((key) => visibleColumns.has(key))
+                    .map((key) => {
+                      if (key === 'product') return (
+                        <div key={key} className="w-48 min-w-0">
+                          {order.productSummary ? (
+                            <p className="text-xs text-gray-700 truncate" title={order.productSummary}>
+                              {order.productSummary}
+                            </p>
+                          ) : (
+                            <span className="text-xs text-gray-300">—</span>
+                          )}
+                        </div>
+                      );
+                      if (key === 'recipient') return (
+                        <div key={key} className="w-24 flex-shrink-0">
+                          <p className={`text-xs truncate ${order.recipientName !== order.customerName ? 'text-blue-600 font-medium' : 'text-gray-600'}`}>
+                            {order.recipientName || '—'}
+                          </p>
+                        </div>
+                      );
+                      if (key === 'address') return (
+                        <div key={key} className="w-36 min-w-0">
+                          <p className="text-xs text-gray-600 truncate" title={order.address}>
+                            <MapPin className="inline h-3 w-3 mr-0.5 text-gray-400" />
+                            {order.address || '—'}
+                          </p>
+                        </div>
+                      );
+                      if (key === 'discount') return (
+                        <div key={key} className="w-28 flex-shrink-0 text-right">
+                          {order.discountTotal > 0 && (
+                            <p className="text-xs text-red-500">-{formatCurrency(order.discountTotal)}</p>
+                          )}
+                          <p className="text-xs text-gray-500">
+                            {order.shippingFee === 0 ? '배송비 무료' : `배송비 ${formatCurrency(order.shippingFee)}`}
+                          </p>
+                        </div>
+                      );
+                      return null;
+                    })}
+
+                  {/* 결제금액 */}
+                  <div className="w-24 text-center flex-shrink-0">
                     <p className="font-medium text-sm">{formatCurrency(order.totalAmount)}</p>
+                    {visibleColumns.has('memo') && order.hasAdminMemo && (
+                      <span title="관리자 메모 있음">
+                        <MessageSquare className="inline h-3.5 w-3.5 text-yellow-500 mt-0.5" />
+                      </span>
+                    )}
                   </div>
 
-                  <div className="w-28 text-center">
+                  {/* 상태 */}
+                  <div className="w-28 text-center flex-shrink-0">
                     <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${statusColor}`}>
                       {ORDER_STATUS_LABELS[order.status as OrderStatus] ?? order.status}
                     </span>
@@ -756,6 +1458,26 @@ export default function AdminOrdersPage() {
                         배송조회
                       </a>
                     )}
+                    {/* 입금마감 */}
+                    {visibleColumns.has('deadline') && order.paymentDeadline &&
+                      order.status === 'pending' &&
+                      (order.paymentMethod === 'bank_transfer' || order.paymentMethod === 'virtual_account') && (() => {
+                        const diff = new Date(order.paymentDeadline).getTime() - Date.now();
+                        const isOverdue = diff < 0;
+                        const isUrgent = !isOverdue && diff < 24 * 60 * 60 * 1000;
+                        return (
+                          <p className={`mt-0.5 text-[10px] ${isOverdue ? 'text-red-600 font-semibold' : isUrgent ? 'text-orange-500' : 'text-gray-400'}`}>
+                            {isOverdue ? '마감초과' : `${format(new Date(order.paymentDeadline), 'MM/dd HH:mm')}까지`}
+                          </p>
+                        );
+                      })()
+                    }
+                  </div>
+
+                  {/* 주문일시 */}
+                  <div className="w-24 text-center flex-shrink-0">
+                    <p className="text-xs text-gray-500">{format(new Date(order.createdAt), 'MM/dd')}</p>
+                    <p className="text-xs text-gray-400">{format(new Date(order.createdAt), 'HH:mm')}</p>
                   </div>
 
                   <div className="flex gap-1 w-52 justify-end">
@@ -901,6 +1623,95 @@ export default function AdminOrdersPage() {
           </Card>
         </div>
       )}
+
+      {/* 컬럼 설정 Dialog */}
+      <Dialog open={columnPickerOpen} onOpenChange={setColumnPickerOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <SlidersHorizontal className="h-4 w-4" />
+              컬럼 설정
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* 프리셋 버튼 */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 mb-2">프리셋</p>
+            <div className="flex gap-2 flex-wrap">
+              {Object.entries(COLUMN_PRESETS).map(([key, preset]) => (
+                <Button key={key} size="sm" variant="outline" onClick={() => applyPreset(key)}>
+                  {preset.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          {/* 고정 컬럼 */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 mb-1">고정 컬럼 (항상 표시)</p>
+            <div className="space-y-0.5">
+              {FIXED_COLUMNS.map((col) => (
+                <div key={col.key}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded text-sm text-gray-400 bg-gray-50">
+                  <input type="checkbox" checked disabled className="h-4 w-4 opacity-40 cursor-not-allowed" readOnly />
+                  <span>{col.label}</span>
+                  <Lock className="h-3 w-3 ml-auto text-gray-300" />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 선택 컬럼 — 순서 변경 가능 */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 mb-1">선택 컬럼 <span className="font-normal text-gray-400">(↑↓ 으로 순서 변경)</span></p>
+            <div className="space-y-0.5">
+              {columnOrder.map((key, index) => {
+                const col = COLUMN_DEFS.find((c) => c.key === key)!;
+                const isVisible = visibleColumns.has(key);
+                return (
+                  <div key={key}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded text-sm hover:bg-gray-50">
+                    <input type="checkbox" checked={isVisible}
+                      onChange={() => toggleColumn(key)} className="h-4 w-4 cursor-pointer" />
+                    <span className={isVisible ? 'text-gray-800' : 'text-gray-400'}>{col.label}</span>
+                    <div className="ml-auto flex gap-0.5">
+                      <button onClick={() => moveColumn(index, -1)} disabled={index === 0}
+                        className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-25 disabled:cursor-not-allowed">
+                        <ChevronUp className="h-3.5 w-3.5 text-gray-500" />
+                      </button>
+                      <button onClick={() => moveColumn(index, 1)} disabled={index === columnOrder.length - 1}
+                        className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-25 disabled:cursor-not-allowed">
+                        <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 인디케이터 컬럼 */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 mb-1">
+              셀 내 표시 항목 <span className="font-normal text-gray-400">(순서 변경 불가)</span>
+            </p>
+            <div className="space-y-0.5">
+              {INDICATOR_DEFS.map((col) => {
+                const isVisible = visibleColumns.has(col.key);
+                return (
+                  <div key={col.key}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded text-sm hover:bg-gray-50">
+                    <input type="checkbox" checked={isVisible}
+                      onChange={() => toggleColumn(col.key)} className="h-4 w-4 cursor-pointer" />
+                    <span className={isVisible ? 'text-gray-800' : 'text-gray-400'}>{col.label}</span>
+                    <span className="ml-auto text-[10px] text-gray-300">{col.description}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -3936,6 +3936,15 @@ $$;
 -- pg_cron 등록 (Supabase 대시보드 → Database → Extensions 에서 pg_cron 활성화 후 실행):
 -- SELECT cron.schedule('auto-confirm-orders', '0 * * * *', 'SELECT auto_confirm_orders()');
 
+-- 상품명/옵션명으로 주문 ID 목록을 반환하는 RPC (관리자 주문 검색용)
+CREATE OR REPLACE FUNCTION public.search_orders_by_product(keyword TEXT)
+RETURNS TABLE(order_id UUID) AS $$
+  SELECT DISTINCT oi.order_id
+  FROM order_items oi
+  WHERE oi.product_name ILIKE '%' || keyword || '%'
+     OR oi.option_text ILIKE '%' || keyword || '%';
+$$ LANGUAGE sql SECURITY DEFINER;
+
 -- =============================================================================
 -- freecart-web OAuth 연동 토큰 저장 테이블
 -- (freecart 앱이 freecart-web에 연결할 때 사용하는 OAuth 토큰 로컬 캐시)

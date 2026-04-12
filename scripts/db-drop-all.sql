@@ -27,6 +27,7 @@ DROP FUNCTION IF EXISTS public.increment_coupon_used_count CASCADE;
 DROP FUNCTION IF EXISTS public.increment_user_deposit CASCADE;
 DROP FUNCTION IF EXISTS public.auto_cancel_pending_orders CASCADE;
 DROP FUNCTION IF EXISTS public.auto_confirm_orders CASCADE;
+DROP FUNCTION IF EXISTS public.search_orders_by_product CASCADE;
 
 -- 2026.04.07 윌리엄 추가 (joy) — 권한/담당자/동적 필드 관련 함수/트리거
 DROP TRIGGER IF EXISTS trg_users_super_admin_check ON public.users;
