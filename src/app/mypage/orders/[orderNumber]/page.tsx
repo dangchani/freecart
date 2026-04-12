@@ -3,11 +3,13 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
-import { ArrowLeft, RotateCcw, RefreshCw, Truck, ExternalLink, Package, CheckCircle2, Clock } from 'lucide-react';
+import { ArrowLeft, RotateCcw, RefreshCw, Truck, ExternalLink, Package, CheckCircle2, Clock, Edit2, X, Check } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { updateOrderShipping } from '@/services/orders';
 
 interface ShipmentInfo {
   id: string;
@@ -28,7 +30,10 @@ interface OrderDetail {
   status: string;
   totalAmount: number;
   shippingCost: number;
+  postalCode: string;
   shippingAddress: string;
+  address1: string;
+  address2: string;
   recipientName: string;
   recipientPhone: string;
   deliveryRequest?: string;
@@ -57,6 +62,9 @@ export default function OrderDetailPage() {
   const { user, loading: authLoading } = useAuth();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [shippingModal, setShippingModal] = useState(false);
+  const [shippingEdit, setShippingEdit] = useState({ recipientName: '', recipientPhone: '', postalCode: '', address1: '', address2: '', shippingMessage: '' });
+  const [savingShipping, setSavingShipping] = useState(false);
 
   useEffect(() => {
     if (!authLoading) {
@@ -124,7 +132,10 @@ export default function OrderDetailPage() {
         status: data.status,
         totalAmount: data.total_amount,
         shippingCost: data.shipping_fee,
+        postalCode: data.postal_code,
         shippingAddress: [data.address1, data.address2].filter(Boolean).join(' '),
+        address1: data.address1,
+        address2: data.address2 ?? '',
         recipientName: data.recipient_name,
         recipientPhone: data.recipient_phone,
         deliveryRequest: data.shipping_message,
@@ -143,6 +154,34 @@ export default function OrderDetailPage() {
       navigate('/mypage/orders');
     } finally {
       setLoading(false);
+    }
+  }
+
+  function openShippingEdit() {
+    if (!order) return;
+    setShippingEdit({
+      recipientName:   order.recipientName,
+      recipientPhone:  order.recipientPhone,
+      postalCode:      order.postalCode,
+      address1:        order.address1,
+      address2:        order.address2,
+      shippingMessage: order.deliveryRequest ?? '',
+    });
+    setShippingModal(true);
+  }
+
+  async function handleSaveShipping() {
+    if (!order) return;
+    setSavingShipping(true);
+    try {
+      await updateOrderShipping(order.id, shippingEdit, user?.id);
+      setShippingModal(false);
+      await loadOrderDetail();
+      alert('배송지가 수정되었습니다.');
+    } catch (err: any) {
+      alert(err.message ?? '배송지 수정 중 오류가 발생했습니다.');
+    } finally {
+      setSavingShipping(false);
     }
   }
 
@@ -180,6 +219,7 @@ export default function OrderDetailPage() {
 
   const statusInfo = statusLabels[order.status] || { label: order.status, variant: 'default' as const };
   const canCancel = order.status === 'pending' || order.status === 'paid';
+  const canEditShipping = order.status === 'pending';
   const canReturn = order.status === 'delivered';
   const canExchange = order.status === 'delivered';
   const subtotal = order.totalAmount - order.shippingCost;
@@ -200,6 +240,11 @@ export default function OrderDetailPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          {canEditShipping && (
+            <Button variant="outline" onClick={openShippingEdit}>
+              <Edit2 className="mr-1.5 h-4 w-4" />배송지 수정
+            </Button>
+          )}
           {canCancel && (
             <Button variant="destructive" onClick={handleCancelOrder}>
               주문 취소
@@ -379,6 +424,55 @@ export default function OrderDetailPage() {
           </Card>
         </div>
       </div>
+
+      {/* 배송지 수정 모달 */}
+      {shippingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white shadow-xl p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold">배송지 수정</h2>
+              <button onClick={() => setShippingModal(false)}><X className="h-5 w-5 text-gray-400" /></button>
+            </div>
+            <div className="space-y-3 text-sm">
+              <p className="text-xs text-blue-600 bg-blue-50 rounded p-2">입금 전 주문에만 배송지 수정이 가능합니다.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">수령인 <span className="text-red-500">*</span></label>
+                  <Input value={shippingEdit.recipientName} onChange={(e) => setShippingEdit((p) => ({ ...p, recipientName: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">연락처 <span className="text-red-500">*</span></label>
+                  <Input value={shippingEdit.recipientPhone} onChange={(e) => setShippingEdit((p) => ({ ...p, recipientPhone: e.target.value }))} />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">우편번호 <span className="text-red-500">*</span></label>
+                <Input value={shippingEdit.postalCode} onChange={(e) => setShippingEdit((p) => ({ ...p, postalCode: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">주소 <span className="text-red-500">*</span></label>
+                <Input value={shippingEdit.address1} onChange={(e) => setShippingEdit((p) => ({ ...p, address1: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">상세주소</label>
+                <Input value={shippingEdit.address2} onChange={(e) => setShippingEdit((p) => ({ ...p, address2: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">배송 메시지</label>
+                <Input value={shippingEdit.shippingMessage} onChange={(e) => setShippingEdit((p) => ({ ...p, shippingMessage: e.target.value }))} />
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShippingModal(false)}>닫기</Button>
+              <Button
+                onClick={handleSaveShipping}
+                disabled={savingShipping || !shippingEdit.recipientName || !shippingEdit.address1}>
+                <Check className="mr-2 h-4 w-4" />{savingShipping ? '저장 중...' : '저장'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

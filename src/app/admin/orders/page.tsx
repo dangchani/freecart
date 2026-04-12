@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -25,15 +23,31 @@ import {
   Check,
   CreditCard,
   Filter,
-  BarChart3,
   RefreshCw,
+  Upload,
+  ChevronLeft,
+  ChevronRight,
+  PlayCircle,
+  Clock,
+  Plus,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import {
+  ORDER_STATUS_LABELS,
+  ORDER_STATUS_COLORS,
+  ORDER_STATUS_TRANSITIONS,
+  isValidTransition,
+  type OrderStatus,
+} from '@/constants/orderStatus';
+import { transitionOrderStatus } from '@/services/orders';
+
+const PAGE_SIZE = 20;
 
 interface ShippingCompany {
   id: string;
   name: string;
   code: string;
+  trackingUrl: string | null;
 }
 
 interface Shipment {
@@ -41,53 +55,49 @@ interface Shipment {
   trackingNumber: string | null;
   shippingCompanyId: string | null;
   status: string;
+  company?: { name: string; trackingUrl: string | null };
 }
 
-interface Order {
+interface OrderRow {
   id: string;
   orderNumber: string;
   status: string;
   totalAmount: number;
   customerName: string;
+  customerPhone: string;
+  paymentMethod: string | null;
   createdAt: string;
   shipment?: Shipment;
 }
-
-const statusLabels: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  pending: { label: '결제 대기', variant: 'secondary' },
-  paid: { label: '결제 완료', variant: 'default' },
-  preparing: { label: '배송 준비중', variant: 'default' },
-  shipping: { label: '배송중', variant: 'default' },
-  delivered: { label: '배송 완료', variant: 'outline' },
-  cancelled: { label: '취소됨', variant: 'destructive' },
-};
-
-const statusOptions = [
-  { value: 'pending', label: '결제 대기' },
-  { value: 'paid', label: '결제 완료' },
-  { value: 'preparing', label: '배송 준비중' },
-  { value: 'shipping', label: '배송중' },
-  { value: 'delivered', label: '배송 완료' },
-];
 
 interface OrderStats {
   total: number;
   pending: number;
   paid: number;
-  preparing: number;
-  shipping: number;
+  processing: number;
+  shipped: number;
   delivered: number;
+  confirmed: number;
   cancelled: number;
-  totalAmount: number;
+  return_requested: number;
+  returned: number;
+  todayAmount: number;
+  monthAmount: number;
 }
+
+const ALL_STATUSES: OrderStatus[] = [
+  'pending', 'paid', 'processing', 'shipped', 'delivered',
+  'confirmed', 'cancelled', 'return_requested', 'returned',
+];
 
 export default function AdminOrdersPage() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const [page, setPage] = useState(0);
 
-  // 배송사 목록
   const [shippingCompanies, setShippingCompanies] = useState<ShippingCompany[]>([]);
 
   // 필터
@@ -101,14 +111,9 @@ export default function AdminOrdersPage() {
 
   // 통계
   const [stats, setStats] = useState<OrderStats>({
-    total: 0,
-    pending: 0,
-    paid: 0,
-    preparing: 0,
-    shipping: 0,
-    delivered: 0,
-    cancelled: 0,
-    totalAmount: 0,
+    total: 0, pending: 0, paid: 0, processing: 0, shipped: 0,
+    delivered: 0, confirmed: 0, cancelled: 0, return_requested: 0,
+    returned: 0, todayAmount: 0, monthAmount: 0,
   });
 
   // 운송장 등록 모달
@@ -127,256 +132,338 @@ export default function AdminOrdersPage() {
     orderId: string;
     orderNumber: string;
     amount: number;
-  }>({ open: false, orderId: '', orderNumber: '', amount: 0 });
+    isBulk: boolean;
+  }>({ open: false, orderId: '', orderNumber: '', amount: 0, isBulk: false });
+
+  // 자동 구매확정 배치
+  const [autoConfirmPending, setAutoConfirmPending] = useState(0);
+  const [runningBatch, setRunningBatch] = useState(false);
+
+  // 미입금 자동취소 배치
+  const [unpaidExpiredCount, setUnpaidExpiredCount] = useState(0);
+  const [runningCancelBatch, setRunningCancelBatch] = useState(false);
 
   useEffect(() => {
     if (!authLoading) {
-      if (!user) {
-        navigate('/auth/login');
-        return;
-      }
+      if (!user) { navigate('/auth/login'); return; }
       loadOrders();
       loadShippingCompanies();
+      loadStats();
+      loadAutoConfirmPending();
+      loadUnpaidExpired();
     }
   }, [user, authLoading, navigate]);
 
+  useEffect(() => {
+    if (!authLoading && user) loadOrders();
+  }, [page, statusFilter, dateFrom, dateTo]);
+
   async function loadOrders() {
     try {
+      setLoading(true);
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from('orders')
-        .select('id, order_number, status, total_amount, orderer_name, orderer_phone, created_at, payment_method')
-        .order('created_at', { ascending: false });
 
+      let query = supabase
+        .from('orders')
+        .select('id, order_number, status, total_amount, orderer_name, orderer_phone, created_at, payment_method', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+      if (statusFilter !== 'all') query = query.eq('status', statusFilter);
+      if (dateFrom) query = query.gte('created_at', dateFrom);
+      if (dateTo) query = query.lte('created_at', dateTo + 'T23:59:59');
+
+      const { data, error, count } = await query;
       if (error) throw error;
 
-      // 각 주문에 대한 배송 정보 조회
-      const orderIds = (data || []).map((o) => o.id);
-      const { data: shipmentsData } = await supabase
-        .from('shipments')
-        .select('id, order_id, tracking_number, shipping_company_id, status')
-        .in('order_id', orderIds);
+      setTotalCount(count ?? 0);
 
-      const shipmentMap = new Map<string, Shipment>();
-      (shipmentsData || []).forEach((s: any) => {
-        shipmentMap.set(s.order_id, {
-          id: s.id,
-          trackingNumber: s.tracking_number,
-          shippingCompanyId: s.shipping_company_id,
-          status: s.status,
+      const orderIds = (data ?? []).map((o: any) => o.id);
+      let shipmentMap = new Map<string, Shipment>();
+      if (orderIds.length > 0) {
+        const { data: shipmentsData } = await supabase
+          .from('shipments')
+          .select('id, order_id, tracking_number, shipping_company_id, status, company:shipping_companies(name, tracking_url)')
+          .in('order_id', orderIds);
+
+        (shipmentsData ?? []).forEach((s: any) => {
+          shipmentMap.set(s.order_id, {
+            id: s.id,
+            trackingNumber: s.tracking_number,
+            shippingCompanyId: s.shipping_company_id,
+            status: s.status,
+            company: s.company ? { name: s.company.name, trackingUrl: s.company.tracking_url } : undefined,
+          });
         });
-      });
+      }
 
-      const orderList = (data || []).map((o: any) => ({
+      setOrders((data ?? []).map((o: any) => ({
         id: o.id,
         orderNumber: o.order_number,
         status: o.status,
         totalAmount: o.total_amount,
         customerName: o.orderer_name,
-        customerPhone: o.orderer_phone,
+        customerPhone: o.orderer_phone ?? '',
         paymentMethod: o.payment_method,
         createdAt: o.created_at,
         shipment: shipmentMap.get(o.id),
-      }));
-
-      setOrders(orderList);
-
-      // 통계 계산
-      const newStats: OrderStats = {
-        total: orderList.length,
-        pending: 0,
-        paid: 0,
-        preparing: 0,
-        shipping: 0,
-        delivered: 0,
-        cancelled: 0,
-        totalAmount: 0,
-      };
-
-      orderList.forEach((order) => {
-        if (order.status in newStats) {
-          (newStats as any)[order.status]++;
-        }
-        if (order.status !== 'cancelled') {
-          newStats.totalAmount += order.totalAmount;
-        }
-      });
-
-      setStats(newStats);
-    } catch (error) {
-      console.error('Failed to load orders:', error);
+      })));
+    } catch (err) {
+      console.error('Failed to load orders:', err);
     } finally {
       setLoading(false);
     }
   }
 
-  // 필터링된 주문 목록
-  const filteredOrders = orders.filter((order) => {
-    const matchesSearch =
-      !searchQuery ||
-      order.orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.customerName.toLowerCase().includes(searchQuery.toLowerCase());
-
-    const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
-
-    const orderDate = new Date(order.createdAt);
-    const matchesDateFrom = !dateFrom || orderDate >= new Date(dateFrom);
-    const matchesDateTo = !dateTo || orderDate <= new Date(dateTo + 'T23:59:59');
-
-    return matchesSearch && matchesStatus && matchesDateFrom && matchesDateTo;
-  });
-
-  // 전체 선택/해제
-  function toggleSelectAll() {
-    if (selectedIds.size === filteredOrders.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(filteredOrders.map((o) => o.id)));
-    }
-  }
-
-  // 개별 선택
-  function toggleSelect(id: string) {
-    const newSet = new Set(selectedIds);
-    if (newSet.has(id)) {
-      newSet.delete(id);
-    } else {
-      newSet.add(id);
-    }
-    setSelectedIds(newSet);
-  }
-
-  // 일괄 상태 변경
-  async function handleBulkStatusChange(newStatus: string) {
-    if (selectedIds.size === 0) return;
-    if (!confirm(`선택한 ${selectedIds.size}개 주문의 상태를 변경하시겠습니까?`)) return;
-
+  async function loadStats() {
     try {
       const supabase = createClient();
-      const { error } = await supabase
+      const { data } = await supabase
         .from('orders')
-        .update({ status: newStatus })
-        .in('id', Array.from(selectedIds));
+        .select('status, total_amount, created_at');
 
-      if (error) throw error;
+      if (!data) return;
 
-      setSelectedIds(new Set());
-      await loadOrders();
-      alert('주문 상태가 변경되었습니다.');
-    } catch (error) {
-      console.error('Failed to bulk update:', error);
-      alert('일괄 변경 중 오류가 발생했습니다.');
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+      const s: OrderStats = {
+        total: data.length, pending: 0, paid: 0, processing: 0, shipped: 0,
+        delivered: 0, confirmed: 0, cancelled: 0, return_requested: 0,
+        returned: 0, todayAmount: 0, monthAmount: 0,
+      };
+
+      data.forEach((o: any) => {
+        if (o.status in s) (s as any)[o.status]++;
+        if (o.status !== 'cancelled' && o.status !== 'returned') {
+          if (o.created_at >= todayStart) s.todayAmount += o.total_amount ?? 0;
+          if (o.created_at >= monthStart) s.monthAmount += o.total_amount ?? 0;
+        }
+      });
+
+      setStats(s);
+    } catch (err) {
+      console.error('Failed to load stats:', err);
     }
   }
 
-  // CSV 내보내기
-  async function handleExport() {
-    const headers = ['주문번호', '주문일시', '고객명', '전화번호', '결제방법', '금액', '상태', '운송장번호'];
-    const rows = filteredOrders.map((order) => [
-      order.orderNumber,
-      format(new Date(order.createdAt), 'yyyy-MM-dd HH:mm'),
-      order.customerName,
-      (order as any).customerPhone || '',
-      (order as any).paymentMethod || '',
-      order.totalAmount,
-      statusLabels[order.status]?.label || order.status,
-      order.shipment?.trackingNumber || '',
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map((row) =>
-        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')
-      ),
-    ].join('\n');
-
-    const bom = '\uFEFF';
-    const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `orders_${format(new Date(), 'yyyyMMdd')}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+  async function loadAutoConfirmPending() {
+    try {
+      const supabase = createClient();
+      const { count } = await supabase
+        .from('orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'delivered')
+        .not('auto_confirm_at', 'is', null)
+        .lte('auto_confirm_at', new Date().toISOString());
+      setAutoConfirmPending(count ?? 0);
+    } catch {
+      // ignore
+    }
   }
 
-  // 입금 확인 처리
-  async function handleConfirmDeposit() {
+  async function handleRunAutoConfirm() {
+    if (autoConfirmPending === 0) { alert('자동확정 대기 주문이 없습니다.'); return; }
+    if (!confirm(`자동 구매확정을 실행합니다.\n대기 건수: ${autoConfirmPending}건\n계속하시겠습니까?`)) return;
+    setRunningBatch(true);
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase.rpc('auto_confirm_orders');
+      if (error) throw error;
+      alert(`자동 구매확정 완료: ${data}건 처리되었습니다.`);
+      await Promise.all([loadOrders(), loadStats(), loadAutoConfirmPending()]);
+    } catch (err: any) {
+      alert(err.message ?? '배치 실행 중 오류가 발생했습니다.');
+    } finally {
+      setRunningBatch(false);
+    }
+  }
+
+  async function loadUnpaidExpired() {
+    try {
+      const supabase = createClient();
+      const { count } = await supabase
+        .from('orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending')
+        .not('payment_deadline', 'is', null)
+        .lte('payment_deadline', new Date().toISOString());
+      setUnpaidExpiredCount(count ?? 0);
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleRunCancelBatch() {
+    if (unpaidExpiredCount === 0) { alert('미입금 만료 주문이 없습니다.'); return; }
+    if (!confirm(`미입금 자동취소를 실행합니다.\n대상 건수: ${unpaidExpiredCount}건\n재고가 자동으로 복구됩니다. 계속하시겠습니까?`)) return;
+    setRunningCancelBatch(true);
     try {
       const supabase = createClient();
 
-      // 주문 상태를 결제 완료로 변경
-      const { error } = await supabase
+      // 만료된 pending 주문 목록 조회
+      const { data: expiredOrders, error: fetchErr } = await supabase
         .from('orders')
-        .update({
-          status: 'paid',
-          paid_at: new Date().toISOString(),
-        })
-        .eq('id', depositModal.orderId);
+        .select('id')
+        .eq('status', 'pending')
+        .not('payment_deadline', 'is', null)
+        .lte('payment_deadline', new Date().toISOString());
 
-      if (error) throw error;
+      if (fetchErr) throw fetchErr;
 
-      // 가상계좌 상태도 업데이트
-      await supabase
-        .from('order_virtual_accounts')
-        .update({
-          status: 'deposited',
-          deposited_at: new Date().toISOString(),
-        })
-        .eq('order_id', depositModal.orderId);
+      // JS executeFullCancel로 각 주문 처리 (포인트·쿠폰·예치금 복구 포함)
+      const { executeFullCancel } = await import('@/services/refundOrchestrator');
+      let successCount = 0;
+      const errors: string[] = [];
 
-      setDepositModal({ open: false, orderId: '', orderNumber: '', amount: 0 });
-      await loadOrders();
-      alert('입금이 확인되었습니다.');
-    } catch (error) {
-      console.error('Failed to confirm deposit:', error);
-      alert('입금 확인 처리 중 오류가 발생했습니다.');
+      for (const order of expiredOrders ?? []) {
+        const result = await executeFullCancel(order.id, '미입금 자동취소 (입금기한 초과)', user?.id);
+        if (result.success) {
+          successCount++;
+        } else {
+          errors.push(`${order.id}: ${result.error}`);
+        }
+      }
+
+      if (errors.length > 0) {
+        alert(`${successCount}건 취소 완료, ${errors.length}건 실패:\n${errors.slice(0, 3).join('\n')}`);
+      } else {
+        alert(`미입금 자동취소 완료: ${successCount}건 처리되었습니다.`);
+      }
+
+      await Promise.all([loadOrders(), loadStats(), loadUnpaidExpired()]);
+    } catch (err: any) {
+      alert(err.message ?? '배치 실행 중 오류가 발생했습니다.');
+    } finally {
+      setRunningCancelBatch(false);
     }
   }
 
   async function loadShippingCompanies() {
-    try {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from('shipping_companies')
-        .select('id, name, code')
-        .eq('is_active', true)
-        .order('sort_order');
-
-      setShippingCompanies(
-        (data || []).map((c: any) => ({
-          id: c.id,
-          name: c.name,
-          code: c.code,
-        }))
-      );
-    } catch (error) {
-      console.error('Failed to load shipping companies:', error);
-    }
+    const supabase = createClient();
+    const { data } = await supabase
+      .from('shipping_companies')
+      .select('id, name, code, tracking_url')
+      .eq('is_active', true)
+      .order('sort_order');
+    setShippingCompanies(
+      (data ?? []).map((c: any) => ({ id: c.id, name: c.name, code: c.code, trackingUrl: c.tracking_url }))
+    );
   }
 
-  async function handleStatusChange(orderId: string, newStatus: string) {
-    try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: newStatus })
-        .eq('id', orderId);
+  // 검색 필터 (클라이언트 측, 페이지 내에서)
+  const filteredOrders = orders.filter((o) => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      o.orderNumber.toLowerCase().includes(q) ||
+      o.customerName.toLowerCase().includes(q) ||
+      o.customerPhone.includes(q)
+    );
+  });
 
-      if (error) throw error;
+  // 선택
+  function toggleSelectAll() {
+    if (selectedIds.size === filteredOrders.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(filteredOrders.map((o) => o.id)));
+  }
+  function toggleSelect(id: string) {
+    const s = new Set(selectedIds);
+    s.has(id) ? s.delete(id) : s.add(id);
+    setSelectedIds(s);
+  }
+
+  // 일괄 상태 변경
+  async function handleBulkStatusChange(toStatus: string) {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`선택한 ${selectedIds.size}개 주문 상태를 '${ORDER_STATUS_LABELS[toStatus as OrderStatus]}'으로 변경하시겠습니까?`)) return;
+
+    const ids = Array.from(selectedIds);
+    let successCount = 0;
+    const errors: string[] = [];
+
+    for (const id of ids) {
+      const order = orders.find((o) => o.id === id);
+      if (!order) continue;
+      if (!isValidTransition(order.status as OrderStatus, toStatus as OrderStatus)) {
+        errors.push(`${order.orderNumber}: ${ORDER_STATUS_LABELS[order.status as OrderStatus]} → ${ORDER_STATUS_LABELS[toStatus as OrderStatus]} 전이 불가`);
+        continue;
+      }
+      try {
+        await transitionOrderStatus(id, toStatus as OrderStatus, { changedBy: user?.id });
+        successCount++;
+      } catch (e: any) {
+        errors.push(`${order.orderNumber}: ${e.message}`);
+      }
+    }
+
+    setSelectedIds(new Set());
+    await loadOrders();
+    await loadStats();
+
+    if (errors.length > 0) alert(`${successCount}건 성공, ${errors.length}건 실패:\n${errors.join('\n')}`);
+    else alert(`${successCount}건 상태 변경 완료`);
+  }
+
+  // 개별 상태 변경
+  async function handleStatusChange(orderId: string, toStatus: string) {
+    try {
+      await transitionOrderStatus(orderId, toStatus as OrderStatus, { changedBy: user?.id });
       await loadOrders();
-    } catch (error) {
-      console.error('Failed to update order status:', error);
-      alert(error instanceof Error ? error.message : '주문 상태 변경 중 오류가 발생했습니다.');
+      await loadStats();
+    } catch (err: any) {
+      alert(err.message ?? '상태 변경 중 오류가 발생했습니다.');
     }
   }
 
-  function openShipmentModal(order: Order) {
+  // 입금 확인 (단건)
+  function openDepositModal(order: OrderRow) {
+    setDepositModal({ open: true, orderId: order.id, orderNumber: order.orderNumber, amount: order.totalAmount, isBulk: false });
+  }
+
+  // 일괄 입금 확인
+  function openBulkDepositModal() {
+    const pendingSelected = Array.from(selectedIds).filter((id) => {
+      const o = orders.find((x) => x.id === id);
+      return o?.status === 'pending' && o?.paymentMethod !== 'card';
+    });
+    if (pendingSelected.length === 0) { alert('입금 확인 가능한 주문이 없습니다.'); return; }
+    setDepositModal({ open: true, orderId: pendingSelected.join(','), orderNumber: `${pendingSelected.length}건`, amount: 0, isBulk: true });
+  }
+
+  async function handleConfirmDeposit() {
+    try {
+      const supabase = createClient();
+      const ids = depositModal.isBulk
+        ? depositModal.orderId.split(',')
+        : [depositModal.orderId];
+
+      for (const id of ids) {
+        await transitionOrderStatus(id, 'paid', { note: '수동 입금 확인', changedBy: user?.id });
+        await supabase
+          .from('order_virtual_accounts')
+          .update({ status: 'deposited', deposited_at: new Date().toISOString() })
+          .eq('order_id', id);
+      }
+
+      setDepositModal({ open: false, orderId: '', orderNumber: '', amount: 0, isBulk: false });
+      setSelectedIds(new Set());
+      await loadOrders();
+      await loadStats();
+      alert(`${ids.length}건 입금 확인 완료`);
+    } catch (err: any) {
+      alert(err.message ?? '입금 확인 처리 중 오류가 발생했습니다.');
+    }
+  }
+
+  // 운송장 등록
+  function openShipmentModal(order: OrderRow) {
     setShipmentModal({
       open: true,
       orderId: order.id,
-      trackingNumber: order.shipment?.trackingNumber || '',
-      shippingCompanyId: order.shipment?.shippingCompanyId || '',
+      trackingNumber: order.shipment?.trackingNumber ?? '',
+      shippingCompanyId: order.shipment?.shippingCompanyId ?? '',
       existingShipmentId: order.shipment?.id,
     });
   }
@@ -386,60 +473,70 @@ export default function AdminOrdersPage() {
       alert('배송사와 운송장 번호를 모두 입력해주세요.');
       return;
     }
-
     setSavingShipment(true);
-
     try {
       const supabase = createClient();
+      const shipmentData = {
+        shipping_company_id: shipmentModal.shippingCompanyId,
+        tracking_number: shipmentModal.trackingNumber,
+        status: 'shipped',
+        shipped_at: new Date().toISOString(),
+      };
 
       if (shipmentModal.existingShipmentId) {
-        // 기존 배송 정보 업데이트
-        const { error } = await supabase
-          .from('shipments')
-          .update({
-            shipping_company_id: shipmentModal.shippingCompanyId,
-            tracking_number: shipmentModal.trackingNumber,
-            status: 'shipping',
-            shipped_at: new Date().toISOString(),
-          })
-          .eq('id', shipmentModal.existingShipmentId);
-
-        if (error) throw error;
+        await supabase.from('shipments').update(shipmentData).eq('id', shipmentModal.existingShipmentId);
       } else {
-        // 새 배송 정보 등록
-        const { error } = await supabase
-          .from('shipments')
-          .insert({
-            order_id: shipmentModal.orderId,
-            shipping_company_id: shipmentModal.shippingCompanyId,
-            tracking_number: shipmentModal.trackingNumber,
-            status: 'shipping',
-            shipped_at: new Date().toISOString(),
-          });
-
-        if (error) throw error;
+        await supabase.from('shipments').insert({ order_id: shipmentModal.orderId, ...shipmentData });
       }
 
-      // 주문 상태도 '배송중'으로 변경
-      await supabase
-        .from('orders')
-        .update({ status: 'shipping' })
-        .eq('id', shipmentModal.orderId);
+      const order = orders.find((o) => o.id === shipmentModal.orderId);
+      if (order && isValidTransition(order.status as OrderStatus, 'shipped')) {
+        await transitionOrderStatus(shipmentModal.orderId, 'shipped', { note: `운송장: ${shipmentModal.trackingNumber}`, changedBy: user?.id });
+      }
 
       setShipmentModal({ open: false, orderId: '', trackingNumber: '', shippingCompanyId: '' });
       await loadOrders();
       alert('운송장이 등록되었습니다.');
-    } catch (error) {
-      console.error('Failed to save shipment:', error);
-      alert('운송장 등록 중 오류가 발생했습니다.');
+    } catch (err: any) {
+      alert(err.message ?? '운송장 등록 중 오류가 발생했습니다.');
     } finally {
       setSavingShipment(false);
     }
   }
 
-  if (authLoading || loading) {
-    return <div className="container py-8">로딩 중...</div>;
+  // CSV 내보내기
+  async function handleExport() {
+    const headers = ['주문번호', '주문일시', '고객명', '전화번호', '결제방법', '금액', '상태', '운송장번호'];
+    const rows = filteredOrders.map((o) => [
+      o.orderNumber,
+      format(new Date(o.createdAt), 'yyyy-MM-dd HH:mm'),
+      o.customerName,
+      o.customerPhone,
+      o.paymentMethod ?? '',
+      o.totalAmount,
+      ORDER_STATUS_LABELS[o.status as OrderStatus] ?? o.status,
+      o.shipment?.trackingNumber ?? '',
+    ]);
+    const csv = [headers, ...rows]
+      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `orders_${format(new Date(), 'yyyyMMdd')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
+
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+
+  const pendingNonCardSelected = Array.from(selectedIds).filter((id) => {
+    const o = orders.find((x) => x.id === id);
+    return o?.status === 'pending' && o?.paymentMethod !== 'card';
+  });
+
+  if (authLoading) return <div className="container py-8">로딩 중...</div>;
 
   return (
     <div className="container py-8">
@@ -451,110 +548,137 @@ export default function AdminOrdersPage() {
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">주문 관리</h1>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => loadOrders()}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            새로고침
+          <Button onClick={() => navigate('/admin/orders/new')}>
+            <Plus className="mr-2 h-4 w-4" />새 주문 생성
+          </Button>
+          <Button variant="outline" onClick={() => navigate('/admin/orders/bulk-shipment')}>
+            <Upload className="mr-2 h-4 w-4" />일괄 송장 등록
           </Button>
           <Button variant="outline" onClick={handleExport}>
-            <Download className="mr-2 h-4 w-4" />
-            내보내기
+            <Download className="mr-2 h-4 w-4" />내보내기
+          </Button>
+          <Button variant="outline" onClick={() => { loadOrders(); loadStats(); loadAutoConfirmPending(); loadUnpaidExpired(); }}>
+            <RefreshCw className="mr-2 h-4 w-4" />새로고침
           </Button>
         </div>
       </div>
 
+      {/* 자동 구매확정 배치 패널 */}
+      {autoConfirmPending > 0 && (
+        <Card className="mb-4 flex items-center justify-between gap-4 bg-amber-50 border-amber-200 px-5 py-3">
+          <div className="flex items-center gap-3">
+            <PlayCircle className="h-5 w-5 text-amber-600 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-amber-800">
+                자동 구매확정 대기 {autoConfirmPending}건
+              </p>
+              <p className="text-xs text-amber-600">배송완료 후 자동확정 기간이 지난 주문이 있습니다.</p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={handleRunAutoConfirm}
+            disabled={runningBatch}
+            className="bg-amber-600 hover:bg-amber-700 text-white flex-shrink-0"
+          >
+            {runningBatch ? '처리 중...' : '지금 자동확정 실행'}
+          </Button>
+        </Card>
+      )}
+
+      {/* 미입금 자동취소 배치 패널 */}
+      {unpaidExpiredCount > 0 && (
+        <Card className="mb-4 flex items-center justify-between gap-4 bg-red-50 border-red-200 px-5 py-3">
+          <div className="flex items-center gap-3">
+            <Clock className="h-5 w-5 text-red-600 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-red-800">
+                미입금 만료 {unpaidExpiredCount}건
+              </p>
+              <p className="text-xs text-red-600">입금 기한이 지난 대기 주문이 있습니다. 재고가 자동으로 복구됩니다.</p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={handleRunCancelBatch}
+            disabled={runningCancelBatch}
+            className="bg-red-600 hover:bg-red-700 text-white flex-shrink-0"
+          >
+            {runningCancelBatch ? '처리 중...' : '지금 자동취소 실행'}
+          </Button>
+        </Card>
+      )}
+
       {/* 통계 카드 */}
-      <div className="mb-6 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-        <Card className="p-4 text-center">
-          <p className="text-sm text-gray-500">전체</p>
-          <p className="text-2xl font-bold">{stats.total}</p>
+      <div className="mb-6 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+        {ALL_STATUSES.map((s) => (
+          <Card
+            key={s}
+            className={`p-3 text-center cursor-pointer transition-all ${statusFilter === s ? 'ring-2 ring-blue-500' : ''}`}
+            onClick={() => { setStatusFilter(s === statusFilter ? 'all' : s); setPage(0); }}
+          >
+            <p className="text-xs text-gray-500 truncate">{ORDER_STATUS_LABELS[s]}</p>
+            <p className="text-xl font-bold">{(stats as any)[s] ?? 0}</p>
+          </Card>
+        ))}
+        <Card className="p-3 text-center col-span-1">
+          <p className="text-xs text-gray-500">오늘 매출</p>
+          <p className="text-sm font-bold text-green-700">{formatCurrency(stats.todayAmount)}</p>
         </Card>
-        <Card className="p-4 text-center bg-yellow-50 border-yellow-200">
-          <p className="text-sm text-yellow-700">결제 대기</p>
-          <p className="text-2xl font-bold text-yellow-700">{stats.pending}</p>
-        </Card>
-        <Card className="p-4 text-center bg-green-50 border-green-200">
-          <p className="text-sm text-green-700">결제 완료</p>
-          <p className="text-2xl font-bold text-green-700">{stats.paid}</p>
-        </Card>
-        <Card className="p-4 text-center bg-blue-50 border-blue-200">
-          <p className="text-sm text-blue-700">배송 준비</p>
-          <p className="text-2xl font-bold text-blue-700">{stats.preparing}</p>
-        </Card>
-        <Card className="p-4 text-center bg-purple-50 border-purple-200">
-          <p className="text-sm text-purple-700">배송중</p>
-          <p className="text-2xl font-bold text-purple-700">{stats.shipping}</p>
-        </Card>
-        <Card className="p-4 text-center bg-gray-50">
-          <p className="text-sm text-gray-500">배송 완료</p>
-          <p className="text-2xl font-bold">{stats.delivered}</p>
-        </Card>
-        <Card className="p-4 text-center bg-red-50 border-red-200">
-          <p className="text-sm text-red-700">취소</p>
-          <p className="text-2xl font-bold text-red-700">{stats.cancelled}</p>
+        <Card className="p-3 text-center col-span-1">
+          <p className="text-xs text-gray-500">이번달 매출</p>
+          <p className="text-sm font-bold text-blue-700">{formatCurrency(stats.monthAmount)}</p>
         </Card>
       </div>
 
       {/* 필터 */}
       <Card className="mb-4 p-4">
-        <div className="flex flex-wrap gap-4">
-          <div className="relative flex-1 min-w-[200px]">
+        <div className="flex flex-wrap gap-3">
+          <div className="relative flex-1 min-w-[220px]">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
             <Input
-              placeholder="주문번호 또는 고객명 검색..."
+              placeholder="주문번호 / 고객명 / 전화번호"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
             />
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(0); }}>
             <SelectTrigger className="w-[150px]">
               <Filter className="mr-2 h-4 w-4" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">전체 상태</SelectItem>
-              {statusOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
+              {ALL_STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>{ORDER_STATUS_LABELS[s]}</SelectItem>
               ))}
-              <SelectItem value="cancelled">취소됨</SelectItem>
             </SelectContent>
           </Select>
-          <Input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="w-[150px]"
-            placeholder="시작일"
-          />
-          <Input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="w-[150px]"
-            placeholder="종료일"
-          />
+          <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0); }} className="w-[150px]" />
+          <Input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(0); }} className="w-[150px]" />
         </div>
       </Card>
 
-      {/* 선택된 항목 액션바 */}
+      {/* 선택 액션바 */}
       {selectedIds.size > 0 && (
         <Card className="mb-4 p-3 bg-blue-50 border-blue-200">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-blue-700">
-              {selectedIds.size}개 주문 선택됨
-            </span>
-            <div className="flex gap-2">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <span className="text-sm font-medium text-blue-700">{selectedIds.size}개 선택됨</span>
+            <div className="flex gap-2 flex-wrap">
+              {pendingNonCardSelected.length > 0 && (
+                <Button size="sm" variant="outline" onClick={openBulkDepositModal}>
+                  <CreditCard className="mr-1 h-4 w-4" />
+                  일괄 입금 확인 ({pendingNonCardSelected.length})
+                </Button>
+              )}
               <Select onValueChange={handleBulkStatusChange}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue placeholder="상태 변경" />
+                <SelectTrigger className="w-[140px] h-8">
+                  <SelectValue placeholder="일괄 상태 변경" />
                 </SelectTrigger>
                 <SelectContent>
-                  {statusOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
+                  {ALL_STATUSES.filter((s) => s !== 'pending').map((s) => (
+                    <SelectItem key={s} value={s}>{ORDER_STATUS_LABELS[s]}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -566,108 +690,105 @@ export default function AdminOrdersPage() {
         </Card>
       )}
 
-      {filteredOrders.length === 0 ? (
-        <Card className="p-12 text-center">
-          <p className="text-gray-500">
-            {orders.length === 0 ? '주문 내역이 없습니다.' : '검색 결과가 없습니다.'}
-          </p>
+      {/* 주문 목록 */}
+      {loading ? (
+        <Card className="p-12 text-center text-gray-400">로딩 중...</Card>
+      ) : filteredOrders.length === 0 ? (
+        <Card className="p-12 text-center text-gray-500">
+          {orders.length === 0 ? '주문 내역이 없습니다.' : '검색 결과가 없습니다.'}
         </Card>
       ) : (
         <Card>
-          {/* 테이블 헤더 */}
-          <div className="flex items-center gap-4 p-4 border-b bg-gray-50">
-            <input
-              type="checkbox"
+          {/* 헤더 */}
+          <div className="flex items-center gap-4 p-4 border-b bg-gray-50 text-sm font-medium text-gray-600">
+            <input type="checkbox"
               checked={selectedIds.size === filteredOrders.length && filteredOrders.length > 0}
-              onChange={toggleSelectAll}
-              className="h-4 w-4 rounded"
-            />
-            <div className="w-32 font-medium text-sm text-gray-600">주문번호</div>
-            <div className="flex-1 font-medium text-sm text-gray-600">고객정보</div>
-            <div className="w-24 text-center font-medium text-sm text-gray-600">금액</div>
-            <div className="w-24 text-center font-medium text-sm text-gray-600">상태</div>
-            <div className="w-48"></div>
+              onChange={toggleSelectAll} className="h-4 w-4 rounded" />
+            <div className="w-36">주문번호</div>
+            <div className="flex-1">고객정보</div>
+            <div className="w-24 text-center">결제금액</div>
+            <div className="w-28 text-center">상태</div>
+            <div className="w-52"></div>
           </div>
 
           <div className="divide-y">
             {filteredOrders.map((order) => {
-              const statusInfo = statusLabels[order.status] || { label: order.status, variant: 'default' as const };
+              const statusColor = ORDER_STATUS_COLORS[order.status as OrderStatus] ?? 'bg-gray-100 text-gray-700';
+              const nextStates = ORDER_STATUS_TRANSITIONS[order.status as OrderStatus] ?? [];
+              const isFinal = nextStates.length === 0;
+              const trackingUrl = order.shipment?.company?.trackingUrl && order.shipment.trackingNumber
+                ? order.shipment.company.trackingUrl.replace('{tracking_number}', order.shipment.trackingNumber)
+                : null;
 
               return (
                 <div key={order.id} className="flex items-center gap-4 p-4 hover:bg-gray-50">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(order.id)}
-                    onChange={() => toggleSelect(order.id)}
-                    className="h-4 w-4 rounded"
-                  />
-                  <div className="w-32">
+                  <input type="checkbox" checked={selectedIds.has(order.id)}
+                    onChange={() => toggleSelect(order.id)} className="h-4 w-4 rounded" />
+
+                  <div className="w-36">
                     <p className="font-mono text-sm font-medium">{order.orderNumber}</p>
-                    <p className="text-xs text-gray-500">
-                      {format(new Date(order.createdAt), 'MM/dd HH:mm')}
-                    </p>
+                    <p className="text-xs text-gray-500">{format(new Date(order.createdAt), 'MM/dd HH:mm')}</p>
                   </div>
-                  <div className="flex-1">
-                    <p className="font-medium">{order.customerName}</p>
-                    {(order as any).paymentMethod && (
-                      <p className="text-xs text-gray-500">
-                        {(order as any).paymentMethod === 'card' && '카드결제'}
-                        {(order as any).paymentMethod === 'virtual_account' && '가상계좌'}
-                        {(order as any).paymentMethod === 'bank_transfer' && '무통장입금'}
+
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{order.customerName}</p>
+                    <p className="text-xs text-gray-500">{order.customerPhone}</p>
+                    {order.paymentMethod && (
+                      <p className="text-xs text-gray-400">
+                        {order.paymentMethod === 'card' && '카드'}
+                        {order.paymentMethod === 'virtual_account' && '가상계좌'}
+                        {order.paymentMethod === 'bank_transfer' && '무통장'}
                       </p>
                     )}
                   </div>
+
                   <div className="w-24 text-center">
-                    <p className="font-medium">{formatCurrency(order.totalAmount)}</p>
+                    <p className="font-medium text-sm">{formatCurrency(order.totalAmount)}</p>
                   </div>
-                  <div className="w-24 text-center">
-                    <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+
+                  <div className="w-28 text-center">
+                    <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${statusColor}`}>
+                      {ORDER_STATUS_LABELS[order.status as OrderStatus] ?? order.status}
+                    </span>
+                    {trackingUrl && (
+                      <a href={trackingUrl} target="_blank" rel="noopener noreferrer"
+                        className="mt-1 block text-xs text-blue-500 hover:underline">
+                        배송조회
+                      </a>
+                    )}
                   </div>
-                  <div className="flex gap-1 w-48 justify-end">
-                    {order.status === 'pending' && (order as any).paymentMethod !== 'card' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          setDepositModal({
-                            open: true,
-                            orderId: order.id,
-                            orderNumber: order.orderNumber,
-                            amount: order.totalAmount,
-                          })
-                        }
-                        title="입금 확인"
-                      >
-                        <CreditCard className="h-4 w-4" />
+
+                  <div className="flex gap-1 w-52 justify-end">
+                    {order.status === 'pending' && order.paymentMethod !== 'card' && (
+                      <Button size="sm" variant="outline" onClick={() => openDepositModal(order)} title="입금 확인">
+                        <CreditCard className="h-3.5 w-3.5" />
                       </Button>
                     )}
-                    <Select
-                      value={order.status}
-                      onValueChange={(value) => handleStatusChange(order.id, value)}
-                    >
-                      <SelectTrigger className="w-28 h-8">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {statusOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
+
+                    {!isFinal ? (
+                      <Select value={order.status} onValueChange={(v) => handleStatusChange(order.id, v)}>
+                        <SelectTrigger className="w-28 h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={order.status} disabled>
+                            {ORDER_STATUS_LABELS[order.status as OrderStatus]}
                           </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => openShipmentModal(order)}
-                      title="운송장"
-                    >
+                          {nextStates.map((s) => (
+                            <SelectItem key={s} value={s}>{ORDER_STATUS_LABELS[s]}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <span className="w-28 h-8 inline-flex items-center justify-center text-xs text-gray-400">확정됨</span>
+                    )}
+
+                    <Button size="sm" variant="ghost" onClick={() => openShipmentModal(order)} title="운송장 등록">
                       <Truck className="h-4 w-4" />
                     </Button>
-                    <Link to={`/mypage/orders/${order.orderNumber}`}>
-                      <Button size="sm" variant="ghost" title="상세">
-                        상세
-                      </Button>
+
+                    <Link to={`/admin/orders/${order.id}`}>
+                      <Button size="sm" variant="ghost">상세</Button>
                     </Link>
                   </div>
                 </div>
@@ -677,61 +798,63 @@ export default function AdminOrdersPage() {
         </Card>
       )}
 
+      {/* 페이지네이션 */}
+      {totalPages > 1 && (
+        <div className="mt-4 flex items-center justify-center gap-2">
+          <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+            const p = page < 4 ? i : page - 3 + i;
+            if (p >= totalPages) return null;
+            return (
+              <Button key={p} variant={p === page ? 'default' : 'outline'} size="sm"
+                onClick={() => setPage(p)}>
+                {p + 1}
+              </Button>
+            );
+          })}
+          <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+          <span className="text-sm text-gray-500 ml-2">총 {totalCount}건</span>
+        </div>
+      )}
+
       {/* 운송장 등록 모달 */}
       {shipmentModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <Card className="w-full max-w-md p-6">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-bold">운송장 등록</h2>
-              <button
-                onClick={() => setShipmentModal({ open: false, orderId: '', trackingNumber: '', shippingCompanyId: '' })}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-5 w-5" />
+              <button onClick={() => setShipmentModal({ open: false, orderId: '', trackingNumber: '', shippingCompanyId: '' })}>
+                <X className="h-5 w-5 text-gray-400" />
               </button>
             </div>
-
             <div className="space-y-4">
               <div>
-                <Label htmlFor="shippingCompany">배송사</Label>
-                <Select
-                  value={shipmentModal.shippingCompanyId}
-                  onValueChange={(value) =>
-                    setShipmentModal((prev) => ({ ...prev, shippingCompanyId: value }))
-                  }
-                >
-                  <SelectTrigger id="shippingCompany" className="mt-1">
+                <label className="text-sm font-medium">배송사</label>
+                <Select value={shipmentModal.shippingCompanyId}
+                  onValueChange={(v) => setShipmentModal((p) => ({ ...p, shippingCompanyId: v }))}>
+                  <SelectTrigger className="mt-1">
                     <SelectValue placeholder="배송사 선택" />
                   </SelectTrigger>
                   <SelectContent>
-                    {shippingCompanies.map((company) => (
-                      <SelectItem key={company.id} value={company.id}>
-                        {company.name}
-                      </SelectItem>
+                    {shippingCompanies.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-
               <div>
-                <Label htmlFor="trackingNumber">운송장 번호</Label>
-                <Input
-                  id="trackingNumber"
-                  value={shipmentModal.trackingNumber}
-                  onChange={(e) =>
-                    setShipmentModal((prev) => ({ ...prev, trackingNumber: e.target.value }))
-                  }
-                  placeholder="운송장 번호 입력"
-                  className="mt-1"
-                />
+                <label className="text-sm font-medium">운송장 번호</label>
+                <Input value={shipmentModal.trackingNumber}
+                  onChange={(e) => setShipmentModal((p) => ({ ...p, trackingNumber: e.target.value }))}
+                  placeholder="운송장 번호 입력" className="mt-1" />
               </div>
             </div>
-
             <div className="mt-6 flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setShipmentModal({ open: false, orderId: '', trackingNumber: '', shippingCompanyId: '' })}
-              >
+              <Button variant="outline" onClick={() => setShipmentModal({ open: false, orderId: '', trackingNumber: '', shippingCompanyId: '' })}>
                 취소
               </Button>
               <Button onClick={handleSaveShipment} disabled={savingShipment}>
@@ -748,41 +871,31 @@ export default function AdminOrdersPage() {
           <Card className="w-full max-w-md p-6">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-bold">입금 확인</h2>
-              <button
-                onClick={() => setDepositModal({ open: false, orderId: '', orderNumber: '', amount: 0 })}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-5 w-5" />
+              <button onClick={() => setDepositModal({ open: false, orderId: '', orderNumber: '', amount: 0, isBulk: false })}>
+                <X className="h-5 w-5 text-gray-400" />
               </button>
             </div>
-
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">주문번호</p>
+                <p className="text-sm text-gray-500">주문번호</p>
                 <p className="font-mono font-bold">{depositModal.orderNumber}</p>
               </div>
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <p className="text-sm text-blue-600">입금 금액</p>
-                <p className="text-xl font-bold text-blue-700">
-                  {formatCurrency(depositModal.amount)}
-                </p>
-              </div>
+              {!depositModal.isBulk && (
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <p className="text-sm text-blue-600">입금 금액</p>
+                  <p className="text-xl font-bold text-blue-700">{formatCurrency(depositModal.amount)}</p>
+                </div>
+              )}
               <p className="text-sm text-gray-500">
-                위 금액이 입금되었음을 확인하셨나요?
-                입금 확인 시 주문 상태가 "결제 완료"로 변경됩니다.
+                입금 확인 시 주문 상태가 <strong>입금확인</strong>으로 변경됩니다.
               </p>
             </div>
-
             <div className="mt-6 flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setDepositModal({ open: false, orderId: '', orderNumber: '', amount: 0 })}
-              >
+              <Button variant="outline" onClick={() => setDepositModal({ open: false, orderId: '', orderNumber: '', amount: 0, isBulk: false })}>
                 취소
               </Button>
               <Button onClick={handleConfirmDeposit}>
-                <Check className="mr-2 h-4 w-4" />
-                입금 확인
+                <Check className="mr-2 h-4 w-4" />입금 확인
               </Button>
             </div>
           </Card>

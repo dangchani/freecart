@@ -47,6 +47,12 @@ interface Settings {
   smtpPass: string;
   smtpSenderName: string;
   smtpSenderEmail: string;
+  // 주문·알림 이메일 설정
+  notificationEmailEnabled: string; // 'true' | 'false'
+  notificationFromName: string;
+  notificationFromEmail: string;
+  resendApiKey: string;
+  emailProvider: string; // 'resend' | 'smtp'
   // 폐쇄몰 설정
   closedMallEnabled: string; // 'true' | 'false'
   closedMallMode: string;    // 'full' | 'product'
@@ -76,6 +82,11 @@ const defaultSettings: Settings = {
   bankTransferAccountNumber: '',
   bankTransferAccountHolder: '',
   bankTransferDeadlineHours: '24',
+  notificationEmailEnabled: 'true',
+  notificationFromName: '',
+  notificationFromEmail: '',
+  resendApiKey: '',
+  emailProvider: 'resend',
   supabaseAccessToken: '',
   emailConfirmRequired: 'false',
   smtpHost: '',
@@ -114,6 +125,11 @@ const keyMap: Record<keyof Settings, string> = {
   bankTransferAccountNumber: 'bank_transfer_account_number',
   bankTransferAccountHolder: 'bank_transfer_account_holder',
   bankTransferDeadlineHours: 'bank_transfer_deadline_hours',
+  notificationEmailEnabled: 'notification_email_enabled',
+  notificationFromName: 'notification_from_name',
+  notificationFromEmail: 'notification_from_email',
+  resendApiKey: 'resend_api_key',
+  emailProvider: 'email_provider',
   supabaseAccessToken: 'supabase_access_token',
   emailConfirmRequired: 'email_confirm_required',
   smtpHost: 'smtp_host',
@@ -145,6 +161,10 @@ export default function AdminSettingsPage() {
   const [useUserLevels, setUseUserLevels] = useState(false);
   const [usePoints, setUsePoints] = useState(false);
   const [pointLabel, setPointLabel] = useState('포인트');
+
+  // 테스트 이메일 발송 상태
+  const [testEmailSending, setTestEmailSending] = useState(false);
+  const [testEmailMsg, setTestEmailMsg] = useState('');
 
   // freecart-web OAuth 연동 상태
   const [oauthConn, setOauthConn] = useState<OAuthConnection | null>(null);
@@ -298,6 +318,31 @@ export default function AdminSettingsPage() {
       setError(err instanceof Error ? err.message : '설정 저장 중 오류가 발생했습니다.');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleTestEmail() {
+    setTestEmailSending(true);
+    setTestEmailMsg('');
+    try {
+      const supabase = createClient();
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) throw new Error('로그인 정보를 확인할 수 없습니다.');
+      const { error } = await supabase.functions.invoke('send-email', {
+        body: {
+          userId:      authUser.id,
+          subject:     '[프리카트] 이메일 발송 테스트',
+          content:     '이 메일은 이메일 발송 설정 테스트입니다.',
+          htmlContent: '<p style="font-family:sans-serif;color:#333;">이 메일은 <strong>이메일 발송 설정 테스트</strong>입니다. 정상적으로 수신되었다면 설정이 완료된 것입니다.</p>',
+          template:    'test',
+        },
+      });
+      if (error) throw new Error(error.message || '발송 실패');
+      setTestEmailMsg('테스트 메일이 발송되었습니다. 받은편지함을 확인해 주세요.');
+    } catch (err) {
+      setTestEmailMsg(err instanceof Error ? err.message : '발송 실패');
+    } finally {
+      setTestEmailSending(false);
     }
   }
 
@@ -587,6 +632,153 @@ export default function AdminSettingsPage() {
                   />
                   <p className="mt-1 text-xs text-gray-500">주문 후 이 시간 안에 입금하지 않으면 자동 취소</p>
                 </div>
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* 주문·알림 이메일 설정 */}
+        <Card className="p-6">
+          <h2 className="mb-1 text-lg font-bold">주문·알림 이메일</h2>
+          <p className="mb-4 text-xs text-gray-500">주문 완료, 배송 시작, 취소 등 트랜잭션 이메일을 고객에게 자동 발송합니다.</p>
+
+          <div className="space-y-4">
+            {/* 이메일 알림 ON/OFF */}
+            <div className="flex items-center justify-between rounded-md border p-4">
+              <div>
+                <p className="font-medium text-gray-800">이메일 알림 발송</p>
+                <p className="mt-0.5 text-xs text-gray-500">끄면 모든 트랜잭션 이메일 발송이 중단됩니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setSettings((prev) => ({
+                    ...prev,
+                    notificationEmailEnabled: prev.notificationEmailEnabled === 'true' ? 'false' : 'true',
+                  }))
+                }
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+                  settings.notificationEmailEnabled === 'true' ? 'bg-blue-600' : 'bg-gray-300'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    settings.notificationEmailEnabled === 'true' ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {settings.notificationEmailEnabled === 'true' && (
+              <div className="space-y-4 pl-1">
+                {/* 발신자 정보 */}
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">발신자 이름</label>
+                    <input
+                      type="text"
+                      name="notificationFromName"
+                      value={settings.notificationFromName}
+                      onChange={handleChange}
+                      className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="프리카트"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">발신 이메일</label>
+                    <input
+                      type="email"
+                      name="notificationFromEmail"
+                      value={settings.notificationFromEmail}
+                      onChange={handleChange}
+                      className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="noreply@myshop.com"
+                    />
+                  </div>
+                </div>
+
+                {/* 발송 방식 */}
+                <div>
+                  <p className="mb-2 text-sm font-medium text-gray-700">발송 방식</p>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label
+                      className={`flex cursor-pointer flex-col gap-1 rounded-md border-2 p-4 transition-colors ${
+                        settings.emailProvider !== 'smtp' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        className="sr-only"
+                        checked={settings.emailProvider !== 'smtp'}
+                        onChange={() => setSettings((prev) => ({ ...prev, emailProvider: 'resend' }))}
+                      />
+                      <span className="font-medium text-gray-800">Resend API</span>
+                      <span className="text-xs text-gray-500">API Key로 직접 발송 (권장)</span>
+                      <span className="mt-1 inline-block rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
+                        무료 3,000건/월
+                      </span>
+                    </label>
+                    <label
+                      className={`flex cursor-pointer flex-col gap-1 rounded-md border-2 p-4 transition-colors ${
+                        settings.emailProvider === 'smtp' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        className="sr-only"
+                        checked={settings.emailProvider === 'smtp'}
+                        onChange={() => setSettings((prev) => ({ ...prev, emailProvider: 'smtp' }))}
+                      />
+                      <span className="font-medium text-gray-800">SMTP</span>
+                      <span className="text-xs text-gray-500">아래 '이메일 인증 설정'의 SMTP 공유</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Resend API Key 입력 */}
+                {settings.emailProvider !== 'smtp' && (
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Resend API Key</label>
+                    <input
+                      type="password"
+                      name="resendApiKey"
+                      value={settings.resendApiKey}
+                      onChange={handleChange}
+                      className="w-full rounded-md border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="re_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      resend.com에서 발급한 API Key를 입력하세요.
+                    </p>
+                  </div>
+                )}
+
+                {/* SMTP 선택 시 안내 */}
+                {settings.emailProvider === 'smtp' && (
+                  <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+                    아래 <strong>'이메일 인증 설정'</strong> 섹션에서 입력한 SMTP 정보가 트랜잭션 이메일에도 함께 사용됩니다.
+                    SMTP 호스트·포트·계정 정보를 해당 섹션에서 설정해 주세요.
+                  </div>
+                )}
+
+                {/* 테스트 발송 */}
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={testEmailSending}
+                    onClick={handleTestEmail}
+                    className="w-full md:w-auto"
+                  >
+                    {testEmailSending ? '발송 중...' : '테스트 메일 발송'}
+                  </Button>
+                  {testEmailMsg && (
+                    <p className={`text-sm ${testEmailMsg.includes('발송되었습니다') ? 'text-green-600' : 'text-red-600'}`}>
+                      {testEmailMsg}
+                    </p>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400">현재 로그인한 관리자 이메일로 테스트 메일을 발송합니다. 설정 저장 후 테스트하세요.</p>
               </div>
             )}
           </div>

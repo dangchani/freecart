@@ -78,6 +78,7 @@ import AdminNewProductPage from './app/admin/products/new/page';
 import AdminEditProductPage from './app/admin/products/[slug]/edit/page';
 import AdminCategoriesPage from './app/admin/categories/page';
 import AdminOrdersPage from './app/admin/orders/page';
+import AdminOrderDetailPage from './app/admin/orders/[id]/page';
 import AdminUsersPage from './app/admin/users/page';
 import AdminUserDetailPage from './app/admin/users/[userId]/page';
 import AdminReviewsPage from './app/admin/reviews/page';
@@ -113,6 +114,7 @@ import AdminProductsBulkPage from './app/admin/products/bulk/page';
 import AdminNewBundlePage from './app/admin/bundles/new/page';
 import AdminEditBundlePage from './app/admin/bundles/[id]/edit/page';
 import AdminOrdersBulkShipmentPage from './app/admin/orders/bulk-shipment/page';
+import AdminOrderInvoicePage from './app/admin/orders/[id]/invoice/page';
 import AdminLogsPage from './app/admin/logs/page';
 import AdminIpBlocksPage from './app/admin/ip-blocks/page';
 import AdminVisitorsPage from './app/admin/visitors/page';
@@ -244,6 +246,11 @@ export default function App() {
             <Route path="/admin/themes/editor" element={<AdminThemeEditorPage />} />
           </Route>
 
+          {/* 거래명세서 (인쇄 전용, 어드민 사이드바 없음) */}
+          <Route element={<RequireAdmin />}>
+            <Route path="/admin/orders/:id/invoice" element={<AdminOrderInvoicePage />} />
+          </Route>
+
           {/* 어드민 */}
           <Route element={<RequireAdmin />}>
             <Route element={<AdminLayout />}>
@@ -257,6 +264,7 @@ export default function App() {
               <Route path="/admin/categories" element={<AdminCategoriesPage />} />
               <Route path="/admin/orders" element={<AdminOrdersPage />} />
               <Route path="/admin/orders/bulk-shipment" element={<AdminOrdersBulkShipmentPage />} />
+              <Route path="/admin/orders/:id" element={<AdminOrderDetailPage />} />
               <Route path="/admin/users" element={<AdminUsersPage />} />
               <Route path="/admin/users/pending" element={<AdminPendingApprovalPage />} />
               <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />

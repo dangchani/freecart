@@ -118,6 +118,8 @@ export async function sendNotification(
     link?: string;
     imageUrl?: string;
     sendEmail?: boolean;
+    emailHtml?: string;
+    emailTemplate?: string;
     sendSms?: boolean;
     sendPush?: boolean;
   }
@@ -136,23 +138,32 @@ export async function sendNotification(
 
   if (error) return false;
 
-  // 이메일 발송
+  // 이메일 발송 (사용자 알림 설정 확인)
   if (options?.sendEmail) {
-    await supabase.functions.invoke('send-email', {
-      body: { userId, subject: title, content: message },
-    });
+    const userSettings = await getNotificationSettings(userId);
+    if (userSettings.email) {
+      supabase.functions.invoke('send-email', {
+        body: {
+          userId,
+          subject:     title,
+          content:     message,
+          htmlContent: options.emailHtml,
+          template:    options.emailTemplate,
+        },
+      });
+    }
   }
 
   // SMS 발송
   if (options?.sendSms) {
-    await supabase.functions.invoke('send-sms', {
+    supabase.functions.invoke('send-sms', {
       body: { userId, message: `[프리카트] ${title}: ${message}` },
     });
   }
 
   // 푸시 알림
   if (options?.sendPush) {
-    await supabase.functions.invoke('send-push', {
+    supabase.functions.invoke('send-push', {
       body: { userId, title, body: message },
     });
   }

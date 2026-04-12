@@ -162,6 +162,42 @@ export async function registerCouponByCode(userId: string, code: string): Promis
 }
 
 /**
+ * 쿠폰 복구 (취소/환불 시 호출)
+ */
+export async function restoreCoupon(orderId: string): Promise<void> {
+  const supabase = createClient();
+
+  // order_id로 사용 내역 조회
+  const { data: usage } = await supabase
+    .from('coupon_usages')
+    .select('coupon_id, user_id, user_coupon_id')
+    .eq('order_id', orderId)
+    .maybeSingle();
+
+  if (!usage) return;
+
+  // user_coupons 사용 취소
+  const updateQuery = supabase
+    .from('user_coupons')
+    .update({ is_used: false, used_at: null, status: 'active' });
+
+  if (usage.user_coupon_id) {
+    await updateQuery.eq('id', usage.user_coupon_id);
+  } else {
+    await updateQuery.eq('coupon_id', usage.coupon_id).eq('user_id', usage.user_id);
+  }
+
+  // coupon_usages 삭제
+  await supabase.from('coupon_usages').delete().eq('order_id', orderId);
+
+  // 쿠폰 사용 횟수 감소
+  await supabase.rpc('increment_coupon_used_count', {
+    coupon_id_input: usage.coupon_id,
+    delta: -1,
+  });
+}
+
+/**
  * 쿠폰 사용 처리 (주문 완료 시 호출)
  */
 export async function useCoupon(userCouponId: string, orderId?: string): Promise<void> {

@@ -18,6 +18,15 @@ DROP FUNCTION IF EXISTS public.admin_create_user CASCADE;
 DROP FUNCTION IF EXISTS public.handle_new_user CASCADE;
 DROP FUNCTION IF EXISTS public.auto_confirm_user CASCADE;
 DROP FUNCTION IF EXISTS public.update_updated_at_column CASCADE;
+DROP FUNCTION IF EXISTS public.get_email_by_login_id CASCADE;
+DROP FUNCTION IF EXISTS public.decrement_variant_stock CASCADE;
+DROP FUNCTION IF EXISTS public.decrement_product_stock CASCADE;
+DROP FUNCTION IF EXISTS public.increment_variant_stock CASCADE;
+DROP FUNCTION IF EXISTS public.increment_product_stock CASCADE;
+DROP FUNCTION IF EXISTS public.increment_coupon_used_count CASCADE;
+DROP FUNCTION IF EXISTS public.increment_user_deposit CASCADE;
+DROP FUNCTION IF EXISTS public.auto_cancel_pending_orders CASCADE;
+DROP FUNCTION IF EXISTS public.auto_confirm_orders CASCADE;
 
 -- 2026.04.07 윌리엄 추가 (joy) — 권한/담당자/동적 필드 관련 함수/트리거
 DROP TRIGGER IF EXISTS trg_users_super_admin_check ON public.users;
@@ -44,6 +53,8 @@ DROP TABLE IF EXISTS
   user_preferences,
   shipping_notifications,
   coupon_usages,
+  user_tag_members,
+  user_tags,
   order_virtual_accounts,
   order_payments,
   payment_gateways,
@@ -78,6 +89,7 @@ DROP TABLE IF EXISTS
   menus,
   settings,
   events,
+  popup_images,
   popups,
   banners,
   notices,
@@ -120,7 +132,11 @@ DROP TABLE IF EXISTS
   product_level_prices,
   product_discounts,
   product_stock_alerts,
+  product_gift_set_items,
+  product_gift_tiers,
+  product_gift_sets,
   product_gifts,
+  bundle_items,
   product_sets,
   product_related,
   product_attribute_values,

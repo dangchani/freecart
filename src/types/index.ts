@@ -167,7 +167,7 @@ export interface Order {
   id: string;
   orderNumber: string;
   userId: string;
-  status: 'pending' | 'paid' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
+  status: 'pending' | 'paid' | 'processing' | 'shipped' | 'delivered' | 'confirmed' | 'cancelled' | 'return_requested' | 'returned';
   items: OrderItem[];
   subtotal: number;
   discountAmount: number;
@@ -194,6 +194,10 @@ export interface Order {
   isGift?: boolean;
   giftMessage?: string;
   adminMemo?: string;
+  // Phase 1: 자동 처리 타임스탬프
+  paymentDeadline?: string;   // 무통장/가상계좌 입금 마감 시각
+  autoConfirmAt?: string;     // 자동 구매확정 예정 시각
+  isAdminOrder?: boolean;     // 관리자 직접 생성 주문
   createdAt: string;
   updatedAt: string;
 }
@@ -211,6 +215,60 @@ export interface OrderItem {
   discountAmount: number;
   totalPrice: number;
   status: string;
+  itemType?: 'purchase' | 'gift' | 'bundle_component';
+}
+
+export interface OrderTimeline {
+  id: string;
+  orderId: string;
+  orderItemId?: string;
+  fromStatus?: string;
+  toStatus: string;
+  changedBy?: string;
+  note?: string;
+  createdAt: string;
+}
+
+export interface CashReceipt {
+  id: string;
+  orderId: string;
+  userId?: string;
+  receiptType: 'income_deduction' | 'business_expense';
+  identifierType: 'phone' | 'business_number' | 'card';
+  identifier: string;
+  amount: number;
+  pgProvider?: string;
+  pgReceiptId?: string;
+  issuedAt?: string;
+  cancelledAt?: string;
+  status: 'pending' | 'issued' | 'cancelled' | 'failed';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TaxInvoice {
+  id: string;
+  orderId: string;
+  userId?: string;
+  businessName: string;
+  businessNumber: string;
+  ceoName?: string;
+  businessAddress?: string;
+  businessType?: string;
+  businessItem?: string;
+  managerName?: string;
+  managerEmail?: string;
+  supplyAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  ntsResultCode?: string;
+  ntsIssuedAt?: string;
+  invoiceNumber?: string;
+  issueType: 'electronic' | 'manual';
+  status: 'requested' | 'issued' | 'cancelled' | 'failed';
+  adminMemo?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // 리뷰 타입
