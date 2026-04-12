@@ -780,6 +780,7 @@ CREATE TABLE IF NOT EXISTS orders (
   payment_deadline        TIMESTAMPTZ,           -- 무통장/가상계좌 입금 마감 시각 (자동취소 기준)
   auto_confirm_at         TIMESTAMPTZ,           -- 자동 구매확정 예정 시각 (배송완료 후 N일)
   is_admin_order          BOOLEAN NOT NULL DEFAULT false, -- 관리자 직접 생성 주문 여부
+  returned_amount         INTEGER NOT NULL DEFAULT 0,    -- 반품 완료 후 환불된 총금액
   created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -807,13 +808,15 @@ CREATE TABLE IF NOT EXISTS order_items (
   quantity         INTEGER NOT NULL,
   discount_amount  INTEGER NOT NULL DEFAULT 0,
   total_price      INTEGER NOT NULL,
-  status           VARCHAR(30) NOT NULL DEFAULT 'pending',
-  item_type        TEXT NOT NULL DEFAULT 'purchase'
-                     CHECK (item_type IN ('purchase', 'gift', 'bundle_component')),
-  gift_set_id      UUID REFERENCES product_gift_sets(id) ON DELETE SET NULL,
-  bundle_item_id   UUID REFERENCES bundle_items(id) ON DELETE SET NULL,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  status              VARCHAR(30) NOT NULL DEFAULT 'pending',
+  item_type           TEXT NOT NULL DEFAULT 'purchase'
+                        CHECK (item_type IN ('purchase', 'gift', 'bundle_component')),
+  gift_set_id         UUID REFERENCES product_gift_sets(id) ON DELETE SET NULL,
+  bundle_item_id      UUID REFERENCES bundle_items(id) ON DELETE SET NULL,
+  returned_quantity   INTEGER NOT NULL DEFAULT 0,  -- 반품 완료된 수량
+  exchanged_quantity  INTEGER NOT NULL DEFAULT 0,  -- 교환 완료된 수량
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id   ON order_items(order_id);
@@ -949,19 +952,28 @@ CREATE TRIGGER trg_shipments_updated_at
 
 -- 5.5 returns (반품)
 -- 상태값: pending → approved → collected → completed | rejected
+-- initiated_by: 'customer' (마이페이지 신청) | 'admin' (관리자 직접 처리)
+-- items 구조: [{order_item_id: uuid, quantity: int}]
 CREATE TABLE IF NOT EXISTS returns (
   id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   order_id             UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   user_id              UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  item_ids             JSONB NOT NULL DEFAULT '[]',
+  items                JSONB NOT NULL DEFAULT '[]',
   reason               VARCHAR(100) NOT NULL,
   description          TEXT,
   status               VARCHAR(30) NOT NULL DEFAULT 'pending',
+  refund_amount        INTEGER NOT NULL DEFAULT 0,   -- 반품 환불금액
+  refund_method        VARCHAR(30),                  -- 'card' | 'bank_transfer' | 'point' | 'deposit'
+  bank_name            VARCHAR(50),                  -- 무통장 환불 계좌
+  bank_account         VARCHAR(30),
+  account_holder       VARCHAR(50),
+  initiated_by         VARCHAR(20) NOT NULL DEFAULT 'customer',
   admin_memo           TEXT,
   tracking_number      VARCHAR(50),
   tracking_company_id  UUID REFERENCES shipping_companies(id) ON DELETE SET NULL,
   approved_at          TIMESTAMPTZ,
   collected_at         TIMESTAMPTZ,
+  processed_at         TIMESTAMPTZ,
   completed_at         TIMESTAMPTZ,
   created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -971,14 +983,17 @@ CREATE INDEX IF NOT EXISTS idx_returns_user_id  ON returns(user_id);
 
 -- 5.6 exchanges (교환)
 -- 상태값: pending → approved → collected → reshipped → completed | rejected
+-- initiated_by: 'customer' (마이페이지 신청) | 'admin' (관리자 직접 처리)
+-- items 구조: [{order_item_id: uuid, quantity: int, exchange_variant_id: uuid}]
 CREATE TABLE IF NOT EXISTS exchanges (
   id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   order_id                 UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   user_id                  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  item_ids                 JSONB NOT NULL DEFAULT '[]',
+  items                    JSONB NOT NULL DEFAULT '[]',
   reason                   VARCHAR(100) NOT NULL,
-  exchange_variant_id      UUID REFERENCES product_variants(id) ON DELETE SET NULL,
   status                   VARCHAR(30) NOT NULL DEFAULT 'pending',
+  price_diff               INTEGER NOT NULL DEFAULT 0,  -- 교환 가격차이 (양수=추가결제, 음수=환불)
+  initiated_by             VARCHAR(20) NOT NULL DEFAULT 'customer',
   admin_memo               TEXT,
   tracking_number          VARCHAR(50),
   tracking_company_id      UUID REFERENCES shipping_companies(id) ON DELETE SET NULL,
@@ -986,6 +1001,7 @@ CREATE TABLE IF NOT EXISTS exchanges (
   reship_company_id        UUID REFERENCES shipping_companies(id) ON DELETE SET NULL,
   approved_at              TIMESTAMPTZ,
   collected_at             TIMESTAMPTZ,
+  processed_at             TIMESTAMPTZ,
   reshipped_at             TIMESTAMPTZ,
   completed_at             TIMESTAMPTZ,
   created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -2715,10 +2731,11 @@ CREATE TABLE IF NOT EXISTS cash_receipts (
   pg_receipt_id   VARCHAR(100),
   issued_at       TIMESTAMPTZ,
   cancelled_at    TIMESTAMPTZ,
-  status          VARCHAR(20) NOT NULL DEFAULT 'pending'
-                  CHECK (status IN ('pending', 'issued', 'cancelled', 'failed')),
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  status               VARCHAR(20) NOT NULL DEFAULT 'pending'
+                       CHECK (status IN ('pending', 'issued', 'cancelled', 'failed')),
+  original_receipt_id  UUID REFERENCES cash_receipts(id) ON DELETE SET NULL,  -- 반품 후 재발행 시 원본 영수증
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_cash_receipts_order_id ON cash_receipts(order_id);
@@ -2750,11 +2767,12 @@ CREATE TABLE IF NOT EXISTS tax_invoices (
   invoice_number    VARCHAR(50),
   issue_type        VARCHAR(20)  NOT NULL DEFAULT 'electronic'
                     CHECK (issue_type IN ('electronic', 'manual')),
-  status            VARCHAR(20)  NOT NULL DEFAULT 'requested'
-                    CHECK (status IN ('requested', 'issued', 'cancelled', 'failed')),
-  admin_memo        TEXT,
-  created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  updated_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  status               VARCHAR(20)  NOT NULL DEFAULT 'requested'
+                       CHECK (status IN ('requested', 'issued', 'cancelled', 'failed')),
+  admin_memo           TEXT,
+  original_invoice_id  UUID REFERENCES tax_invoices(id) ON DELETE SET NULL,  -- 반품 후 재발행 시 원본 계산서
+  created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_tax_invoices_order_id        ON tax_invoices(order_id);
@@ -3271,7 +3289,11 @@ INSERT INTO system_settings (key, value, description) VALUES
   ('point_label', '"포인트"'::jsonb,
    '포인트 명칭(예: 포인트, 적립금, 마일리지). UI 라벨에 사용됨'),
   ('enable_user_tags', 'false'::jsonb,
-   '사용자 태그 기능 ON/OFF. true이면 회원 관리에서 태그 사이드바/태그 관리 탭이 표시됨')
+   '사용자 태그 기능 ON/OFF. true이면 회원 관리에서 태그 사이드바/태그 관리 탭이 표시됨'),
+  ('allow_customer_return', 'true'::jsonb,
+   '고객이 마이페이지에서 직접 반품 신청 가능 여부. false이면 반품 신청 폼 대신 고객센터 안내 메시지 표시'),
+  ('allow_customer_exchange', 'true'::jsonb,
+   '고객이 마이페이지에서 직접 교환 신청 가능 여부. false이면 교환 신청 폼 대신 고객센터 안내 메시지 표시')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------------------------------------------------------------------

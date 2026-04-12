@@ -174,3 +174,21 @@ export async function getSiteInfo(): Promise<{
     naverClientId: parseValue(cache['naver_client_id']) || '',
   };
 }
+
+/** 고객 반품/교환 직접 신청 허용 여부 조회 */
+export async function getCustomerRequestSettings(): Promise<{
+  allowCustomerReturn:   boolean;
+  allowCustomerExchange: boolean;
+}> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from('system_settings')
+    .select('key, value')
+    .in('key', ['allow_customer_return', 'allow_customer_exchange']);
+
+  const map = new Map((data ?? []).map((r: any) => [r.key, r.value]));
+  return {
+    allowCustomerReturn:   (map.get('allow_customer_return')   ?? true) !== false,
+    allowCustomerExchange: (map.get('allow_customer_exchange') ?? true) !== false,
+  };
+}

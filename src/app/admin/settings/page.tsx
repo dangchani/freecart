@@ -161,6 +161,8 @@ export default function AdminSettingsPage() {
   const [useUserLevels, setUseUserLevels] = useState(false);
   const [usePoints, setUsePoints] = useState(false);
   const [pointLabel, setPointLabel] = useState('포인트');
+  const [allowCustomerReturn,   setAllowCustomerReturn]   = useState(true);
+  const [allowCustomerExchange, setAllowCustomerExchange] = useState(true);
 
   // 테스트 이메일 발송 상태
   const [testEmailSending, setTestEmailSending] = useState(false);
@@ -247,7 +249,7 @@ export default function AdminSettingsPage() {
       const { data: sysRows } = await supabase
         .from('system_settings')
         .select('key, value')
-        .in('key', ['require_signup_approval', 'enable_user_assignment', 'enable_user_tags', 'use_user_levels', 'use_points', 'point_label']);
+        .in('key', ['require_signup_approval', 'enable_user_assignment', 'enable_user_tags', 'use_user_levels', 'use_points', 'point_label', 'allow_customer_return', 'allow_customer_exchange']);
       for (const row of sysRows ?? []) {
         if (row.key === 'require_signup_approval') setRequireSignupApproval(row.value === true);
         if (row.key === 'enable_user_assignment') setEnableUserAssignment(row.value === true);
@@ -255,6 +257,8 @@ export default function AdminSettingsPage() {
         if (row.key === 'use_user_levels') setUseUserLevels(row.value === true);
         if (row.key === 'use_points') setUsePoints(row.value === true);
         if (row.key === 'point_label' && typeof row.value === 'string') setPointLabel(row.value);
+        if (row.key === 'allow_customer_return')   setAllowCustomerReturn(row.value !== false);
+        if (row.key === 'allow_customer_exchange') setAllowCustomerExchange(row.value !== false);
       }
     } catch {
       setError('설정을 불러오는 중 오류가 발생했습니다.');
@@ -303,6 +307,8 @@ export default function AdminSettingsPage() {
         { key: 'use_user_levels', value: useUserLevels },
         { key: 'use_points', value: usePoints },
         { key: 'point_label', value: pointLabel },
+        { key: 'allow_customer_return',   value: allowCustomerReturn },
+        { key: 'allow_customer_exchange', value: allowCustomerExchange },
       ];
       for (const { key, value } of sysUpdates) {
         const { error: sysError } = await supabase
@@ -1236,6 +1242,47 @@ export default function AdminSettingsPage() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            <div className="border-t" />
+
+            {/* 반품/교환 신청 설정 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">고객 반품 신청 허용</p>
+                <p className="text-xs text-gray-400 mt-0.5">끄면 마이페이지 반품 신청 폼 대신 고객센터 문의 안내가 표시됩니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAllowCustomerReturn((prev) => !prev)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  allowCustomerReturn ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  allowCustomerReturn ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            <div className="border-t" />
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">고객 교환 신청 허용</p>
+                <p className="text-xs text-gray-400 mt-0.5">끄면 마이페이지 교환 신청 폼 대신 고객센터 문의 안내가 표시됩니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAllowCustomerExchange((prev) => !prev)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  allowCustomerExchange ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  allowCustomerExchange ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
             </div>
           </div>
         </Card>

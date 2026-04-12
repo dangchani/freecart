@@ -6,6 +6,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
 import { ArrowLeft } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { EXCHANGE_REASONS } from '@/services/exchanges';
+import { getCustomerRequestSettings } from '@/services/settings';
 
 interface OrderItem {
   id: string;
@@ -22,14 +24,6 @@ interface OrderDetail {
   items: OrderItem[];
 }
 
-const exchangeReasons = [
-  '사이즈 교환',
-  '색상 교환',
-  '상품 불량',
-  '오배송',
-  '기타',
-];
-
 export default function ExchangeRequestPage() {
   const navigate = useNavigate();
   const { orderNumber } = useParams<{ orderNumber: string }>();
@@ -37,6 +31,7 @@ export default function ExchangeRequestPage() {
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [allowCustomerExchange, setAllowCustomerExchange] = useState(true);
 
   // 선택된 아이템
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
@@ -56,6 +51,8 @@ export default function ExchangeRequestPage() {
   async function loadOrder() {
     try {
       const supabase = createClient();
+      const settings = await getCustomerRequestSettings();
+      setAllowCustomerExchange(settings.allowCustomerExchange);
       const { data, error } = await supabase
         .from('orders')
         .select(`
@@ -129,11 +126,16 @@ export default function ExchangeRequestPage() {
     try {
       const supabase = createClient();
       const { error } = await supabase.from('exchanges').insert({
-        order_id: order!.id,
-        user_id: user!.id,
-        item_ids: selectedItems,
+        order_id:     order!.id,
+        user_id:      user!.id,
+        items:        selectedItems.map((id) => ({
+          order_item_id: id,
+          quantity: order!.items.find((i) => i.id === id)?.quantity ?? 1,
+        })),
         reason,
-        status: 'pending',
+        description:  description || null,
+        initiated_by: 'customer',
+        status:       'pending',
       });
 
       if (error) throw error;
@@ -154,6 +156,25 @@ export default function ExchangeRequestPage() {
 
   if (!order) {
     return null;
+  }
+
+  if (!allowCustomerExchange) {
+    return (
+      <div>
+        <Link
+          to={`/mypage/orders/${orderNumber}`}
+          className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
+        >
+          <ArrowLeft className="mr-1 h-4 w-4" />
+          주문 상세로 돌아가기
+        </Link>
+        <Card className="p-8 text-center">
+          <h1 className="mb-3 text-xl font-bold">교환 신청 안내</h1>
+          <p className="text-gray-600 mb-2">현재 온라인 교환 신청이 운영되지 않습니다.</p>
+          <p className="text-gray-500 text-sm">교환을 원하시면 고객센터로 문의해 주세요.</p>
+        </Card>
+      </div>
+    );
   }
 
   return (
@@ -200,20 +221,20 @@ export default function ExchangeRequestPage() {
         <Card className="p-6">
           <h2 className="mb-4 text-lg font-semibold">교환 사유</h2>
           <div className="space-y-2">
-            {exchangeReasons.map((r) => (
+            {EXCHANGE_REASONS.map((r) => (
               <label
-                key={r}
+                key={r.value}
                 className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-gray-50"
               >
                 <input
                   type="radio"
                   name="reason"
-                  value={r}
-                  checked={reason === r}
+                  value={r.value}
+                  checked={reason === r.value}
                   onChange={(e) => setReason(e.target.value)}
                   className="h-4 w-4 border-gray-300"
                 />
-                <span>{r}</span>
+                <span>{r.label}</span>
               </label>
             ))}
           </div>

@@ -1,5 +1,6 @@
 // 주문 상태 전이 규칙 & 레이블
 // Phase 1: Order Status State Machine
+// Phase 2: OrderItemStatus 추가
 
 export type OrderStatus =
   | 'pending'           // 입금대기
@@ -73,3 +74,32 @@ export function isValidTransition(from: OrderStatus, to: OrderStatus): boolean {
 export function isCancellable(status: OrderStatus): boolean {
   return ORDER_CANCELLABLE_STATUSES.includes(status);
 }
+
+// =============================================================================
+// 주문 아이템 개별 상태 (order_items.status)
+// =============================================================================
+
+export type OrderItemStatus =
+  | 'pending'    // 정상 (기본값)
+  | 'returned'   // 반품처리 완료
+  | 'exchanged'  // 교환처리 완료
+  | 'cancelled'; // 취소
+
+export const ORDER_ITEM_STATUS_LABELS: Record<OrderItemStatus, string> = {
+  pending:   '정상',
+  returned:  '반품처리',
+  exchanged: '교환처리',
+  cancelled: '취소',
+};
+
+export const ORDER_ITEM_STATUS_COLORS: Record<OrderItemStatus, string> = {
+  pending:   'bg-gray-100 text-gray-700',
+  returned:  'bg-orange-100 text-orange-800',
+  exchanged: 'bg-blue-100 text-blue-800',
+  cancelled: 'bg-red-100 text-red-800',
+};
+
+/** 반품/교환 처리가 가능한 주문 상태 */
+export const ORDER_RETURNABLE_STATUSES: OrderStatus[] = [
+  'delivered', 'confirmed', 'return_requested', 'returned',
+];

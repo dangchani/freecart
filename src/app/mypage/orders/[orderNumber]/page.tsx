@@ -10,6 +10,7 @@ import { format } from 'date-fns';
 import { ArrowLeft, RotateCcw, RefreshCw, Truck, ExternalLink, Package, CheckCircle2, Clock, Edit2, X, Check } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { updateOrderShipping } from '@/services/orders';
+import { getCustomerRequestSettings } from '@/services/settings';
 
 interface ShipmentInfo {
   id: string;
@@ -62,6 +63,8 @@ export default function OrderDetailPage() {
   const { user, loading: authLoading } = useAuth();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [allowCustomerReturn,   setAllowCustomerReturn]   = useState(true);
+  const [allowCustomerExchange, setAllowCustomerExchange] = useState(true);
   const [shippingModal, setShippingModal] = useState(false);
   const [shippingEdit, setShippingEdit] = useState({ recipientName: '', recipientPhone: '', postalCode: '', address1: '', address2: '', shippingMessage: '' });
   const [savingShipping, setSavingShipping] = useState(false);
@@ -79,6 +82,10 @@ export default function OrderDetailPage() {
   async function loadOrderDetail() {
     try {
       const supabase = createClient();
+      getCustomerRequestSettings().then((s) => {
+        setAllowCustomerReturn(s.allowCustomerReturn);
+        setAllowCustomerExchange(s.allowCustomerExchange);
+      });
       const { data, error } = await supabase
         .from('orders')
         .select(`
@@ -220,8 +227,8 @@ export default function OrderDetailPage() {
   const statusInfo = statusLabels[order.status] || { label: order.status, variant: 'default' as const };
   const canCancel = order.status === 'pending' || order.status === 'paid';
   const canEditShipping = order.status === 'pending';
-  const canReturn = order.status === 'delivered';
-  const canExchange = order.status === 'delivered';
+  const canReturn   = order.status === 'delivered' && allowCustomerReturn;
+  const canExchange = order.status === 'delivered' && allowCustomerExchange;
   const subtotal = order.totalAmount - order.shippingCost;
 
   return (
@@ -250,21 +257,29 @@ export default function OrderDetailPage() {
               주문 취소
             </Button>
           )}
-          {canReturn && (
-            <Button variant="outline" asChild>
-              <Link to={`/mypage/orders/${order.orderNumber}/return`}>
-                <RotateCcw className="mr-1.5 h-4 w-4" />
-                반품 신청
-              </Link>
-            </Button>
-          )}
-          {canExchange && (
-            <Button variant="outline" asChild>
-              <Link to={`/mypage/orders/${order.orderNumber}/exchange`}>
-                <RefreshCw className="mr-1.5 h-4 w-4" />
-                교환 신청
-              </Link>
-            </Button>
+          {order.status === 'delivered' && (
+            <>
+              {canReturn ? (
+                <Button variant="outline" asChild>
+                  <Link to={`/mypage/orders/${order.orderNumber}/return`}>
+                    <RotateCcw className="mr-1.5 h-4 w-4" />
+                    반품 신청
+                  </Link>
+                </Button>
+              ) : (
+                <span className="text-xs text-gray-400 self-center">반품은 고객센터 문의</span>
+              )}
+              {canExchange ? (
+                <Button variant="outline" asChild>
+                  <Link to={`/mypage/orders/${order.orderNumber}/exchange`}>
+                    <RefreshCw className="mr-1.5 h-4 w-4" />
+                    교환 신청
+                  </Link>
+                </Button>
+              ) : (
+                <span className="text-xs text-gray-400 self-center">교환은 고객센터 문의</span>
+              )}
+            </>
           )}
         </div>
       </div>

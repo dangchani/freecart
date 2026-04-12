@@ -39,10 +39,20 @@ import {
   ORDER_STATUS_LABELS,
   ORDER_STATUS_COLORS,
   ORDER_STATUS_TRANSITIONS,
+  ORDER_ITEM_STATUS_LABELS,
+  ORDER_ITEM_STATUS_COLORS,
+  ORDER_RETURNABLE_STATUSES,
   isValidTransition,
   type OrderStatus,
+  type OrderItemStatus,
 } from '@/constants/orderStatus';
 import { transitionOrderStatus, getOrderTimeline, updateOrderShipping, updateOrderItems } from '@/services/orders';
+import { createAdminReturn, RETURN_REASONS } from '@/services/returns';
+import type { ReturnItem } from '@/services/returns';
+import { createAdminExchange, calculatePriceDiff, EXCHANGE_REASONS } from '@/services/exchanges';
+import type { ExchangeItem } from '@/services/exchanges';
+import { reissueCashReceipt } from '@/services/cashReceipt';
+import { reissueTaxInvoice } from '@/services/taxInvoice';
 import type { OrderTimeline } from '@/types';
 
 const AUTO_CONFIRM_DAYS = 7;
@@ -68,6 +78,7 @@ interface OrderDetail {
   usedPoints: number;
   usedDeposit: number;
   totalAmount: number;
+  returnedAmount: number;
   earnedPoints: number;
   paymentMethod: string | null;
   pgProvider: string | null;
@@ -98,6 +109,8 @@ interface OrderItem {
   totalPrice: number;
   status: string;
   itemType: string;
+  returnedQuantity: number;
+  exchangedQuantity: number;
 }
 
 interface Shipment {
@@ -142,6 +155,8 @@ interface ReturnRequest {
   id: string;
   reason: string;
   status: string;
+  refundAmount: number;
+  initiatedBy: 'customer' | 'admin';
   createdAt: string;
 }
 
@@ -149,6 +164,8 @@ interface ExchangeRequest {
   id: string;
   reason: string;
   status: string;
+  priceDiff: number;
+  initiatedBy: 'customer' | 'admin';
   createdAt: string;
 }
 
@@ -230,6 +247,27 @@ export default function AdminOrderDetailPage() {
   const [variantResults, setVariantResults] = useState<Array<{ id: string; optionText: string; price: number; additionalPrice: number; stock: number; }>>([]);
   const [selectedProductForAdd, setSelectedProductForAdd] = useState<{ id: string; name: string; price: number } | null>(null);
 
+  // 반품 모달
+  const [returnModalOpen, setReturnModalOpen] = useState(false);
+  const [returnTargetItem, setReturnTargetItem] = useState<OrderItem | null>(null);
+  const [returnQty, setReturnQty] = useState(1);
+  const [returnReason, setReturnReason] = useState('');
+  const [returnDescription, setReturnDescription] = useState('');
+  const [returnRefundPreview, setReturnRefundPreview] = useState(0);
+
+  // 교환 모달
+  const [exchangeModalOpen, setExchangeModalOpen] = useState(false);
+  const [exchangeTargetItem, setExchangeTargetItem] = useState<OrderItem | null>(null);
+  const [exchangeStep, setExchangeStep] = useState<1 | 2>(1);
+  const [exchangeQty, setExchangeQty] = useState(1);
+  const [exchangeReason, setExchangeReason] = useState('');
+  const [exchangeSearchQ, setExchangeSearchQ] = useState('');
+  const [exchangeSearchResults, setExchangeSearchResults] = useState<Array<{ id: string; name: string; price: number }>>([]);
+  const [exchangeSelectedProduct, setExchangeSelectedProduct] = useState<{ id: string; name: string; price: number } | null>(null);
+  const [exchangeVariantResults, setExchangeVariantResults] = useState<Array<{ id: string; optionText: string; price: number }>>([]);
+  const [exchangeSelectedVariant, setExchangeSelectedVariant] = useState<{ id: string; optionText: string; price: number } | null>(null);
+  const [exchangePriceDiff, setExchangePriceDiff] = useState(0);
+
   useEffect(() => {
     if (!authLoading) {
       if (!user) { navigate('/auth/login'); return; }
@@ -272,8 +310,8 @@ export default function AdminOrderDetailPage() {
 
         supabase.from('order_memos').select('*').eq('order_id', orderId).order('created_at', { ascending: false }),
 
-        supabase.from('returns').select('id, reason, status, created_at').eq('order_id', orderId),
-        supabase.from('exchanges').select('id, reason, status, created_at').eq('order_id', orderId),
+        supabase.from('returns').select('id, reason, status, refund_amount, initiated_by, created_at').eq('order_id', orderId).order('created_at', { ascending: false }),
+        supabase.from('exchanges').select('id, reason, status, price_diff, initiated_by, created_at').eq('order_id', orderId).order('created_at', { ascending: false }),
 
         supabase.from('cash_receipts').select('id, receipt_type, identifier, amount, status, issued_at').eq('order_id', orderId),
         supabase.from('tax_invoices').select('id, business_name, business_number, total_amount, status').eq('order_id', orderId),
@@ -316,6 +354,7 @@ export default function AdminOrderDetailPage() {
           paymentDeadline: orderData.payment_deadline,
           autoConfirmAt: orderData.auto_confirm_at,
           createdAt: orderData.created_at,
+          returnedAmount: orderData.returned_amount ?? 0,
           coupon: orderData.coupon ?? null,
           items: (orderData.items ?? []).map((item: any) => ({
             id: item.id,
@@ -330,6 +369,8 @@ export default function AdminOrderDetailPage() {
             totalPrice: item.total_price,
             status: item.status,
             itemType: item.item_type ?? 'purchase',
+            returnedQuantity:  item.returned_quantity  ?? 0,
+            exchangedQuantity: item.exchanged_quantity ?? 0,
           })),
         });
       }
@@ -364,8 +405,8 @@ export default function AdminOrderDetailPage() {
 
       setTimeline(timelineData);
       setMemos((memosData ?? []).map((m: any) => ({ id: m.id, content: m.content, adminId: m.admin_id, createdAt: m.created_at })));
-      setReturns((returnsData ?? []).map((r: any) => ({ id: r.id, reason: r.reason, status: r.status, createdAt: r.created_at })));
-      setExchanges((exchangesData ?? []).map((e: any) => ({ id: e.id, reason: e.reason, status: e.status, createdAt: e.created_at })));
+      setReturns((returnsData ?? []).map((r: any) => ({ id: r.id, reason: r.reason, status: r.status, refundAmount: r.refund_amount ?? 0, initiatedBy: r.initiated_by ?? 'customer', createdAt: r.created_at })));
+      setExchanges((exchangesData ?? []).map((e: any) => ({ id: e.id, reason: e.reason, status: e.status, priceDiff: e.price_diff ?? 0, initiatedBy: e.initiated_by ?? 'customer', createdAt: e.created_at })));
       setCashReceipts((cashData ?? []).map((c: any) => ({ id: c.id, receiptType: c.receipt_type, identifier: c.identifier, amount: c.amount, status: c.status, issuedAt: c.issued_at })));
       setTaxInvoices((taxData ?? []).map((t: any) => ({ id: t.id, businessName: t.business_name, businessNumber: t.business_number, totalAmount: t.total_amount, status: t.status })));
       setShippingCompanies((companies ?? []).map((c: any) => ({ id: c.id, name: c.name, trackingUrl: c.tracking_url })));
@@ -608,6 +649,155 @@ export default function AdminOrderDetailPage() {
     }
   }
 
+  // ── 반품 핸들러 ──────────────────────────────────────────────────────────────
+  function openReturnModal(item: OrderItem) {
+    const availableQty = item.quantity - item.returnedQuantity - item.exchangedQuantity;
+    setReturnTargetItem(item);
+    setReturnQty(Math.min(1, availableQty));
+    setReturnReason('');
+    setReturnDescription('');
+    const propDiscount = Math.floor(item.discountAmount * 1 / item.quantity);
+    setReturnRefundPreview(item.unitPrice * 1 - propDiscount);
+    setReturnModalOpen(true);
+  }
+
+  function handleReturnQtyChange(qty: number) {
+    if (!returnTargetItem) return;
+    const availableQty = returnTargetItem.quantity - returnTargetItem.returnedQuantity - returnTargetItem.exchangedQuantity;
+    const clamped = Math.max(1, Math.min(qty, availableQty));
+    setReturnQty(clamped);
+    const propDiscount = Math.floor(returnTargetItem.discountAmount * clamped / returnTargetItem.quantity);
+    setReturnRefundPreview(returnTargetItem.unitPrice * clamped - propDiscount);
+  }
+
+  async function handleSubmitReturn() {
+    if (!order || !returnTargetItem || !returnReason || !id) return;
+    setSaving(true);
+    try {
+      const result = await createAdminReturn({
+        orderId:     order.id,
+        adminId:     user!.id,
+        items:       [{ order_item_id: returnTargetItem.id, quantity: returnQty }],
+        reason:      returnReason,
+        description: returnDescription || undefined,
+      });
+      if (!result.success) { alert(result.error ?? '반품 처리 중 오류가 발생했습니다.'); return; }
+      setReturnModalOpen(false);
+      await loadAll(id);
+      alert(`반품 처리 완료. 환불금액: ${formatCurrency(result.refundAmount ?? 0)}`);
+    } catch (err: any) {
+      alert(err.message ?? '반품 처리 중 오류가 발생했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── 교환 핸들러 ──────────────────────────────────────────────────────────────
+  function openExchangeModal(item: OrderItem) {
+    const availableQty = item.quantity - item.returnedQuantity - item.exchangedQuantity;
+    setExchangeTargetItem(item);
+    setExchangeStep(1);
+    setExchangeQty(Math.min(1, availableQty));
+    setExchangeReason('');
+    setExchangeSearchQ('');
+    setExchangeSearchResults([]);
+    setExchangeSelectedProduct(null);
+    setExchangeVariantResults([]);
+    setExchangeSelectedVariant(null);
+    setExchangePriceDiff(0);
+    setExchangeModalOpen(true);
+  }
+
+  async function handleExchangeProductSearch() {
+    if (!exchangeSearchQ.trim()) return;
+    const supabase = createClient();
+    const { data } = await supabase
+      .from('products')
+      .select('id, name, price, stock_quantity')
+      .ilike('name', `%${exchangeSearchQ.trim()}%`)
+      .eq('is_active', true)
+      .limit(10);
+    setExchangeSearchResults((data ?? []).map((p: any) => ({ id: p.id, name: p.name, price: p.price })));
+  }
+
+  async function handleExchangeSelectProduct(p: { id: string; name: string; price: number }) {
+    setExchangeSelectedProduct(p);
+    setExchangeSelectedVariant(null);
+    const supabase = createClient();
+    const { data } = await supabase
+      .from('product_variants')
+      .select('id, option_text, price')
+      .eq('product_id', p.id)
+      .eq('is_active', true);
+    setExchangeVariantResults((data ?? []).map((v: any) => ({ id: v.id, optionText: v.option_text, price: v.price })));
+  }
+
+  async function handleExchangeSelectVariant(v: { id: string; optionText: string; price: number }) {
+    setExchangeSelectedVariant(v);
+    if (exchangeTargetItem) {
+      const { priceDiff } = await calculatePriceDiff(exchangeTargetItem.unitPrice, v.id, exchangeQty);
+      setExchangePriceDiff(priceDiff);
+    }
+  }
+
+  async function handleSubmitExchange() {
+    if (!order || !exchangeTargetItem || !exchangeReason || !exchangeSelectedVariant || !id) return;
+    if (!exchangeSelectedVariant.id) { alert('교환할 상품의 옵션을 선택해주세요.'); return; }
+    setSaving(true);
+    try {
+      const result = await createAdminExchange({
+        orderId:  order.id,
+        adminId:  user!.id,
+        items:    [{ order_item_id: exchangeTargetItem.id, quantity: exchangeQty, exchange_variant_id: exchangeSelectedVariant.id }],
+        reason:   exchangeReason,
+      });
+      if (!result.success) { alert(result.error ?? '교환 처리 중 오류가 발생했습니다.'); return; }
+      setExchangeModalOpen(false);
+      await loadAll(id);
+      const diffMsg = result.priceDiff !== 0 ? `\n가격 차이: ${formatCurrency(result.priceDiff ?? 0)}` : '';
+      alert(`교환 처리가 완료되었습니다.${diffMsg}`);
+    } catch (err: any) {
+      alert(err.message ?? '교환 처리 중 오류가 발생했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── 재발급 핸들러 ────────────────────────────────────────────────────────────
+  async function handleReissueCashReceipt(receiptId: string) {
+    if (!order || !id) return;
+    const newAmount = order.totalAmount - order.returnedAmount;
+    if (!confirm(`현금영수증을 ${formatCurrency(newAmount)}으로 재발급 요청하시겠습니까?`)) return;
+    setSaving(true);
+    try {
+      const result = await reissueCashReceipt(receiptId, newAmount, order.id);
+      if (!result.success) { alert(result.error ?? '재발급 요청에 실패했습니다.'); return; }
+      await loadAll(id);
+      alert('현금영수증 재발급 요청이 완료되었습니다.');
+    } catch (err: any) {
+      alert(err.message ?? '재발급 요청 중 오류가 발생했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleReissueTaxInvoice(invoiceId: string) {
+    if (!order || !id) return;
+    const newAmount = order.totalAmount - order.returnedAmount;
+    if (!confirm(`세금계산서를 ${formatCurrency(newAmount)}으로 재발급 요청하시겠습니까?`)) return;
+    setSaving(true);
+    try {
+      const result = await reissueTaxInvoice(invoiceId, newAmount);
+      if (!result.success) { alert(result.error ?? '재발급 요청에 실패했습니다.'); return; }
+      await loadAll(id);
+      alert('세금계산서 재발급 요청이 완료되었습니다.');
+    } catch (err: any) {
+      alert(err.message ?? '재발급 요청 중 오류가 발생했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (authLoading || loading) return <div className="container py-8">로딩 중...</div>;
   if (!order) return <div className="container py-8 text-center text-gray-500">주문을 찾을 수 없습니다.</div>;
 
@@ -630,7 +820,8 @@ export default function AdminOrderDetailPage() {
     purchase: '', gift: '사은품', bundle_component: '구성상품',
   };
 
-  const isPartialCancelable = ['pending', 'paid', 'processing'].includes(order.status);
+  const isPartialCancelable   = ['pending', 'paid', 'processing'].includes(order.status);
+  const isReturnExchangeable  = ORDER_RETURNABLE_STATUSES.includes(order.status as OrderStatus);
 
   function toggleItemSelection(itemId: string) {
     setSelectedItemIds((prev) => {
@@ -733,14 +924,38 @@ export default function AdminOrderDetailPage() {
                             {ITEM_TYPE_LABELS[item.itemType]}
                           </span>
                         )}
+                        {item.status !== 'pending' && (
+                          <span className={`text-xs rounded px-1.5 py-0.5 ${ORDER_ITEM_STATUS_COLORS[item.status as OrderItemStatus] ?? 'bg-gray-100 text-gray-700'}`}>
+                            {ORDER_ITEM_STATUS_LABELS[item.status as OrderItemStatus] ?? item.status}
+                          </span>
+                        )}
                       </div>
                       {item.optionText && <p className="text-xs text-gray-500">{item.optionText}</p>}
                       <p className="text-sm text-gray-600 mt-1">
                         {formatCurrency(item.unitPrice)} × {item.quantity}
                         {item.discountAmount > 0 && <span className="text-red-500 ml-1">(-{formatCurrency(item.discountAmount)})</span>}
                         <span className="ml-2 font-medium">{formatCurrency(item.totalPrice)}</span>
+                        {(item.returnedQuantity > 0 || item.exchangedQuantity > 0) && (
+                          <span className="ml-2 text-xs text-gray-400">
+                            (반품 {item.returnedQuantity} / 교환 {item.exchangedQuantity})
+                          </span>
+                        )}
                       </p>
                     </div>
+                    {isReturnExchangeable && item.itemType !== 'gift' && (item.quantity - item.returnedQuantity - item.exchangedQuantity) > 0 && (
+                      <div className="no-print flex gap-1 shrink-0">
+                        <button
+                          onClick={() => openReturnModal(item)}
+                          className="text-xs rounded border border-orange-300 bg-orange-50 px-2 py-1 text-orange-700 hover:bg-orange-100 transition-colors">
+                          반품
+                        </button>
+                        <button
+                          onClick={() => openExchangeModal(item)}
+                          className="text-xs rounded border border-blue-300 bg-blue-50 px-2 py-1 text-blue-700 hover:bg-blue-100 transition-colors">
+                          교환
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -860,25 +1075,41 @@ export default function AdminOrderDetailPage() {
               <Card className="p-5">
                 <h2 className="mb-3 font-semibold text-gray-800">세금계산서 / 현금영수증</h2>
                 {cashReceipts.map((c) => (
-                  <div key={c.id} className="flex items-center gap-3 text-sm py-1.5 border-b last:border-0">
+                  <div key={c.id} className="flex items-center gap-3 text-sm py-1.5 border-b last:border-0 flex-wrap">
                     <span className="text-gray-500">현금영수증</span>
                     <span>{c.receiptType === 'income_deduction' ? '소득공제' : '지출증빙'}</span>
                     <span className="text-gray-500">{c.identifier}</span>
                     <span>{formatCurrency(c.amount)}</span>
-                    <span className={`ml-auto text-xs rounded-full px-2 py-0.5 ${c.status === 'issued' ? 'bg-green-100 text-green-700' : c.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                    <span className={`text-xs rounded-full px-2 py-0.5 ${c.status === 'issued' ? 'bg-green-100 text-green-700' : c.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
                       {c.status === 'issued' ? '발급됨' : c.status === 'cancelled' ? '취소됨' : '처리중'}
                     </span>
+                    {c.status === 'issued' && order.returnedAmount > 0 && (
+                      <button
+                        onClick={() => handleReissueCashReceipt(c.id)}
+                        disabled={saving}
+                        className="no-print ml-auto text-xs border border-orange-300 rounded px-2 py-0.5 text-orange-700 hover:bg-orange-50 disabled:opacity-50">
+                        재발급 요청
+                      </button>
+                    )}
                   </div>
                 ))}
                 {taxInvoices.map((t) => (
-                  <div key={t.id} className="flex items-center gap-3 text-sm py-1.5 border-b last:border-0">
+                  <div key={t.id} className="flex items-center gap-3 text-sm py-1.5 border-b last:border-0 flex-wrap">
                     <span className="text-gray-500">세금계산서</span>
                     <span>{t.businessName}</span>
                     <span className="text-gray-400 font-mono text-xs">{t.businessNumber}</span>
                     <span>{formatCurrency(t.totalAmount)}</span>
-                    <span className={`ml-auto text-xs rounded-full px-2 py-0.5 ${t.status === 'issued' ? 'bg-green-100 text-green-700' : t.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                    <span className={`text-xs rounded-full px-2 py-0.5 ${t.status === 'issued' ? 'bg-green-100 text-green-700' : t.status === 'cancelled' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
                       {t.status === 'issued' ? '발급됨' : t.status === 'cancelled' ? '취소됨' : '신청됨'}
                     </span>
+                    {t.status === 'issued' && order.returnedAmount > 0 && (
+                      <button
+                        onClick={() => handleReissueTaxInvoice(t.id)}
+                        disabled={saving}
+                        className="no-print ml-auto text-xs border border-orange-300 rounded px-2 py-0.5 text-orange-700 hover:bg-orange-50 disabled:opacity-50">
+                        재발급 요청
+                      </button>
+                    )}
                   </div>
                 ))}
               </Card>
@@ -887,29 +1118,43 @@ export default function AdminOrderDetailPage() {
             {/* 반품 / 교환 신청 */}
             {(returns.length > 0 || exchanges.length > 0) && (
               <Card className="p-5">
-                <h2 className="mb-3 font-semibold text-gray-800">반품 / 교환 신청</h2>
+                <h2 className="mb-3 font-semibold text-gray-800">반품 / 교환 내역</h2>
                 {returns.map((r) => (
                   <div key={r.id} className="py-2 border-b last:border-0 text-sm">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-orange-700">반품</span>
-                      <span className={`text-xs rounded-full px-2 py-0.5 ${r.status === 'approved' ? 'bg-green-100 text-green-700' : r.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                        {r.status === 'pending' ? '검토중' : r.status === 'approved' ? '승인' : r.status === 'rejected' ? '거부' : r.status}
+                      {r.initiatedBy === 'admin' && (
+                        <span className="text-xs bg-violet-100 text-violet-700 rounded-full px-1.5 py-0.5">관리자</span>
+                      )}
+                      <span className={`text-xs rounded-full px-2 py-0.5 ${r.status === 'completed' ? 'bg-green-100 text-green-700' : r.status === 'rejected' ? 'bg-red-100 text-red-700' : r.status === 'approved' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                        {r.status === 'pending' ? '검토중' : r.status === 'approved' ? '승인' : r.status === 'rejected' ? '거부' : r.status === 'completed' ? '완료' : r.status}
                       </span>
-                      <span className="text-gray-400 text-xs ml-auto">{format(new Date(r.createdAt), 'MM/dd HH:mm')}</span>
+                      {r.refundAmount > 0 && (
+                        <span className="text-orange-600 font-medium ml-auto">-{formatCurrency(r.refundAmount)}</span>
+                      )}
+                      <span className="text-gray-400 text-xs">{format(new Date(r.createdAt), 'MM/dd HH:mm')}</span>
                     </div>
-                    <p className="mt-1 text-gray-600">{r.reason}</p>
+                    <p className="mt-0.5 text-gray-500 text-xs">{RETURN_REASONS.find((x) => x.value === r.reason)?.label ?? r.reason}</p>
                   </div>
                 ))}
                 {exchanges.map((e) => (
                   <div key={e.id} className="py-2 border-b last:border-0 text-sm">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-blue-700">교환</span>
-                      <span className={`text-xs rounded-full px-2 py-0.5 ${e.status === 'approved' ? 'bg-green-100 text-green-700' : e.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                        {e.status === 'pending' ? '검토중' : e.status === 'approved' ? '승인' : e.status === 'rejected' ? '거부' : e.status}
+                      {e.initiatedBy === 'admin' && (
+                        <span className="text-xs bg-violet-100 text-violet-700 rounded-full px-1.5 py-0.5">관리자</span>
+                      )}
+                      <span className={`text-xs rounded-full px-2 py-0.5 ${e.status === 'completed' ? 'bg-green-100 text-green-700' : e.status === 'rejected' ? 'bg-red-100 text-red-700' : e.status === 'approved' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                        {e.status === 'pending' ? '검토중' : e.status === 'approved' ? '승인' : e.status === 'rejected' ? '거부' : e.status === 'completed' ? '완료' : e.status}
                       </span>
-                      <span className="text-gray-400 text-xs ml-auto">{format(new Date(e.createdAt), 'MM/dd HH:mm')}</span>
+                      {e.priceDiff !== 0 && (
+                        <span className={`font-medium ml-auto text-xs ${e.priceDiff > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          {e.priceDiff > 0 ? `+${formatCurrency(e.priceDiff)}` : formatCurrency(e.priceDiff)}
+                        </span>
+                      )}
+                      <span className="text-gray-400 text-xs">{format(new Date(e.createdAt), 'MM/dd HH:mm')}</span>
                     </div>
-                    <p className="mt-1 text-gray-600">{e.reason}</p>
+                    <p className="mt-0.5 text-gray-500 text-xs">{EXCHANGE_REASONS.find((x) => x.value === e.reason)?.label ?? e.reason}</p>
                   </div>
                 ))}
               </Card>
@@ -1046,6 +1291,16 @@ export default function AdminOrderDetailPage() {
                 <div className="flex justify-between border-t pt-2 font-bold">
                   <dt>최종 결제금액</dt><dd>{formatCurrency(order.totalAmount)}</dd>
                 </div>
+                {order.returnedAmount > 0 && (
+                  <>
+                    <div className="flex justify-between text-orange-600 text-sm">
+                      <dt>반품 환불액</dt><dd>-{formatCurrency(order.returnedAmount)}</dd>
+                    </div>
+                    <div className="flex justify-between border-t pt-2 font-bold text-blue-700">
+                      <dt>실결제금액</dt><dd>{formatCurrency(order.totalAmount - order.returnedAmount)}</dd>
+                    </div>
+                  </>
+                )}
                 {order.earnedPoints > 0 && (
                   <div className="flex justify-between text-green-600 text-xs">
                     <dt>적립 예정 포인트</dt><dd>{order.earnedPoints.toLocaleString()}P</dd>
@@ -1280,6 +1535,185 @@ export default function AdminOrderDetailPage() {
                 <Check className="mr-2 h-4 w-4" />{saving ? '저장 중...' : '수정 저장'}
               </Button>
             </div>
+          </Card>
+        </div>
+      )}
+
+      {/* 반품 모달 */}
+      {returnModalOpen && returnTargetItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="w-full max-w-md p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold">반품 처리</h2>
+              <button onClick={() => setReturnModalOpen(false)}><X className="h-5 w-5 text-gray-400" /></button>
+            </div>
+            <div className="space-y-4 text-sm">
+              <div className="rounded-md bg-gray-50 p-3">
+                <p className="font-medium">{returnTargetItem.productName}</p>
+                {returnTargetItem.optionText && <p className="text-gray-500 text-xs">{returnTargetItem.optionText}</p>}
+                <p className="text-gray-500 text-xs mt-0.5">{formatCurrency(returnTargetItem.unitPrice)} × {returnTargetItem.quantity}개 (반품가능: {returnTargetItem.quantity - returnTargetItem.returnedQuantity - returnTargetItem.exchangedQuantity}개)</p>
+              </div>
+              <div>
+                <label className="font-medium">반품 수량</label>
+                <div className="flex items-center gap-2 mt-1">
+                  <button onClick={() => handleReturnQtyChange(returnQty - 1)}
+                    className="h-8 w-8 flex items-center justify-center rounded border text-gray-600 hover:bg-gray-100"><Minus className="h-3 w-3" /></button>
+                  <span className="w-10 text-center font-medium">{returnQty}</span>
+                  <button onClick={() => handleReturnQtyChange(returnQty + 1)}
+                    className="h-8 w-8 flex items-center justify-center rounded border text-gray-600 hover:bg-gray-100"><Plus className="h-3 w-3" /></button>
+                  <span className="text-gray-500 ml-2">예상 환불: <span className="font-semibold text-orange-600">{formatCurrency(returnRefundPreview)}</span></span>
+                </div>
+              </div>
+              <div>
+                <label className="font-medium">반품 사유 <span className="text-red-500">*</span></label>
+                <div className="mt-1 space-y-1">
+                  {RETURN_REASONS.map((r) => (
+                    <label key={r.value} className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="returnReason" value={r.value}
+                        checked={returnReason === r.value} onChange={(e) => setReturnReason(e.target.value)}
+                        className="h-3.5 w-3.5" />
+                      <span>{r.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="font-medium">상세 메모 (선택)</label>
+                <textarea value={returnDescription} onChange={(e) => setReturnDescription(e.target.value)}
+                  placeholder="추가 메모를 입력하세요."
+                  className="mt-1 w-full rounded-md border border-gray-300 p-2.5 text-sm h-16 resize-none focus:outline-none focus:ring-2 focus:ring-orange-400" />
+              </div>
+              <p className="text-xs text-amber-600 bg-amber-50 rounded p-2">관리자 반품은 즉시 completed 상태로 처리되며 재고가 복구됩니다.</p>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setReturnModalOpen(false)}>닫기</Button>
+              <Button onClick={handleSubmitReturn} disabled={!returnReason || saving}
+                className="bg-orange-600 hover:bg-orange-700 text-white">
+                <Check className="mr-2 h-4 w-4" />{saving ? '처리 중...' : '반품 처리'}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* 교환 모달 */}
+      {exchangeModalOpen && exchangeTargetItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold">교환 처리 {exchangeStep === 2 && '— 교환 상품 선택'}</h2>
+              <button onClick={() => setExchangeModalOpen(false)}><X className="h-5 w-5 text-gray-400" /></button>
+            </div>
+
+            {exchangeStep === 1 && (
+              <div className="space-y-4 text-sm">
+                <div className="rounded-md bg-gray-50 p-3">
+                  <p className="font-medium">{exchangeTargetItem.productName}</p>
+                  {exchangeTargetItem.optionText && <p className="text-gray-500 text-xs">{exchangeTargetItem.optionText}</p>}
+                  <p className="text-gray-500 text-xs mt-0.5">{formatCurrency(exchangeTargetItem.unitPrice)} × {exchangeTargetItem.quantity}개 (교환가능: {exchangeTargetItem.quantity - exchangeTargetItem.returnedQuantity - exchangeTargetItem.exchangedQuantity}개)</p>
+                </div>
+                <div>
+                  <label className="font-medium">교환 수량</label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <button onClick={() => setExchangeQty((q) => Math.max(1, q - 1))}
+                      className="h-8 w-8 flex items-center justify-center rounded border text-gray-600 hover:bg-gray-100"><Minus className="h-3 w-3" /></button>
+                    <span className="w-10 text-center font-medium">{exchangeQty}</span>
+                    <button onClick={() => {
+                      const max = exchangeTargetItem.quantity - exchangeTargetItem.returnedQuantity - exchangeTargetItem.exchangedQuantity;
+                      setExchangeQty((q) => Math.min(q + 1, max));
+                    }} className="h-8 w-8 flex items-center justify-center rounded border text-gray-600 hover:bg-gray-100"><Plus className="h-3 w-3" /></button>
+                  </div>
+                </div>
+                <div>
+                  <label className="font-medium">교환 사유 <span className="text-red-500">*</span></label>
+                  <div className="mt-1 space-y-1">
+                    {EXCHANGE_REASONS.map((r) => (
+                      <label key={r.value} className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="exchangeReason" value={r.value}
+                          checked={exchangeReason === r.value} onChange={(e) => setExchangeReason(e.target.value)}
+                          className="h-3.5 w-3.5" />
+                        <span>{r.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setExchangeModalOpen(false)}>닫기</Button>
+                  <Button onClick={() => setExchangeStep(2)} disabled={!exchangeReason}>
+                    다음 — 교환 상품 선택
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {exchangeStep === 2 && (
+              <div className="space-y-4 text-sm">
+                <div>
+                  <label className="font-medium">교환 상품 검색</label>
+                  <div className="flex gap-2 mt-1">
+                    <Input value={exchangeSearchQ} onChange={(e) => setExchangeSearchQ(e.target.value)}
+                      placeholder="상품명 검색..."
+                      onKeyDown={(e) => e.key === 'Enter' && handleExchangeProductSearch()} />
+                    <Button variant="outline" onClick={handleExchangeProductSearch} size="sm">
+                      <Search className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {exchangeSearchResults.length > 0 && !exchangeSelectedProduct && (
+                    <div className="mt-2 border rounded-lg divide-y max-h-40 overflow-y-auto">
+                      {exchangeSearchResults.map((p) => (
+                        <button key={p.id} onClick={() => handleExchangeSelectProduct(p)}
+                          className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50 text-left">
+                          <span className="font-medium">{p.name}</span>
+                          <span className="text-gray-500">{formatCurrency(p.price)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {exchangeSelectedProduct && (
+                  <div className="rounded-md bg-blue-50 p-3">
+                    <p className="font-medium text-blue-800">{exchangeSelectedProduct.name}</p>
+                    {exchangeVariantResults.length === 0 ? (
+                      <p className="text-xs text-red-500 mt-1">이 상품은 선택 가능한 옵션이 없습니다.</p>
+                    ) : !exchangeSelectedVariant ? (
+                      <div className="mt-2 border rounded-lg divide-y bg-white max-h-36 overflow-y-auto">
+                        {exchangeVariantResults.map((v) => (
+                          <button key={v.id} onClick={() => handleExchangeSelectVariant(v)}
+                            className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50 text-left text-sm">
+                            <span>{v.optionText}</span>
+                            <span className="text-gray-500">{formatCurrency(v.price)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="mt-2 space-y-1 text-xs">
+                        <p>선택된 옵션: <span className="font-medium">{exchangeSelectedVariant.optionText}</span></p>
+                        <p>교환 상품가: <span className="font-medium">{formatCurrency(exchangeSelectedVariant.price)}</span></p>
+                        <p>가격 차이: <span className={`font-semibold ${exchangePriceDiff > 0 ? 'text-red-600' : exchangePriceDiff < 0 ? 'text-green-600' : 'text-gray-600'}`}>
+                          {exchangePriceDiff > 0 ? `+${formatCurrency(exchangePriceDiff)}` : exchangePriceDiff < 0 ? formatCurrency(exchangePriceDiff) : '없음'}
+                        </span></p>
+                        <button onClick={() => { setExchangeSelectedVariant(null); setExchangeSelectedProduct(null); setExchangeSearchResults([]); }}
+                          className="text-blue-600 hover:underline">다시 선택</button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <p className="text-xs text-amber-600 bg-amber-50 rounded p-2">관리자 교환은 즉시 completed 상태로 처리됩니다. 재고가 자동 조정됩니다.</p>
+                <div className="flex justify-between gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setExchangeStep(1)}>이전</Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setExchangeModalOpen(false)}>닫기</Button>
+                    <Button onClick={handleSubmitExchange}
+                      disabled={!exchangeSelectedVariant || !exchangeSelectedVariant.id || saving}
+                      className="bg-blue-600 hover:bg-blue-700 text-white">
+                      <Check className="mr-2 h-4 w-4" />{saving ? '처리 중...' : '교환 처리'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </Card>
         </div>
       )}
