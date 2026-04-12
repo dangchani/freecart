@@ -6,6 +6,7 @@ import { useCartStore } from '@/store/cart';
 import { useAuth } from '@/hooks/useAuth';
 import { getSetting } from '@/services/settings';
 import { useMenuItems, type MenuItem } from '@/hooks/useMenuItems';
+import { NotificationBell } from '@/components/layout/NotificationBell';
 
 function DesktopMenuItem({ item }: { item: MenuItem }) {
   const [open, setOpen] = useState(false);
@@ -139,6 +140,7 @@ export function Header() {
 
           {loading ? null : user ? (
             <div className="flex items-center gap-1">
+              <NotificationBell userId={user.id} />
               {isAdmin && (
                 <Link to="/admin">
                   <Button variant="ghost" size="sm" title="관리자">

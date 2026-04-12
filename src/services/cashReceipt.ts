@@ -163,3 +163,37 @@ function mapCashReceipt(row: any, orderId: string, orderNumber: string): CashRec
     createdAt: row.created_at,
   };
 }
+
+/** 반품 후 현금영수증 재발급 요청 */
+export async function reissueCashReceipt(
+  originalReceiptId: string,
+  newAmount: number,
+  orderId: string,
+): Promise<{ success: boolean; error?: string; receiptId?: string }> {
+  const supabase = createClient();
+
+  const { data: original, error: fetchErr } = await supabase
+    .from('cash_receipts')
+    .select('receipt_type, identifier')
+    .eq('id', originalReceiptId)
+    .single();
+
+  if (fetchErr || !original) return { success: false, error: '원본 현금영수증을 찾을 수 없습니다.' };
+
+  const { data: inserted, error: insertErr } = await supabase
+    .from('cash_receipts')
+    .insert({
+      order_id:            orderId,
+      receipt_type:        (original as any).receipt_type,
+      identifier:          (original as any).identifier,
+      amount:              newAmount,
+      status:              'pending',
+      original_receipt_id: originalReceiptId,
+    })
+    .select('id')
+    .single();
+
+  if (insertErr || !inserted) return { success: false, error: '재발급 요청에 실패했습니다.' };
+
+  return { success: true, receiptId: (inserted as any).id as string };
+}

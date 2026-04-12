@@ -135,6 +135,50 @@ export async function getTaxInvoices(userId: string): Promise<TaxInvoice[]> {
   });
 }
 
+/** 반품 후 세금계산서 재발급 요청 */
+export async function reissueTaxInvoice(
+  originalInvoiceId: string,
+  newAmount: number,
+): Promise<{ success: boolean; error?: string; invoiceId?: string }> {
+  const supabase = createClient();
+
+  const { data: original, error: fetchErr } = await supabase
+    .from('tax_invoices')
+    .select('*')
+    .eq('id', originalInvoiceId)
+    .single();
+
+  if (fetchErr || !original) return { success: false, error: '원본 세금계산서를 찾을 수 없습니다.' };
+
+  const vat          = Math.round(newAmount / 11);
+  const supplyAmount = newAmount - vat;
+
+  const { data: inserted, error: insertErr } = await supabase
+    .from('tax_invoices')
+    .insert({
+      payment_id:          (original as any).payment_id,
+      business_number:     (original as any).business_number,
+      company_name:        (original as any).company_name,
+      ceo_name:            (original as any).ceo_name,
+      business_address:    (original as any).business_address,
+      business_type:       (original as any).business_type   ?? null,
+      business_category:   (original as any).business_category ?? null,
+      email:               (original as any).email,
+      amount:              supplyAmount,
+      vat,
+      total_amount:        newAmount,
+      issue_type:          'regular',
+      status:              'pending',
+      original_invoice_id: originalInvoiceId,
+    })
+    .select('id')
+    .single();
+
+  if (insertErr || !inserted) return { success: false, error: '재발급 요청에 실패했습니다.' };
+
+  return { success: true, invoiceId: (inserted as any).id as string };
+}
+
 function mapTaxInvoice(row: any, orderId: string, orderNumber: string): TaxInvoice {
   return {
     id: row.id,

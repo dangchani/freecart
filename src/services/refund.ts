@@ -325,45 +325,32 @@ export async function rejectRefund(
   return { success: true };
 }
 
-// 환불 완료 처리
+// 환불 완료 처리 (재고/포인트/쿠폰 복구 포함)
 export async function completeRefund(
   refundId: string,
-  adminMemo?: string
+  adminMemo?: string,
+  changedBy?: string
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = createClient();
 
-  // 환불 정보 가져오기
-  const { data: refund, error: fetchError } = await supabase
-    .from('refunds')
-    .select('order_id, amount, type')
-    .eq('id', refundId)
-    .single();
-
-  if (fetchError || !refund) {
-    return { success: false, error: '환불 정보를 찾을 수 없습니다.' };
+  // 자원 복구 실행 (orchestrator)
+  const { executeRefundComplete } = await import('@/services/refundOrchestrator');
+  const cancelResult = await executeRefundComplete(refundId, changedBy);
+  if (!cancelResult.success) {
+    return { success: false, error: cancelResult.error };
   }
 
-  // 환불 상태 업데이트
+  // 환불 레코드 완료 처리
   const { error } = await supabase
     .from('refunds')
     .update({
       status: 'completed',
       completed_at: new Date().toISOString(),
-      admin_memo: adminMemo,
+      ...(adminMemo ? { admin_memo: adminMemo } : {}),
     })
     .eq('id', refundId);
 
-  if (error) {
-    return { success: false, error: '완료 처리에 실패했습니다.' };
-  }
-
-  // 주문 상태 업데이트 (환불의 경우)
-  if (refund.type === 'refund') {
-    await supabase
-      .from('orders')
-      .update({ status: 'refunded' })
-      .eq('id', refund.order_id);
-  }
+  if (error) return { success: false, error: '완료 처리에 실패했습니다.' };
 
   return { success: true };
 }
@@ -431,7 +418,7 @@ export async function canRequestRefund(orderId: string): Promise<{
 }> {
   const supabase = createClient();
 
-  // 주문 정보 확인
+  // 주문 + 배송 정보 조회
   const { data: order, error } = await supabase
     .from('orders')
     .select('id, status, created_at')
@@ -448,13 +435,20 @@ export async function canRequestRefund(orderId: string): Promise<{
     return { canRefund: false, reason: '환불 가능한 주문 상태가 아닙니다.' };
   }
 
-  // 기간 확인 (배송 완료 후 7일 이내)
+  // 기간 확인: 배송완료 후 7일 이내 (delivered_at 기준, 없으면 order.created_at fallback)
   if (order.status === 'delivered') {
-    const deliveredDate = new Date(order.created_at);
-    const daysSinceDelivery = Math.floor(
-      (Date.now() - deliveredDate.getTime()) / (1000 * 60 * 60 * 24)
-    );
-    if (daysSinceDelivery > 7) {
+    const { data: shipment } = await supabase
+      .from('shipments')
+      .select('delivered_at')
+      .eq('order_id', orderId)
+      .maybeSingle();
+
+    const baseDate = shipment?.delivered_at
+      ? new Date(shipment.delivered_at)
+      : new Date(order.created_at);
+
+    const daysSince = Math.floor((Date.now() - baseDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysSince > 7) {
       return { canRefund: false, reason: '배송 완료 후 7일이 지나 환불이 불가능합니다.' };
     }
   }

@@ -136,6 +136,81 @@ export async function usePoints(
 }
 
 /**
+ * 포인트 복구 (취소/환불 시 호출)
+ */
+export async function restorePoints(
+  userId: string,
+  amount: number,
+  orderId: string
+): Promise<void> {
+  if (amount <= 0) return;
+  const supabase = createClient();
+
+  const currentPoints = await getUserPoints(userId);
+  const newBalance = currentPoints + amount;
+
+  const { error: updateError } = await supabase
+    .from('users')
+    .update({ points: newBalance })
+    .eq('id', userId);
+
+  if (updateError) throw updateError;
+
+  const { error: historyError } = await supabase
+    .from('user_points_history')
+    .insert({
+      user_id: userId,
+      amount,
+      balance: newBalance,
+      type: 'restore',
+      description: `주문 취소/환불 포인트 복구`,
+      reference_type: 'order',
+      reference_id: orderId,
+    });
+
+  if (historyError) throw historyError;
+}
+
+/**
+ * 구매확정 포인트 적립 (transitionOrderStatus 'confirmed' 시 호출)
+ * - 이미 적립된 이력이 있으면 중복 지급하지 않음
+ */
+export async function awardOrderPoints(
+  orderId: string,
+  changedBy?: string,
+): Promise<void> {
+  const supabase = createClient();
+
+  const { data: order } = await supabase
+    .from('orders')
+    .select('user_id, earned_points, status')
+    .eq('id', orderId)
+    .single();
+
+  if (!order || order.status !== 'confirmed') return;
+  if (!order.user_id || (order.earned_points ?? 0) <= 0) return;
+
+  // 중복 지급 방지
+  const { data: existing } = await supabase
+    .from('user_points_history')
+    .select('id')
+    .eq('reference_type', 'order')
+    .eq('reference_id', orderId)
+    .eq('type', 'earn')
+    .maybeSingle();
+
+  if (existing) return;
+
+  await earnPoints(
+    order.user_id,
+    order.earned_points,
+    'order',
+    orderId,
+    '구매확정 포인트 적립',
+  );
+}
+
+/**
  * 포인트 적립 (주문 완료/리뷰 작성 시 호출)
  */
 export async function earnPoints(

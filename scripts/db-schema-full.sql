@@ -777,6 +777,10 @@ CREATE TABLE IF NOT EXISTS orders (
   confirmed_at            TIMESTAMPTZ,
   cancelled_at            TIMESTAMPTZ,
   cancel_reason           TEXT,
+  payment_deadline        TIMESTAMPTZ,           -- 무통장/가상계좌 입금 마감 시각 (자동취소 기준)
+  auto_confirm_at         TIMESTAMPTZ,           -- 자동 구매확정 예정 시각 (배송완료 후 N일)
+  is_admin_order          BOOLEAN NOT NULL DEFAULT false, -- 관리자 직접 생성 주문 여부
+  returned_amount         INTEGER NOT NULL DEFAULT 0,    -- 반품 완료 후 환불된 총금액
   created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -804,13 +808,15 @@ CREATE TABLE IF NOT EXISTS order_items (
   quantity         INTEGER NOT NULL,
   discount_amount  INTEGER NOT NULL DEFAULT 0,
   total_price      INTEGER NOT NULL,
-  status           VARCHAR(30) NOT NULL DEFAULT 'pending',
-  item_type        TEXT NOT NULL DEFAULT 'purchase'
-                     CHECK (item_type IN ('purchase', 'gift', 'bundle_component')),
-  gift_set_id      UUID REFERENCES product_gift_sets(id) ON DELETE SET NULL,
-  bundle_item_id   UUID REFERENCES bundle_items(id) ON DELETE SET NULL,
-  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  status              VARCHAR(30) NOT NULL DEFAULT 'pending',
+  item_type           TEXT NOT NULL DEFAULT 'purchase'
+                        CHECK (item_type IN ('purchase', 'gift', 'bundle_component')),
+  gift_set_id         UUID REFERENCES product_gift_sets(id) ON DELETE SET NULL,
+  bundle_item_id      UUID REFERENCES bundle_items(id) ON DELETE SET NULL,
+  returned_quantity   INTEGER NOT NULL DEFAULT 0,  -- 반품 완료된 수량
+  exchanged_quantity  INTEGER NOT NULL DEFAULT 0,  -- 교환 완료된 수량
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id   ON order_items(order_id);
@@ -945,32 +951,60 @@ CREATE TRIGGER trg_shipments_updated_at
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- 5.5 returns (반품)
+-- 상태값: pending → approved → collected → completed | rejected
+-- initiated_by: 'customer' (마이페이지 신청) | 'admin' (관리자 직접 처리)
+-- items 구조: [{order_item_id: uuid, quantity: int}]
 CREATE TABLE IF NOT EXISTS returns (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_id     UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  item_ids     JSONB NOT NULL DEFAULT '[]',
-  reason       VARCHAR(100) NOT NULL,
-  description  TEXT,
-  status       VARCHAR(30) NOT NULL DEFAULT 'pending',
-  admin_memo   TEXT,
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id             UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  user_id              UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  items                JSONB NOT NULL DEFAULT '[]',
+  reason               VARCHAR(100) NOT NULL,
+  description          TEXT,
+  status               VARCHAR(30) NOT NULL DEFAULT 'pending',
+  refund_amount        INTEGER NOT NULL DEFAULT 0,   -- 반품 환불금액
+  refund_method        VARCHAR(30),                  -- 'card' | 'bank_transfer' | 'point' | 'deposit'
+  bank_name            VARCHAR(50),                  -- 무통장 환불 계좌
+  bank_account         VARCHAR(30),
+  account_holder       VARCHAR(50),
+  initiated_by         VARCHAR(20) NOT NULL DEFAULT 'customer',
+  admin_memo           TEXT,
+  tracking_number      VARCHAR(50),
+  tracking_company_id  UUID REFERENCES shipping_companies(id) ON DELETE SET NULL,
+  approved_at          TIMESTAMPTZ,
+  collected_at         TIMESTAMPTZ,
+  processed_at         TIMESTAMPTZ,
+  completed_at         TIMESTAMPTZ,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_returns_order_id ON returns(order_id);
 CREATE INDEX IF NOT EXISTS idx_returns_user_id  ON returns(user_id);
 
 -- 5.6 exchanges (교환)
+-- 상태값: pending → approved → collected → reshipped → completed | rejected
+-- initiated_by: 'customer' (마이페이지 신청) | 'admin' (관리자 직접 처리)
+-- items 구조: [{order_item_id: uuid, quantity: int, exchange_variant_id: uuid}]
 CREATE TABLE IF NOT EXISTS exchanges (
-  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_id             UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  user_id              UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  item_ids             JSONB NOT NULL DEFAULT '[]',
-  reason               VARCHAR(100) NOT NULL,
-  exchange_variant_id  UUID REFERENCES product_variants(id) ON DELETE SET NULL,
-  status               VARCHAR(30) NOT NULL DEFAULT 'pending',
-  admin_memo           TEXT,
-  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id                 UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  user_id                  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  items                    JSONB NOT NULL DEFAULT '[]',
+  reason                   VARCHAR(100) NOT NULL,
+  status                   VARCHAR(30) NOT NULL DEFAULT 'pending',
+  price_diff               INTEGER NOT NULL DEFAULT 0,  -- 교환 가격차이 (양수=추가결제, 음수=환불)
+  initiated_by             VARCHAR(20) NOT NULL DEFAULT 'customer',
+  admin_memo               TEXT,
+  tracking_number          VARCHAR(50),
+  tracking_company_id      UUID REFERENCES shipping_companies(id) ON DELETE SET NULL,
+  reship_tracking_number   VARCHAR(50),
+  reship_company_id        UUID REFERENCES shipping_companies(id) ON DELETE SET NULL,
+  approved_at              TIMESTAMPTZ,
+  collected_at             TIMESTAMPTZ,
+  processed_at             TIMESTAMPTZ,
+  reshipped_at             TIMESTAMPTZ,
+  completed_at             TIMESTAMPTZ,
+  created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_exchanges_order_id ON exchanges(order_id);
@@ -983,13 +1017,20 @@ CREATE TABLE IF NOT EXISTS refunds (
   order_item_id     UUID REFERENCES order_items(id) ON DELETE SET NULL,
   payment_id        UUID REFERENCES payments(id) ON DELETE SET NULL,
   user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  type              VARCHAR(20) NOT NULL DEFAULT 'cancel',
+  type              VARCHAR(20) NOT NULL DEFAULT 'refund',    -- refund | exchange | return
   amount            INTEGER NOT NULL,
   points_returned   INTEGER NOT NULL DEFAULT 0,
   deposit_returned  INTEGER NOT NULL DEFAULT 0,
   reason            TEXT NOT NULL,
+  reason_detail     TEXT,
   status            VARCHAR(20) NOT NULL DEFAULT 'pending',
   pg_tid            VARCHAR(100),
+  bank_name         VARCHAR(50),                              -- 무통장 환불 계좌
+  bank_account      VARCHAR(30),
+  account_holder    VARCHAR(50),
+  tracking_number   VARCHAR(50),                              -- 반품 회수 운송장
+  images            JSONB NOT NULL DEFAULT '[]',
+  items             JSONB NOT NULL DEFAULT '[]',              -- 환불 대상 상품 목록
   approved_by       UUID,
   approved_at       TIMESTAMPTZ,
   processed_at      TIMESTAMPTZ,
@@ -1726,55 +1767,8 @@ CREATE TRIGGER trg_subscription_deliveries_updated_at
 
 -- =============================================================================
 -- SECTION 13: FINANCE
+-- (cash_receipts, tax_invoices → Section 20에서 최신 스키마로 정의)
 -- =============================================================================
-
--- 13.1 cash_receipts (현금영수증)
-CREATE TABLE IF NOT EXISTS cash_receipts (
-  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_id           UUID REFERENCES orders(id) ON DELETE SET NULL,
-  payment_id         UUID REFERENCES payments(id) ON DELETE SET NULL,
-  user_id            UUID REFERENCES users(id) ON DELETE SET NULL,
-  type               VARCHAR(20) NOT NULL,
-  identifier_type    VARCHAR(20) NOT NULL,
-  identifier         VARCHAR(50) NOT NULL,
-  amount             INTEGER NOT NULL,
-  approval_number    VARCHAR(50),
-  status             VARCHAR(20) NOT NULL DEFAULT 'pending',
-  issued_at          TIMESTAMPTZ,
-  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_cash_receipts_payment_id ON cash_receipts(payment_id);
-CREATE INDEX IF NOT EXISTS idx_cash_receipts_approval   ON cash_receipts(approval_number);
-
--- 13.2 tax_invoices (세금계산서)
-CREATE TABLE IF NOT EXISTS tax_invoices (
-  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_id            UUID REFERENCES orders(id) ON DELETE SET NULL,
-  payment_id          UUID REFERENCES payments(id) ON DELETE SET NULL,
-  user_id             UUID REFERENCES users(id) ON DELETE SET NULL,
-  business_number     VARCHAR(20) NOT NULL,
-  company_name        VARCHAR(100) NOT NULL,
-  ceo_name            VARCHAR(100) NOT NULL,
-  business_type       VARCHAR(50),
-  business_category   VARCHAR(50),
-  email               VARCHAR(255) NOT NULL,
-  address             VARCHAR(255),
-  recipient_email     VARCHAR(255),
-  amount              INTEGER NOT NULL,
-  tax_amount          INTEGER NOT NULL,
-  total_amount        INTEGER NOT NULL,
-  invoice_number      VARCHAR(50) UNIQUE,
-  issue_type          VARCHAR(20) NOT NULL DEFAULT 'regular',
-  approval_number     VARCHAR(50),
-  status              VARCHAR(20) NOT NULL DEFAULT 'pending',
-  issued_at           TIMESTAMPTZ,
-  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_tax_invoices_payment_id      ON tax_invoices(payment_id);
-CREATE INDEX IF NOT EXISTS idx_tax_invoices_business_number ON tax_invoices(business_number);
-CREATE INDEX IF NOT EXISTS idx_tax_invoices_approval        ON tax_invoices(approval_number);
 
 -- =============================================================================
 -- SECTION 14: EXTERNAL CONNECTIONS
@@ -2445,12 +2439,15 @@ CREATE POLICY "shipments_manage_admin" ON shipments
     EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'super_admin'))
   );
 
--- order_items: users view/insert items in their own orders
+-- order_items: users view/insert items in their own orders; admins manage all
 DROP POLICY IF EXISTS "order_items_read_own" ON order_items;
 CREATE POLICY "order_items_read_own" ON order_items
   FOR SELECT USING (
     order_id IN (
       SELECT id FROM orders WHERE user_id::text = auth.uid()::text
+    )
+    OR EXISTS (
+      SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'super_admin')
     )
   );
 
@@ -2459,6 +2456,18 @@ CREATE POLICY "order_items_insert_own" ON order_items
   FOR INSERT WITH CHECK (
     order_id IN (
       SELECT id FROM orders WHERE user_id::text = auth.uid()::text
+    )
+  );
+
+DROP POLICY IF EXISTS "order_items_manage_admin" ON order_items;
+CREATE POLICY "order_items_manage_admin" ON order_items
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'super_admin')
+    )
+  ) WITH CHECK (
+    EXISTS (
+      SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'super_admin')
     )
   );
 
@@ -2656,14 +2665,16 @@ CREATE TABLE IF NOT EXISTS coupon_usages (
   coupon_id        UUID NOT NULL REFERENCES coupons(id) ON DELETE CASCADE,
   user_id          UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   order_id         UUID REFERENCES orders(id) ON DELETE SET NULL,
+  user_coupon_id   UUID REFERENCES user_coupons(id) ON DELETE SET NULL,
   discount_amount  INTEGER NOT NULL DEFAULT 0,
   used_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_coupon_usages_coupon_id ON coupon_usages(coupon_id);
-CREATE INDEX IF NOT EXISTS idx_coupon_usages_user_id   ON coupon_usages(user_id);
-CREATE INDEX IF NOT EXISTS idx_coupon_usages_order_id  ON coupon_usages(order_id);
+CREATE INDEX IF NOT EXISTS idx_coupon_usages_coupon_id      ON coupon_usages(coupon_id);
+CREATE INDEX IF NOT EXISTS idx_coupon_usages_user_id        ON coupon_usages(user_id);
+CREATE INDEX IF NOT EXISTS idx_coupon_usages_order_id       ON coupon_usages(order_id);
+CREATE INDEX IF NOT EXISTS idx_coupon_usages_user_coupon_id ON coupon_usages(user_coupon_id);
 
 -- 20.4 shipping_notifications (배송 알림 설정)
 CREATE TABLE IF NOT EXISTS shipping_notifications (
@@ -2703,6 +2714,74 @@ CREATE INDEX IF NOT EXISTS idx_user_preferences_user_id ON user_preferences(user
 DROP TRIGGER IF EXISTS trg_user_preferences_updated_at ON user_preferences;
 CREATE TRIGGER trg_user_preferences_updated_at
   BEFORE UPDATE ON user_preferences
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- 20.6 cash_receipts (현금영수증)
+CREATE TABLE IF NOT EXISTS cash_receipts (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id        UUID        NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  user_id         UUID        REFERENCES users(id) ON DELETE SET NULL,
+  receipt_type    VARCHAR(20) NOT NULL
+                  CHECK (receipt_type IN ('income_deduction', 'business_expense')),
+  identifier_type VARCHAR(20) NOT NULL
+                  CHECK (identifier_type IN ('phone', 'business_number', 'card')),
+  identifier      VARCHAR(30) NOT NULL,
+  amount          INTEGER     NOT NULL,
+  pg_provider     VARCHAR(30),
+  pg_receipt_id   VARCHAR(100),
+  issued_at       TIMESTAMPTZ,
+  cancelled_at    TIMESTAMPTZ,
+  status               VARCHAR(20) NOT NULL DEFAULT 'pending'
+                       CHECK (status IN ('pending', 'issued', 'cancelled', 'failed')),
+  original_receipt_id  UUID REFERENCES cash_receipts(id) ON DELETE SET NULL,  -- 반품 후 재발행 시 원본 영수증
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cash_receipts_order_id ON cash_receipts(order_id);
+CREATE INDEX IF NOT EXISTS idx_cash_receipts_status   ON cash_receipts(status);
+
+DROP TRIGGER IF EXISTS trg_cash_receipts_updated_at ON cash_receipts;
+CREATE TRIGGER trg_cash_receipts_updated_at
+  BEFORE UPDATE ON cash_receipts
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- 20.7 tax_invoices (세금계산서)
+CREATE TABLE IF NOT EXISTS tax_invoices (
+  id                UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id          UUID         NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  user_id           UUID         REFERENCES users(id) ON DELETE SET NULL,
+  business_name     VARCHAR(100) NOT NULL,
+  business_number   VARCHAR(20)  NOT NULL,
+  ceo_name          VARCHAR(50),
+  business_address  VARCHAR(255),
+  business_type     VARCHAR(50),
+  business_item     VARCHAR(50),
+  manager_name      VARCHAR(50),
+  manager_email     VARCHAR(100),
+  supply_amount     INTEGER      NOT NULL,
+  tax_amount        INTEGER      NOT NULL,
+  total_amount      INTEGER      NOT NULL,
+  nts_result_code   VARCHAR(10),
+  nts_issued_at     TIMESTAMPTZ,
+  invoice_number    VARCHAR(50),
+  issue_type        VARCHAR(20)  NOT NULL DEFAULT 'electronic'
+                    CHECK (issue_type IN ('electronic', 'manual')),
+  status               VARCHAR(20)  NOT NULL DEFAULT 'requested'
+                       CHECK (status IN ('requested', 'issued', 'cancelled', 'failed')),
+  admin_memo           TEXT,
+  original_invoice_id  UUID REFERENCES tax_invoices(id) ON DELETE SET NULL,  -- 반품 후 재발행 시 원본 계산서
+  created_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tax_invoices_order_id        ON tax_invoices(order_id);
+CREATE INDEX IF NOT EXISTS idx_tax_invoices_business_number ON tax_invoices(business_number);
+CREATE INDEX IF NOT EXISTS idx_tax_invoices_status          ON tax_invoices(status);
+
+DROP TRIGGER IF EXISTS trg_tax_invoices_updated_at ON tax_invoices;
+CREATE TRIGGER trg_tax_invoices_updated_at
+  BEFORE UPDATE ON tax_invoices
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- =============================================================================
@@ -2756,6 +2835,7 @@ INSERT INTO settings (key, value, description) VALUES
   ('shipping_fee', '3000', '기본 배송비 (원)'),
   ('free_shipping_threshold', '50000', '무료배송 기준금액 (원)'),
   ('point_earn_rate', '1', '기본 포인트 적립률 (%)'),
+  ('auto_confirm_days', '7', '배송완료 후 자동 구매확정까지 일수'),
   ('signup_points', '1000', '회원가입 포인트 (P)'),
   ('points_min_threshold', '1000', '포인트 사용 최소 보유량 (P)'),
   ('points_unit_amount', '100', '포인트 사용 단위 (원)'),
@@ -2776,7 +2856,12 @@ INSERT INTO settings (key, value, description) VALUES
   ('bank_transfer_bank_name', '""', '은행명'),
   ('bank_transfer_account_number', '""', '계좌번호'),
   ('bank_transfer_account_holder', '""', '예금주'),
-  ('bank_transfer_deadline_hours', '"24"', '입금 기한 (시간)')
+  ('bank_transfer_deadline_hours', '"24"', '입금 기한 (시간)'),
+  ('resend_api_key',             '""',                   'Resend API Key (이메일 발송용)'),
+  ('notification_from_email',    '"noreply@example.com"','알림 발신 이메일 주소'),
+  ('notification_from_name',     '"프리카트"',            '알림 발신자 이름'),
+  ('notification_email_enabled', '"true"',               '이메일 알림 활성화 여부 (true/false)'),
+  ('email_provider',             '"resend"',             '트랜잭션 이메일 발송 방식 (resend | smtp)')
 ON CONFLICT (key) DO NOTHING;
 
 -- =============================================================================
@@ -3204,7 +3289,11 @@ INSERT INTO system_settings (key, value, description) VALUES
   ('point_label', '"포인트"'::jsonb,
    '포인트 명칭(예: 포인트, 적립금, 마일리지). UI 라벨에 사용됨'),
   ('enable_user_tags', 'false'::jsonb,
-   '사용자 태그 기능 ON/OFF. true이면 회원 관리에서 태그 사이드바/태그 관리 탭이 표시됨')
+   '사용자 태그 기능 ON/OFF. true이면 회원 관리에서 태그 사이드바/태그 관리 탭이 표시됨'),
+  ('allow_customer_return', 'true'::jsonb,
+   '고객이 마이페이지에서 직접 반품 신청 가능 여부. false이면 반품 신청 폼 대신 고객센터 안내 메시지 표시'),
+  ('allow_customer_exchange', 'true'::jsonb,
+   '고객이 마이페이지에서 직접 교환 신청 가능 여부. false이면 교환 신청 폼 대신 고객센터 안내 메시지 표시')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -3717,6 +3806,166 @@ BEGIN
   WHERE id = p_product_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION increment_variant_stock(p_variant_id UUID, p_quantity INTEGER)
+RETURNS void AS $$
+BEGIN
+  UPDATE product_variants
+  SET stock_quantity = stock_quantity + p_quantity
+  WHERE id = p_variant_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION increment_product_stock(p_product_id UUID, p_quantity INTEGER)
+RETURNS void AS $$
+BEGIN
+  UPDATE products
+  SET stock_quantity = stock_quantity + p_quantity
+  WHERE id = p_product_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 쿠폰 사용 횟수 증감 (delta 양수=증가, 음수=감소)
+CREATE OR REPLACE FUNCTION increment_coupon_used_count(coupon_id_input UUID, delta INTEGER DEFAULT 1)
+RETURNS void AS $$
+BEGIN
+  UPDATE coupons
+  SET used_quantity = GREATEST(0, used_quantity + delta)
+  WHERE id = coupon_id_input;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 예치금 복구
+CREATE OR REPLACE FUNCTION increment_user_deposit(p_user_id UUID, p_amount INTEGER)
+RETURNS void AS $$
+BEGIN
+  UPDATE users
+  SET deposit = COALESCE(deposit, 0) + p_amount
+  WHERE id = p_user_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ── 미입금 자동취소 배치 함수 ─────────────────────────────────────────────────
+-- pending 상태이면서 payment_deadline <= NOW() 인 주문을 cancelled 로 전이하고
+-- 주문 아이템 재고를 복구합니다. 포인트·쿠폰은 미결제 상태이므로 복구 불필요.
+-- 반환값: 취소 처리된 주문 수
+CREATE OR REPLACE FUNCTION auto_cancel_pending_orders()
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  r               RECORD;
+  item_rec        RECORD;
+  cancelled_count INTEGER := 0;
+BEGIN
+  FOR r IN
+    SELECT id
+    FROM orders
+    WHERE status = 'pending'
+      AND payment_deadline IS NOT NULL
+      AND payment_deadline <= NOW()
+  LOOP
+    UPDATE orders
+    SET status        = 'cancelled',
+        cancelled_at  = NOW(),
+        cancel_reason = '미입금 자동취소'
+    WHERE id = r.id;
+
+    INSERT INTO order_status_history (order_id, from_status, to_status, changed_by, note)
+    VALUES (r.id, 'pending', 'cancelled', 'system', '미입금 자동취소 (입금기한 초과)');
+
+    FOR item_rec IN
+      SELECT product_id, variant_id, quantity, item_type
+      FROM order_items
+      WHERE order_id = r.id
+    LOOP
+      IF COALESCE(item_rec.item_type, 'purchase') = 'gift' THEN CONTINUE; END IF;
+      IF item_rec.variant_id IS NOT NULL THEN
+        PERFORM increment_variant_stock(item_rec.variant_id, item_rec.quantity);
+      ELSIF item_rec.product_id IS NOT NULL THEN
+        PERFORM increment_product_stock(item_rec.product_id, item_rec.quantity);
+      END IF;
+    END LOOP;
+
+    cancelled_count := cancelled_count + 1;
+  END LOOP;
+  RETURN cancelled_count;
+END;
+$$;
+
+-- pg_cron 등록 (Supabase 대시보드 → Database → Extensions 에서 pg_cron 활성화 후 실행):
+-- SELECT cron.schedule('auto-cancel-unpaid', '*/30 * * * *', 'SELECT auto_cancel_pending_orders()');
+
+-- ── 자동 구매확정 배치 함수 ───────────────────────────────────────────────────
+-- delivered 상태이면서 auto_confirm_at <= NOW() 인 주문을 confirmed 로 전이하고
+-- earned_points 를 user 계정에 적립합니다. (중복 적립 방지 포함)
+-- 반환값: 처리된 주문 수
+CREATE OR REPLACE FUNCTION auto_confirm_orders()
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  r                RECORD;
+  confirmed_count  INTEGER := 0;
+  current_pts      INTEGER;
+  new_balance      INTEGER;
+  already_earned   BOOLEAN;
+BEGIN
+  FOR r IN
+    SELECT id, user_id, earned_points
+    FROM orders
+    WHERE status = 'delivered'
+      AND auto_confirm_at IS NOT NULL
+      AND auto_confirm_at <= NOW()
+  LOOP
+    UPDATE orders
+    SET status       = 'confirmed',
+        confirmed_at = NOW()
+    WHERE id = r.id;
+
+    INSERT INTO order_status_history (order_id, from_status, to_status, changed_by, note)
+    VALUES (r.id, 'delivered', 'confirmed', 'system', '자동 구매확정 (배송완료 후 7일)');
+
+    IF r.earned_points > 0 AND r.user_id IS NOT NULL THEN
+      SELECT EXISTS (
+        SELECT 1 FROM user_points_history
+        WHERE reference_type = 'order'
+          AND reference_id   = r.id
+          AND type           = 'earn'
+      ) INTO already_earned;
+
+      IF NOT already_earned THEN
+        SELECT COALESCE(points, 0) INTO current_pts FROM users WHERE id = r.user_id;
+        new_balance := current_pts + r.earned_points;
+        UPDATE users SET points = new_balance WHERE id = r.user_id;
+        INSERT INTO user_points_history
+          (user_id, amount, balance, type, description, reference_type, reference_id)
+        VALUES
+          (r.user_id, r.earned_points, new_balance, 'earn',
+           '구매확정 포인트 적립', 'order', r.id);
+      END IF;
+    END IF;
+
+    confirmed_count := confirmed_count + 1;
+  END LOOP;
+
+  RETURN confirmed_count;
+END;
+$$;
+
+-- pg_cron 등록 (Supabase 대시보드 → Database → Extensions 에서 pg_cron 활성화 후 실행):
+-- SELECT cron.schedule('auto-confirm-orders', '0 * * * *', 'SELECT auto_confirm_orders()');
+
+-- 상품명/옵션명으로 주문 ID 목록을 반환하는 RPC (관리자 주문 검색용)
+CREATE OR REPLACE FUNCTION public.search_orders_by_product(keyword TEXT)
+RETURNS TABLE(order_id UUID) AS $$
+  SELECT DISTINCT oi.order_id
+  FROM order_items oi
+  WHERE oi.product_name ILIKE '%' || keyword || '%'
+     OR oi.option_text ILIKE '%' || keyword || '%';
+$$ LANGUAGE sql SECURITY DEFINER;
 
 -- =============================================================================
 -- freecart-web OAuth 연동 토큰 저장 테이블

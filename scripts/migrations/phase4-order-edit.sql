@@ -1,0 +1,13 @@
+-- Phase 4: 입금 전 주문 수정
+-- pending 상태(입금 전)의 주문에 대해 배송지 수정 및 상품 수정을 허용합니다.
+-- 별도 테이블 추가 없이 기존 orders / order_items 테이블을 활용합니다.
+--
+-- 서비스 레이어 함수:
+--   updateOrderShipping(orderId, data)   - 배송지/주문자 정보 수정 (user + admin)
+--   updateOrderItems(orderId, editedItems) - 상품 수량 변경·추가·삭제 (admin only)
+--
+-- 유의사항:
+--   - pending 상태에서만 수정 가능
+--   - 상품 수량 변경 시 재고 diff 처리 (decrement / increment RPC)
+--   - 상품 수정 후 subtotal, shipping_fee, total_amount 자동 재계산
+--   - 모든 수정은 order_status_history(note)에 이력 기록

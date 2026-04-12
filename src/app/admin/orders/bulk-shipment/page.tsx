@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { transitionOrderStatus } from '@/services/orders';
+import { isValidTransition, type OrderStatus } from '@/constants/orderStatus';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -154,7 +155,7 @@ export default function AdminOrdersBulkShipmentPage() {
           // Find order by order_number
           const { data: order, error: orderError } = await supabase
             .from('orders')
-            .select('id')
+            .select('id, status')
             .eq('order_number', row.order_number)
             .maybeSingle();
 
@@ -185,41 +186,32 @@ export default function AdminOrdersBulkShipmentPage() {
             .eq('order_id', order.id)
             .maybeSingle();
 
+          const shipmentPayload = {
+            shipping_company_id: shippingCompanyId,
+            tracking_number: row.tracking_number,
+            status: 'shipped',
+            shipped_at: new Date().toISOString(),
+          };
+
           if (existingShipment) {
-            // Update existing shipment
             const { error: updateError } = await supabase
               .from('shipments')
-              .update({
-                shipping_company_id: shippingCompanyId,
-                tracking_number: row.tracking_number,
-                status: 'shipping',
-                shipped_at: new Date().toISOString(),
-              })
+              .update(shipmentPayload)
               .eq('id', existingShipment.id);
-
             if (updateError) throw updateError;
           } else {
-            // Insert new shipment
             const { error: insertError } = await supabase
               .from('shipments')
-              .insert({
-                order_id: order.id,
-                shipping_company_id: shippingCompanyId,
-                tracking_number: row.tracking_number,
-                status: 'shipping',
-                shipped_at: new Date().toISOString(),
-              });
-
+              .insert({ order_id: order.id, ...shipmentPayload });
             if (insertError) throw insertError;
           }
 
-          // Update order status to 'shipping'
-          const { error: statusError } = await supabase
-            .from('orders')
-            .update({ status: 'shipping' })
-            .eq('id', order.id);
-
-          if (statusError) throw statusError;
+          // 상태 머신 경유 (유효한 전이일 때만)
+          if (isValidTransition(order.status as OrderStatus, 'shipped')) {
+            await transitionOrderStatus(order.id, 'shipped', {
+              note: `일괄 운송장 등록: ${row.tracking_number}`,
+            });
+          }
 
           processResults.push({
             order_number: row.order_number,

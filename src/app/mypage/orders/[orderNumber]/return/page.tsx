@@ -6,6 +6,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
 import { ArrowLeft, Check } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { RETURN_REASONS } from '@/services/returns';
+import { getCustomerRequestSettings } from '@/services/settings';
 
 interface OrderItem {
   id: string;
@@ -21,15 +23,6 @@ interface OrderDetail {
   items: OrderItem[];
 }
 
-const returnReasons = [
-  '단순 변심',
-  '상품 불량',
-  '오배송',
-  '상품 정보 상이',
-  '배송 지연',
-  '기타',
-];
-
 export default function ReturnRequestPage() {
   const navigate = useNavigate();
   const { orderNumber } = useParams<{ orderNumber: string }>();
@@ -37,6 +30,7 @@ export default function ReturnRequestPage() {
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [allowCustomerReturn, setAllowCustomerReturn] = useState(true);
 
   // 선택된 아이템
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
@@ -56,6 +50,8 @@ export default function ReturnRequestPage() {
   async function loadOrder() {
     try {
       const supabase = createClient();
+      const settings = await getCustomerRequestSettings();
+      setAllowCustomerReturn(settings.allowCustomerReturn);
       const { data, error } = await supabase
         .from('orders')
         .select(`
@@ -126,12 +122,16 @@ export default function ReturnRequestPage() {
     try {
       const supabase = createClient();
       const { error } = await supabase.from('returns').insert({
-        order_id: order!.id,
-        user_id: user!.id,
-        item_ids: selectedItems,
+        order_id:    order!.id,
+        user_id:     user!.id,
+        items:       selectedItems.map((id) => ({
+          order_item_id: id,
+          quantity: order!.items.find((i) => i.id === id)?.quantity ?? 1,
+        })),
         reason,
         description: description || null,
-        status: 'pending',
+        initiated_by: 'customer',
+        status:      'pending',
       });
 
       if (error) throw error;
@@ -152,6 +152,25 @@ export default function ReturnRequestPage() {
 
   if (!order) {
     return null;
+  }
+
+  if (!allowCustomerReturn) {
+    return (
+      <div>
+        <Link
+          to={`/mypage/orders/${orderNumber}`}
+          className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
+        >
+          <ArrowLeft className="mr-1 h-4 w-4" />
+          주문 상세로 돌아가기
+        </Link>
+        <Card className="p-8 text-center">
+          <h1 className="mb-3 text-xl font-bold">반품 신청 안내</h1>
+          <p className="text-gray-600 mb-2">현재 온라인 반품 신청이 운영되지 않습니다.</p>
+          <p className="text-gray-500 text-sm">반품을 원하시면 고객센터로 문의해 주세요.</p>
+        </Card>
+      </div>
+    );
   }
 
   return (
@@ -198,20 +217,20 @@ export default function ReturnRequestPage() {
         <Card className="p-6">
           <h2 className="mb-4 text-lg font-semibold">반품 사유</h2>
           <div className="space-y-2">
-            {returnReasons.map((r) => (
+            {RETURN_REASONS.map((r) => (
               <label
-                key={r}
+                key={r.value}
                 className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-gray-50"
               >
                 <input
                   type="radio"
                   name="reason"
-                  value={r}
-                  checked={reason === r}
+                  value={r.value}
+                  checked={reason === r.value}
                   onChange={(e) => setReason(e.target.value)}
                   className="h-4 w-4 border-gray-300"
                 />
-                <span>{r}</span>
+                <span>{r.label}</span>
               </label>
             ))}
           </div>
