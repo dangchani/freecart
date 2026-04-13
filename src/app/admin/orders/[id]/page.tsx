@@ -254,19 +254,24 @@ export default function AdminOrderDetailPage() {
   const [returnReason, setReturnReason] = useState('');
   const [returnDescription, setReturnDescription] = useState('');
   const [returnRefundPreview, setReturnRefundPreview] = useState(0);
+  const [returnRefundMethod, setReturnRefundMethod] = useState('');
+  const [returnBankName, setReturnBankName] = useState('');
+  const [returnBankAccount, setReturnBankAccount] = useState('');
+  const [returnAccountHolder, setReturnAccountHolder] = useState('');
 
   // 교환 모달
   const [exchangeModalOpen, setExchangeModalOpen] = useState(false);
   const [exchangeTargetItem, setExchangeTargetItem] = useState<OrderItem | null>(null);
-  const [exchangeStep, setExchangeStep] = useState<1 | 2>(1);
+  const [exchangeStep, setExchangeStep] = useState<1 | 2 | 3>(1);
   const [exchangeQty, setExchangeQty] = useState(1);
   const [exchangeReason, setExchangeReason] = useState('');
   const [exchangeSearchQ, setExchangeSearchQ] = useState('');
   const [exchangeSearchResults, setExchangeSearchResults] = useState<Array<{ id: string; name: string; price: number }>>([]);
   const [exchangeSelectedProduct, setExchangeSelectedProduct] = useState<{ id: string; name: string; price: number } | null>(null);
-  const [exchangeVariantResults, setExchangeVariantResults] = useState<Array<{ id: string; optionText: string; price: number }>>([]);
-  const [exchangeSelectedVariant, setExchangeSelectedVariant] = useState<{ id: string; optionText: string; price: number } | null>(null);
+  const [exchangeVariantResults, setExchangeVariantResults] = useState<Array<{ id: string; optionText: string; price: number; stock: number }>>([]);
+  const [exchangeSelectedVariant, setExchangeSelectedVariant] = useState<{ id: string; optionText: string; price: number; stock: number } | null>(null);
   const [exchangePriceDiff, setExchangePriceDiff] = useState(0);
+  const [exchangeResultPriceDiff, setExchangeResultPriceDiff] = useState<number | null>(null);
 
   useEffect(() => {
     if (!authLoading) {
@@ -658,6 +663,15 @@ export default function AdminOrderDetailPage() {
     setReturnDescription('');
     const propDiscount = Math.floor(item.discountAmount * 1 / item.quantity);
     setReturnRefundPreview(item.unitPrice * 1 - propDiscount);
+    // 결제 수단에 따른 기본 환불 방법 설정
+    const pm = order?.paymentMethod ?? '';
+    if (pm === 'card') setReturnRefundMethod('card');
+    else if (pm === 'point') setReturnRefundMethod('point');
+    else if (pm === 'deposit') setReturnRefundMethod('deposit');
+    else setReturnRefundMethod('bank_transfer');
+    setReturnBankName('');
+    setReturnBankAccount('');
+    setReturnAccountHolder('');
     setReturnModalOpen(true);
   }
 
@@ -675,11 +689,15 @@ export default function AdminOrderDetailPage() {
     setSaving(true);
     try {
       const result = await createAdminReturn({
-        orderId:     order.id,
-        adminId:     user!.id,
-        items:       [{ order_item_id: returnTargetItem.id, quantity: returnQty }],
-        reason:      returnReason,
-        description: returnDescription || undefined,
+        orderId:       order.id,
+        adminId:       user!.id,
+        items:         [{ order_item_id: returnTargetItem.id, quantity: returnQty }],
+        reason:        returnReason,
+        description:   returnDescription || undefined,
+        refundMethod:  returnRefundMethod || undefined,
+        bankName:      returnRefundMethod === 'bank_transfer' ? returnBankName || undefined : undefined,
+        bankAccount:   returnRefundMethod === 'bank_transfer' ? returnBankAccount || undefined : undefined,
+        accountHolder: returnRefundMethod === 'bank_transfer' ? returnAccountHolder || undefined : undefined,
       });
       if (!result.success) { alert(result.error ?? '반품 처리 중 오류가 발생했습니다.'); return; }
       setReturnModalOpen(false);
@@ -705,6 +723,7 @@ export default function AdminOrderDetailPage() {
     setExchangeVariantResults([]);
     setExchangeSelectedVariant(null);
     setExchangePriceDiff(0);
+    setExchangeResultPriceDiff(null);
     setExchangeModalOpen(true);
   }
 
@@ -726,13 +745,15 @@ export default function AdminOrderDetailPage() {
     const supabase = createClient();
     const { data } = await supabase
       .from('product_variants')
-      .select('id, option_text, price')
+      .select('id, option_text, price, stock_quantity')
       .eq('product_id', p.id)
       .eq('is_active', true);
-    setExchangeVariantResults((data ?? []).map((v: any) => ({ id: v.id, optionText: v.option_text, price: v.price })));
+    setExchangeVariantResults((data ?? []).map((v: any) => ({
+      id: v.id, optionText: v.option_text, price: v.price, stock: v.stock_quantity ?? 0,
+    })));
   }
 
-  async function handleExchangeSelectVariant(v: { id: string; optionText: string; price: number }) {
+  async function handleExchangeSelectVariant(v: { id: string; optionText: string; price: number; stock: number }) {
     setExchangeSelectedVariant(v);
     if (exchangeTargetItem) {
       const { priceDiff } = await calculatePriceDiff(exchangeTargetItem.unitPrice, v.id, exchangeQty);
@@ -752,10 +773,9 @@ export default function AdminOrderDetailPage() {
         reason:   exchangeReason,
       });
       if (!result.success) { alert(result.error ?? '교환 처리 중 오류가 발생했습니다.'); return; }
-      setExchangeModalOpen(false);
+      setExchangeResultPriceDiff(result.priceDiff ?? 0);
+      setExchangeStep(3);
       await loadAll(id);
-      const diffMsg = result.priceDiff !== 0 ? `\n가격 차이: ${formatCurrency(result.priceDiff ?? 0)}` : '';
-      alert(`교환 처리가 완료되었습니다.${diffMsg}`);
     } catch (err: any) {
       alert(err.message ?? '교환 처리 중 오류가 발생했습니다.');
     } finally {
@@ -808,12 +828,17 @@ export default function AdminOrderDetailPage() {
     : null;
 
   const ACTION_LABELS: Partial<Record<OrderStatus, { label: string; color: string }>> = {
-    paid:             { label: '상품준비 시작', color: 'bg-indigo-600 text-white hover:bg-indigo-700' },
-    processing:       { label: '배송중 처리', color: 'bg-purple-600 text-white hover:bg-purple-700' },
-    shipped:          { label: '배송완료 처리', color: 'bg-teal-600 text-white hover:bg-teal-700' },
-    delivered:        { label: '구매확정 처리', color: 'bg-green-600 text-white hover:bg-green-700' },
-    cancelled:        { label: '취소 처리', color: 'bg-red-100 text-red-700 hover:bg-red-200' },
-    return_requested: { label: '반품완료 처리', color: 'bg-orange-600 text-white hover:bg-orange-700' },
+    paid:       order.status === 'processing'
+                  ? { label: '← 입금확인으로 되돌리기', color: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' }
+                  : { label: '상품준비 시작', color: 'bg-indigo-600 text-white hover:bg-indigo-700' },
+    pending:    { label: '← 입금대기로 되돌리기', color: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' },
+    processing: order.status === 'shipped'
+                  ? { label: '← 상품준비중으로 되돌리기', color: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' }
+                  : { label: '배송중 처리', color: 'bg-purple-600 text-white hover:bg-purple-700' },
+    shipped:    { label: '배송완료 처리', color: 'bg-teal-600 text-white hover:bg-teal-700' },
+    delivered:  { label: '구매확정 처리', color: 'bg-green-600 text-white hover:bg-green-700' },
+    cancelled:  { label: '취소 처리', color: 'bg-red-100 text-red-700 hover:bg-red-200' },
+    // return_requested / returned 는 반품 모달(returns 레코드)을 통해서만 처리
   };
 
   const ITEM_TYPE_LABELS: Record<string, string> = {
@@ -860,7 +885,7 @@ export default function AdminOrderDetailPage() {
         </div>
 
         {/* 주문 제목 */}
-        <div className="mb-6 flex items-center gap-4 flex-wrap">
+        <div className="mb-4 flex items-center gap-4 flex-wrap">
           <h1 className="text-2xl font-bold font-mono">{order.orderNumber}</h1>
           <span className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${statusColor}`}>
             {ORDER_STATUS_LABELS[order.status as OrderStatus] ?? order.status}
@@ -869,6 +894,46 @@ export default function AdminOrderDetailPage() {
           {order.isGift && <span className="text-xs bg-pink-100 text-pink-700 rounded-full px-2 py-0.5">선물포장</span>}
           {(order as any).isAdminOrder && <span className="text-xs bg-violet-100 text-violet-700 rounded-full px-2 py-0.5 no-print">관리자 생성</span>}
         </div>
+
+        {/* 주문 상태 Step Indicator */}
+        {order.status !== 'cancelled' && (
+          <div className="mb-6 no-print overflow-x-auto">
+            <div className="flex items-center min-w-max">
+              {(() => {
+                const isReturnFlow = order.status === 'return_requested' || order.status === 'returned';
+                const steps: OrderStatus[] = isReturnFlow
+                  ? ['pending', 'paid', 'processing', 'shipped', 'delivered', 'return_requested', 'returned']
+                  : ['pending', 'paid', 'processing', 'shipped', 'delivered', 'confirmed'];
+                const currentIdx = steps.indexOf(order.status as OrderStatus);
+                return steps.map((step, idx) => {
+                  const isActive   = order.status === step;
+                  const isCompleted = currentIdx > idx;
+                  return (
+                    <div key={step} className="flex items-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <div className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold border-2 flex-shrink-0 ${
+                          isActive    ? 'border-blue-500 bg-blue-500 text-white'
+                          : isCompleted ? 'border-green-500 bg-green-500 text-white'
+                          : 'border-gray-200 bg-white text-gray-300'
+                        }`}>
+                          {isCompleted ? <Check className="h-3 w-3" /> : <span>{idx + 1}</span>}
+                        </div>
+                        <span className={`text-[10px] whitespace-nowrap leading-tight ${
+                          isActive ? 'text-blue-600 font-semibold' : isCompleted ? 'text-green-600' : 'text-gray-300'
+                        }`}>
+                          {ORDER_STATUS_LABELS[step]}
+                        </span>
+                      </div>
+                      {idx < steps.length - 1 && (
+                        <div className={`w-8 sm:w-12 h-0.5 flex-shrink-0 mx-0.5 mb-4 ${idx < currentIdx ? 'bg-green-400' : 'bg-gray-200'}`} />
+                      )}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* 왼쪽 2칸 */}
@@ -1578,6 +1643,33 @@ export default function AdminOrderDetailPage() {
                 </div>
               </div>
               <div>
+                <label className="font-medium">환불 방법</label>
+                <div className="mt-1 grid grid-cols-2 gap-1.5">
+                  {([
+                    { value: 'card',          label: '카드 취소' },
+                    { value: 'bank_transfer', label: '계좌 입금' },
+                    { value: 'point',         label: '포인트 환불' },
+                    { value: 'deposit',       label: '예치금 환불' },
+                  ] as const).map((m) => (
+                    <label key={m.value} className={`flex items-center gap-2 cursor-pointer rounded border px-3 py-2 text-xs transition-colors ${returnRefundMethod === m.value ? 'border-orange-400 bg-orange-50 font-medium' : 'hover:bg-gray-50'}`}>
+                      <input type="radio" name="refundMethod" value={m.value}
+                        checked={returnRefundMethod === m.value}
+                        onChange={(e) => setReturnRefundMethod(e.target.value)}
+                        className="h-3 w-3 accent-orange-500" />
+                      {m.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {returnRefundMethod === 'bank_transfer' && (
+                <div className="space-y-2 rounded-lg bg-blue-50 p-3">
+                  <p className="text-xs font-medium text-blue-800">환불 계좌 정보</p>
+                  <Input value={returnBankName} onChange={(e) => setReturnBankName(e.target.value)} placeholder="은행명" className="h-8 text-sm" />
+                  <Input value={returnBankAccount} onChange={(e) => setReturnBankAccount(e.target.value)} placeholder="계좌번호" className="h-8 text-sm font-mono" />
+                  <Input value={returnAccountHolder} onChange={(e) => setReturnAccountHolder(e.target.value)} placeholder="예금주" className="h-8 text-sm" />
+                </div>
+              )}
+              <div>
                 <label className="font-medium">상세 메모 (선택)</label>
                 <textarea value={returnDescription} onChange={(e) => setReturnDescription(e.target.value)}
                   placeholder="추가 메모를 입력하세요."
@@ -1646,6 +1738,35 @@ export default function AdminOrderDetailPage() {
               </div>
             )}
 
+            {exchangeStep === 3 && (
+              <div className="space-y-4 text-sm">
+                <div className="rounded-md bg-green-50 border border-green-200 p-4 text-center">
+                  <Check className="h-8 w-8 text-green-600 mx-auto mb-2" />
+                  <p className="font-semibold text-green-800">교환 처리 완료</p>
+                </div>
+                {exchangeResultPriceDiff !== null && exchangeResultPriceDiff !== 0 && (
+                  <div className={`rounded-md p-3 ${exchangeResultPriceDiff > 0 ? 'bg-red-50 border border-red-200' : 'bg-blue-50 border border-blue-200'}`}>
+                    {exchangeResultPriceDiff > 0 ? (
+                      <>
+                        <p className="font-medium text-red-700">추가 결제 필요: {formatCurrency(exchangeResultPriceDiff)}</p>
+                        <p className="text-xs text-red-600 mt-1">고객에게 차액 결제 방법을 별도 안내해주세요.</p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-medium text-blue-700">차액 환불: {formatCurrency(Math.abs(exchangeResultPriceDiff))}</p>
+                        <p className="text-xs text-blue-600 mt-1">고객에게 차액을 환불해주세요.</p>
+                      </>
+                    )}
+                  </div>
+                )}
+                <div className="flex justify-end">
+                  <Button onClick={() => { setExchangeModalOpen(false); setExchangeResultPriceDiff(null); }}>
+                    닫기
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {exchangeStep === 2 && (
               <div className="space-y-4 text-sm">
                 <div>
@@ -1679,10 +1800,17 @@ export default function AdminOrderDetailPage() {
                     ) : !exchangeSelectedVariant ? (
                       <div className="mt-2 border rounded-lg divide-y bg-white max-h-36 overflow-y-auto">
                         {exchangeVariantResults.map((v) => (
-                          <button key={v.id} onClick={() => handleExchangeSelectVariant(v)}
-                            className="w-full flex items-center justify-between px-3 py-2 hover:bg-gray-50 text-left text-sm">
+                          <button key={v.id}
+                            onClick={() => v.stock > 0 ? handleExchangeSelectVariant(v) : undefined}
+                            disabled={v.stock === 0}
+                            className={`w-full flex items-center justify-between px-3 py-2 text-left text-sm transition-colors ${v.stock === 0 ? 'opacity-50 cursor-not-allowed bg-gray-50' : 'hover:bg-gray-50'}`}>
                             <span>{v.optionText}</span>
-                            <span className="text-gray-500">{formatCurrency(v.price)}</span>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs ${v.stock === 0 ? 'text-red-500' : v.stock <= 5 ? 'text-amber-500' : 'text-gray-400'}`}>
+                                {v.stock === 0 ? '품절' : `재고 ${v.stock}개`}
+                              </span>
+                              <span className="text-gray-500">{formatCurrency(v.price)}</span>
+                            </div>
                           </button>
                         ))}
                       </div>

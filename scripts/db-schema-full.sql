@@ -41,7 +41,7 @@ DROP TABLE IF EXISTS
   cart_items, carts, user_coupons, coupons, user_recently_viewed, user_wishlist,
   product_subscriptions, product_qna, product_quantity_discounts, product_level_prices,
   product_discounts, bundle_items, product_stock_alerts, product_gift_set_items, product_gift_tiers, product_gift_sets, product_sets, product_related,
-  product_attribute_values, product_attributes, product_tag_map, product_tags,
+  product_attribute_value_map, product_attribute_values, product_attributes, product_tag_map, product_tags,
   product_images, product_variants, product_option_values, product_options, products,
   product_brands, product_categories, notification_settings, user_messages,
   user_attendance, user_deposits_history, user_points_history, user_addresses,
@@ -447,6 +447,35 @@ CREATE TABLE IF NOT EXISTS product_attribute_values (
 
 CREATE INDEX IF NOT EXISTS idx_product_attr_values_attr ON product_attribute_values(attribute_id);
 
+-- 2.8-4 product_attribute_value_map (상품↔속성값 매핑)
+CREATE TABLE IF NOT EXISTS product_attribute_value_map (
+  product_id         UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  attribute_value_id UUID NOT NULL REFERENCES product_attribute_values(id) ON DELETE CASCADE,
+  PRIMARY KEY (product_id, attribute_value_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_attr_value_map_product
+  ON product_attribute_value_map(product_id);
+
+CREATE INDEX IF NOT EXISTS idx_product_attr_value_map_value
+  ON product_attribute_value_map(attribute_value_id);
+
+ALTER TABLE product_attribute_value_map ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "product_attr_value_map_public_read" ON product_attribute_value_map;
+CREATE POLICY "product_attr_value_map_public_read"
+  ON product_attribute_value_map FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "product_attr_value_map_admin_all" ON product_attribute_value_map;
+CREATE POLICY "product_attr_value_map_admin_all"
+  ON product_attribute_value_map FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM users
+      WHERE id = auth.uid() AND role IN ('admin', 'super_admin')
+    )
+  );
+
 -- 2.9 product_related (관련 상품)
 CREATE TABLE IF NOT EXISTS product_related (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -480,6 +509,8 @@ CREATE TABLE IF NOT EXISTS product_gift_sets (
   starts_at   TIMESTAMPTZ,
   ends_at     TIMESTAMPTZ,
   sort_order  INTEGER      NOT NULL DEFAULT 0,
+  badge_text  VARCHAR(20),                              -- 썸네일 띠지 텍스트 (예: "3+1", "기획전")
+  badge_color VARCHAR(20)  DEFAULT 'red',               -- 띠지 색상 키: red|yellow|green|blue|purple
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
@@ -781,6 +812,7 @@ CREATE TABLE IF NOT EXISTS orders (
   auto_confirm_at         TIMESTAMPTZ,           -- 자동 구매확정 예정 시각 (배송완료 후 N일)
   is_admin_order          BOOLEAN NOT NULL DEFAULT false, -- 관리자 직접 생성 주문 여부
   returned_amount         INTEGER NOT NULL DEFAULT 0,    -- 반품 완료 후 환불된 총금액
+  extra_shipping_fields   JSONB,                         -- 동적 배송지 폼 추가 필드 값 ({"field_key":"value",...})
   created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -3293,7 +3325,9 @@ INSERT INTO system_settings (key, value, description) VALUES
   ('allow_customer_return', 'true'::jsonb,
    '고객이 마이페이지에서 직접 반품 신청 가능 여부. false이면 반품 신청 폼 대신 고객센터 안내 메시지 표시'),
   ('allow_customer_exchange', 'true'::jsonb,
-   '고객이 마이페이지에서 직접 교환 신청 가능 여부. false이면 교환 신청 폼 대신 고객센터 안내 메시지 표시')
+   '고객이 마이페이지에서 직접 교환 신청 가능 여부. false이면 교환 신청 폼 대신 고객센터 안내 메시지 표시'),
+  ('order_list_columns', '["product","memo","deadline"]'::jsonb,
+   '주문 목록 기본 표시 컬럼. localStorage 개인 설정이 없는 관리자에게 적용되는 기본값')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -3431,6 +3465,12 @@ ALTER TABLE signup_field_definitions
 ALTER TABLE signup_field_definitions
   ADD COLUMN IF NOT EXISTS is_editable BOOLEAN NOT NULL DEFAULT true;
 
+-- joy: 배송지 폼 필드 관리
+ALTER TABLE signup_field_definitions
+  ADD COLUMN IF NOT EXISTS use_in_shipping      BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS shipping_sort_order  INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS shipping_is_required BOOLEAN NOT NULL DEFAULT false;
+
 -- joy: 회원가입 기본 필드 시드. is_system=true로 삭제 방지.
 --   이메일/비밀번호는 field_key로 UI에서 비활성화 토글 차단 (항상 필수)
 --   순서: 아이디(10) → 비밀번호(20) → 이름(30) → 휴대폰(40) → 이메일(50) → 주소(60) → 동의(70)
@@ -3512,6 +3552,32 @@ CREATE TRIGGER trg_user_field_values_updated_at
 -- ---------------------------------------------------------------------------
 -- 11) 헬퍼 함수 (SECURITY DEFINER로 RLS 재귀 회피) -- joy 작성
 -- ---------------------------------------------------------------------------
+
+-- joy: 아이디 찾기용 RPC.
+--   이름 + 이메일 또는 이름 + 전화번호로 login_id와 가입일 반환.
+--   SECURITY DEFINER: 비로그인 사용자 호출 가능, login_id·created_at만 반환.
+CREATE OR REPLACE FUNCTION find_login_id_by_contact(
+  p_name  TEXT,
+  p_email TEXT DEFAULT NULL,
+  p_phone TEXT DEFAULT NULL
+)
+RETURNS TABLE (login_id TEXT, created_at TIMESTAMPTZ)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT u.login_id, u.created_at
+  FROM users u
+  WHERE u.name = p_name
+    AND (
+      (p_email IS NOT NULL AND u.email = p_email)
+      OR
+      (p_phone IS NOT NULL AND u.phone = p_phone)
+    )
+  LIMIT 1;
+END;
+$$;
 
 -- joy: 아이디 기반 로그인/비밀번호 찾기용 RPC.
 --   익명 사용자가 login_id로 email을 조회할 수 있도록 SECURITY DEFINER로 RLS 우회.

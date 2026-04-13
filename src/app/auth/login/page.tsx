@@ -87,9 +87,13 @@ export default function LoginPage() {
               {loading ? '로그인 중...' : '로그인'}
             </Button>
 
-            <div className="text-center text-sm">
-              <Link to="/auth/forgot-password" className="text-muted-foreground hover:underline">
-                비밀번호를 잊으셨나요?
+            <div className="text-center text-sm text-muted-foreground">
+              <Link to="/auth/forgot-id" className="hover:underline">
+                아이디 찾기
+              </Link>
+              {' · '}
+              <Link to="/auth/forgot-password" className="hover:underline">
+                비밀번호 찾기
               </Link>
             </div>
 

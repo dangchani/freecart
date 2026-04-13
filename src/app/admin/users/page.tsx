@@ -18,6 +18,8 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Download,
+  KeyRound,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { getSystemSetting } from '@/lib/permissions';
@@ -147,6 +149,15 @@ export default function AdminUsersPage() {
 
   // 회원 추가 모달
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // 엑셀 내보내기
+  const [exporting, setExporting] = useState(false);
+
+  // 임시 비밀번호 발급
+  const [showTempPwModal, setShowTempPwModal] = useState(false);
+  const [tempPwScope, setTempPwScope] = useState<'all' | 'selected'>('all');
+  const [tempPwSendEmail, setTempPwSendEmail] = useState(true);
+  const [tempPwIssuing, setTempPwIssuing] = useState(false);
 
   // 커스텀 컬럼 정의 로드 + 시스템 설정
   useEffect(() => {
@@ -602,6 +613,129 @@ export default function AdminUsersPage() {
     );
   }
 
+  async function handleIssueTempPasswords() {
+    setTempPwIssuing(true);
+    try {
+      const supabase = createClient();
+      const userIds = tempPwScope === 'selected' ? [...selectedUserIds] : undefined;
+
+      const { data, error } = await supabase.functions.invoke('issue-temp-passwords', {
+        body: { userIds, sendEmail: tempPwSendEmail },
+      });
+
+      if (error) throw new Error(error.message);
+      if (!data?.ok) throw new Error(data?.error || '발급 실패');
+
+      const results: { login_id: string; name: string; email: string; temp_password: string; email_sent: boolean; error?: string }[] = data.results;
+
+      // CSV 생성 및 다운로드
+      const headers = ['아이디', '이름', '이메일', '임시비밀번호', '이메일발송', '오류'];
+      const rows = results.map((r) => [
+        r.login_id, r.name, r.email, r.temp_password,
+        r.email_sent ? '발송됨' : '미발송',
+        r.error || '',
+      ]);
+      const csvContent = [
+        headers.join(','),
+        ...rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')),
+      ].join('\n');
+
+      const bom = '\uFEFF';
+      const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `temp_passwords_${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      const successCount = results.filter((r) => !r.error).length;
+      const failCount = results.filter((r) => !!r.error).length;
+      alert(`완료: ${successCount}명 발급${failCount > 0 ? `, ${failCount}명 실패` : ''}\n\nCSV 파일이 다운로드되었습니다.\n⚠ 이 파일은 재다운로드할 수 없습니다. 안전하게 보관해주세요.`);
+      setShowTempPwModal(false);
+    } catch (err) {
+      alert(`오류가 발생했습니다: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setTempPwIssuing(false);
+    }
+  }
+
+  async function handleExport() {
+    try {
+      setExporting(true);
+      const supabase = createClient();
+
+      const { data, error } = await supabase
+        .from('users')
+        .select(`
+          id, login_id, name, email, phone, level, points,
+          created_at, is_blocked, role,
+          user_custom_fields(field_key, value)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // 표시 중인 커스텀 필드 컬럼 추가
+      const visibleFields = availableFields.filter((f) => visibleFieldKeys.includes(f.field_key));
+
+      const headers = [
+        '아이디', '이름', '이메일', '전화번호',
+        ...(useLevels ? ['등급'] : []),
+        ...(usePoints ? [pointLabel] : []),
+        '가입일', '차단여부', '역할',
+        ...visibleFields.map((f) => f.label),
+      ];
+
+      const rows = (data || []).map((u: any) => {
+        const customMap: Record<string, unknown> = {};
+        (u.user_custom_fields ?? []).forEach((cf: any) => {
+          customMap[cf.field_key] = cf.value;
+        });
+
+        const row: unknown[] = [
+          u.login_id || '',
+          u.name || '',
+          u.email || '',
+          u.phone || '',
+        ];
+        if (useLevels) row.push(u.level || '');
+        if (usePoints) row.push(u.points ?? 0);
+        row.push(
+          u.created_at ? format(new Date(u.created_at), 'yyyy-MM-dd HH:mm') : '',
+          u.is_blocked ? '차단' : '정상',
+          u.role || '',
+        );
+        visibleFields.forEach((f) => {
+          const raw = customMap[f.field_key];
+          row.push(raw !== undefined && raw !== null ? String(raw) : '');
+        });
+        return row;
+      });
+
+      const csvContent = [
+        headers.join(','),
+        ...rows.map((row) =>
+          row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','),
+        ),
+      ].join('\n');
+
+      const bom = '\uFEFF';
+      const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `users_${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to export users:', err);
+      alert('내보내기 중 오류가 발생했습니다.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="p-8">
       <div className="mb-6 flex items-center justify-between">
@@ -615,6 +749,14 @@ export default function AdminUsersPage() {
               태그 관리
             </Button>
           )}
+          <Button variant="outline" onClick={() => setShowTempPwModal(true)}>
+            <KeyRound className="mr-2 h-4 w-4" />
+            임시 비밀번호 발급
+          </Button>
+          <Button variant="outline" onClick={handleExport} disabled={exporting}>
+            <Download className="mr-2 h-4 w-4" />
+            {exporting ? '처리중...' : '내보내기'}
+          </Button>
           {/* 컬럼 설정 */}
           <div className="relative" ref={columnMenuRef}>
             <Button variant="outline" onClick={() => setShowColumnMenu((v) => !v)}>
@@ -665,6 +807,88 @@ export default function AdminUsersPage() {
           </Button>
         </div>
       </div>
+
+      {/* 임시 비밀번호 발급 모달 */}
+      {showTempPwModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-base font-semibold">임시 비밀번호 일괄 발급</h2>
+              <button type="button" onClick={() => setShowTempPwModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* 발급 범위 */}
+              <div>
+                <p className="mb-2 text-sm font-medium text-gray-700">발급 대상</p>
+                <div className="space-y-2">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="tempPwScope"
+                      checked={tempPwScope === 'all'}
+                      onChange={() => setTempPwScope('all')}
+                    />
+                    전체 회원 ({totalCount.toLocaleString()}명)
+                  </label>
+                  <label className={`flex cursor-pointer items-center gap-2 text-sm ${selectedUserIds.size === 0 ? 'opacity-40' : ''}`}>
+                    <input
+                      type="radio"
+                      name="tempPwScope"
+                      checked={tempPwScope === 'selected'}
+                      onChange={() => setTempPwScope('selected')}
+                      disabled={selectedUserIds.size === 0}
+                    />
+                    선택한 회원만 ({selectedUserIds.size}명)
+                  </label>
+                </div>
+              </div>
+
+              {/* 이메일 발송 */}
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div>
+                  <p className="text-sm font-medium">이메일로 발송</p>
+                  <p className="text-xs text-gray-400">회원 이메일로 임시 비밀번호 안내 메일을 발송합니다.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTempPwSendEmail((v) => !v)}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+                    tempPwSendEmail ? 'bg-blue-600' : 'bg-gray-200'
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    tempPwSendEmail ? 'translate-x-6' : 'translate-x-1'
+                  }`} />
+                </button>
+              </div>
+
+              {/* 경고 */}
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 space-y-1">
+                <p className="font-semibold">⚠ 주의사항</p>
+                <p>• 발급 즉시 기존 비밀번호가 모두 변경됩니다.</p>
+                <p>• 임시 비밀번호는 CSV 파일로 1회만 다운로드됩니다.</p>
+                <p>• 파일을 닫으면 비밀번호를 다시 확인할 수 없습니다.</p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setShowTempPwModal(false)} disabled={tempPwIssuing}>
+                취소
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleIssueTempPasswords}
+                disabled={tempPwIssuing || (tempPwScope === 'selected' && selectedUserIds.size === 0)}
+              >
+                {tempPwIssuing ? '발급 중...' : '발급 + CSV 다운로드'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 태그 관리 슬라이드 패널 */}
       {enableUserTags && showTagPanel && (

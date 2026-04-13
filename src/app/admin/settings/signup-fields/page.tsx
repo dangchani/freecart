@@ -45,6 +45,9 @@ interface EditDraft {
   options: Array<{ label: string; value: string }>;
   is_system: boolean;
   terms_id: string | null;
+  use_in_shipping: boolean;
+  shipping_sort_order: number;
+  shipping_is_required: boolean;
 }
 
 function emptyDraft(): EditDraft {
@@ -61,6 +64,9 @@ function emptyDraft(): EditDraft {
     options: [],
     is_system: false,
     terms_id: null,
+    use_in_shipping: false,
+    shipping_sort_order: 0,
+    shipping_is_required: false,
   };
 }
 
@@ -164,6 +170,9 @@ function Inner() {
       options: f.options ?? [],
       is_system: f.is_system,
       terms_id: f.terms_id ?? null,
+      use_in_shipping: f.use_in_shipping ?? false,
+      shipping_sort_order: f.shipping_sort_order ?? 0,
+      shipping_is_required: f.shipping_is_required ?? false,
     });
   }
 
@@ -212,6 +221,9 @@ function Inner() {
         is_active: isCoreField(draft.field_key) ? true : draft.is_active,
         is_required: isCoreField(draft.field_key) ? true : draft.is_required,
         is_editable: draft.field_key === 'login_id' ? false : draft.is_editable,
+        use_in_shipping: draft.use_in_shipping,
+        shipping_sort_order: draft.use_in_shipping ? draft.shipping_sort_order : 0,
+        shipping_is_required: draft.use_in_shipping ? draft.shipping_is_required : false,
       };
       if (!draft.is_system) {
         update.options = draft.options.length > 0 ? draft.options : null;
@@ -237,6 +249,9 @@ function Inner() {
         options: draft.options.length > 0 ? draft.options : null,
         terms_id: draft.field_type === 'terms' ? draft.terms_id : null,
         storage_target: 'custom',
+        use_in_shipping: draft.use_in_shipping,
+        shipping_sort_order: draft.use_in_shipping ? draft.shipping_sort_order : 0,
+        shipping_is_required: draft.use_in_shipping ? draft.shipping_is_required : false,
       });
       if (e) return setError(e.message);
       alert('추가되었습니다.');
@@ -245,7 +260,45 @@ function Inner() {
     await load();
   }
 
+  const [previewTab, setPreviewTab] = useState<'signup' | 'shipping'>('signup');
   const previewDefs = useMemo(() => fields.filter((f) => f.is_active), [fields]);
+  const shippingPreviewDefs = useMemo(() => {
+    // draft 편집 중인 필드는 저장 전에도 미리보기에 즉시 반영
+    const merged = fields.map((f) => {
+      if (draft.id && f.id === draft.id) {
+        return {
+          ...f,
+          label: draft.label || f.label,
+          use_in_shipping: draft.use_in_shipping,
+          shipping_sort_order: draft.shipping_sort_order,
+          shipping_is_required: draft.shipping_is_required,
+          placeholder: draft.placeholder || f.placeholder,
+          help_text: draft.help_text || f.help_text,
+        };
+      }
+      return f;
+    });
+    // 신규 draft (id=null)이고 use_in_shipping=true이면 임시 항목으로 추가
+    const withNew = (draft.id === null && draft.use_in_shipping && draft.label)
+      ? [...merged, {
+          ...fields[0], // 타입 형태 맞추기용 기반값
+          id: '__preview_new__',
+          field_key: draft.field_key || '__new__',
+          label: draft.label,
+          field_type: draft.field_type,
+          use_in_shipping: true,
+          shipping_sort_order: draft.shipping_sort_order,
+          shipping_is_required: draft.shipping_is_required,
+          placeholder: draft.placeholder || null,
+          help_text: draft.help_text || null,
+          options: draft.options.length > 0 ? draft.options : null,
+          is_active: true,
+        } as typeof fields[0]]
+      : merged;
+    return withNew
+      .filter((f) => f.is_active && f.use_in_shipping)
+      .sort((a, b) => a.shipping_sort_order - b.shipping_sort_order);
+  }, [fields, draft]);
 
   if (loading) return <div className="p-8">로딩 중...</div>;
 
@@ -427,6 +480,42 @@ function Inner() {
               </div>
             )}
 
+            {/* 배송지 폼 사용 설정 */}
+            <div className="rounded-md border p-3 space-y-2">
+              <p className="text-xs font-medium text-gray-700 uppercase tracking-wide">배송지 폼 설정</p>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={draft.use_in_shipping}
+                  onChange={(e) => setDraft({ ...draft, use_in_shipping: e.target.checked })}
+                />
+                배송지 폼에 포함
+              </label>
+              {draft.use_in_shipping && (
+                <>
+                  <div>
+                    <Label>배송지 표시 순서</Label>
+                    <Input
+                      type="number"
+                      value={draft.shipping_sort_order}
+                      onChange={(e) => setDraft({ ...draft, shipping_sort_order: parseInt(e.target.value) || 0 })}
+                      min={0}
+                      step={10}
+                    />
+                    <p className="mt-0.5 text-xs text-gray-400">숫자가 낮을수록 위에 표시됩니다.</p>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={draft.shipping_is_required}
+                      onChange={(e) => setDraft({ ...draft, shipping_is_required: e.target.checked })}
+                    />
+                    배송지 폼에서 필수 입력
+                  </label>
+                </>
+              )}
+            </div>
+
             <div className="flex gap-2">
               <Button onClick={saveDraft} className="flex-1">
                 {draft.id ? '수정 저장' : '필드 추가'}
@@ -442,10 +531,91 @@ function Inner() {
 
         {/* 미리보기 */}
         <Card className="p-4 lg:col-span-1">
-          <h2 className="mb-3 text-lg font-bold">미리보기</h2>
-          <div className="rounded-md border p-3">
-            <DynamicSignupForm previewOnly previewDefinitions={previewDefs} />
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-bold">미리보기</h2>
+            <div className="flex rounded-md border overflow-hidden text-sm">
+              <button
+                type="button"
+                onClick={() => setPreviewTab('signup')}
+                className={`px-3 py-1 ${previewTab === 'signup' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              >
+                회원가입
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewTab('shipping')}
+                className={`px-3 py-1 border-l ${previewTab === 'shipping' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              >
+                배송지
+              </button>
+            </div>
           </div>
+          {previewTab === 'signup' ? (
+            <div className="rounded-md border p-3">
+              <DynamicSignupForm previewOnly previewDefinitions={previewDefs} />
+            </div>
+          ) : (
+            <div className="rounded-md border p-3 space-y-3">
+              {/* 항상 표시되는 기본 배송지 필드 */}
+              {[
+                { label: '수령인', placeholder: '받으시는 분 이름', required: true },
+                { label: '휴대폰 번호', placeholder: '01012345678', required: true },
+                { label: '우편번호 / 주소', placeholder: '주소 검색 버튼을 눌러주세요', required: true },
+                { label: '상세주소', placeholder: '동, 호수 등 상세주소', required: false },
+                { label: '배송 요청사항', placeholder: '배송 시 요청사항 (선택)', required: false },
+              ].map((f) => (
+                <div key={f.label}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {f.label}
+                    {f.required && <span className="ml-1 text-red-500">*</span>}
+                    <span className="ml-1.5 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-400">기본</span>
+                  </label>
+                  <input
+                    disabled
+                    className="w-full rounded-md border px-3 py-2 text-sm bg-gray-50"
+                    placeholder={f.placeholder}
+                  />
+                </div>
+              ))}
+              {/* 관리자가 추가한 동적 필드 */}
+              {shippingPreviewDefs.length > 0 && (
+                <>
+                  <div className="border-t pt-3">
+                    <p className="mb-3 text-xs font-medium text-gray-400 uppercase tracking-wide">추가 필드</p>
+                    {shippingPreviewDefs.map((f) => (
+                      <div key={f.id} className="mb-3 last:mb-0">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          {f.label}
+                          {f.shipping_is_required && <span className="ml-1 text-red-500">*</span>}
+                        </label>
+                        {f.field_type === 'textarea' ? (
+                          <textarea
+                            disabled
+                            className="w-full rounded-md border px-3 py-2 text-sm bg-gray-50 resize-none"
+                            placeholder={f.placeholder ?? ''}
+                            rows={3}
+                          />
+                        ) : f.field_type === 'select' ? (
+                          <select disabled className="w-full rounded-md border px-3 py-2 text-sm bg-gray-50">
+                            <option>{f.placeholder ?? '선택하세요'}</option>
+                            {(f.options ?? []).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </select>
+                        ) : (
+                          <input
+                            disabled
+                            type={f.field_type === 'phone' ? 'tel' : f.field_type === 'number' ? 'number' : 'text'}
+                            className="w-full rounded-md border px-3 py-2 text-sm bg-gray-50"
+                            placeholder={f.placeholder ?? ''}
+                          />
+                        )}
+                        {f.help_text && <p className="mt-0.5 text-xs text-gray-400">{f.help_text}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </Card>
       </div>
     </div>

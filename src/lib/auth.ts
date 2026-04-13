@@ -135,6 +135,25 @@ export async function resetPasswordByLoginId(loginId: string) {
   if (error) throw error;
 }
 
+// joy: 이름 + 이메일 또는 이름 + 전화번호로 login_id와 가입일을 조회.
+//   RPC find_login_id_by_contact는 SECURITY DEFINER로 RLS 없이 처리.
+//   미존재 시 NOT_FOUND 에러로 UI에서 분기.
+export async function findLoginIdByContact(params: {
+  name: string;
+  method: 'email' | 'phone';
+  contact: string;
+}): Promise<{ loginId: string; createdAt: string }> {
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('find_login_id_by_contact', {
+    p_name:  params.name,
+    p_email: params.method === 'email' ? params.contact : null,
+    p_phone: params.method === 'phone' ? params.contact : null,
+  });
+  if (error) throw error;
+  if (!data || data.length === 0) throw new Error('NOT_FOUND');
+  return { loginId: data[0].login_id, createdAt: data[0].created_at };
+}
+
 export async function updatePassword(newPassword: string) {
   const supabase = createClient();
 

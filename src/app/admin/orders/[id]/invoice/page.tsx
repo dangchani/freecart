@@ -56,6 +56,7 @@ export default function AdminOrderInvoicePage() {
   const [siteInfo, setSiteInfo] = useState<Awaited<ReturnType<typeof getSiteInfo>> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showUnitPrice, setShowUnitPrice] = useState(true);
 
   useEffect(() => {
     if (!authLoading) {
@@ -214,7 +215,27 @@ export default function AdminOrderInvoicePage() {
         >
           닫기
         </button>
-        <span style={{ marginLeft: '8px', fontSize: '12px', color: '#777' }}>
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '13px',
+            color: '#ccc',
+            cursor: 'pointer',
+            userSelect: 'none',
+            marginLeft: '8px',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={showUnitPrice}
+            onChange={(e) => setShowUnitPrice(e.target.checked)}
+            style={{ width: '14px', height: '14px', cursor: 'pointer' }}
+          />
+          단가 표시
+        </label>
+        <span style={{ marginLeft: 'auto', fontSize: '12px', color: '#777' }}>
           주문번호: {order.orderNumber}
         </span>
       </div>
@@ -323,7 +344,9 @@ export default function AdminOrderInvoicePage() {
                 <th style={itemTh({ width: '36px', textAlign: 'center' })}>No.</th>
                 <th style={itemTh({})}>품목명 / 옵션</th>
                 <th style={itemTh({ width: '52px', textAlign: 'center' })}>수량</th>
-                <th style={itemTh({ width: '96px', textAlign: 'right' })}>단 가 (원)</th>
+                {showUnitPrice && (
+                  <th style={itemTh({ width: '96px', textAlign: 'right' })}>단 가 (원)</th>
+                )}
                 <th style={itemTh({ width: '106px', textAlign: 'right', borderRight: 'none' })}>금 액 (원)</th>
               </tr>
             </thead>
@@ -344,9 +367,11 @@ export default function AdminOrderInvoicePage() {
                   <td style={itemTd({ textAlign: 'center', fontWeight: '600' })}>
                     {item.quantity.toLocaleString()}
                   </td>
-                  <td style={itemTd({ textAlign: 'right' })}>
-                    {item.unitPrice.toLocaleString()}
-                  </td>
+                  {showUnitPrice && (
+                    <td style={itemTd({ textAlign: 'right' })}>
+                      {item.unitPrice.toLocaleString()}
+                    </td>
+                  )}
                   <td style={itemTd({ textAlign: 'right', borderRight: 'none', fontWeight: '700' })}>
                     {item.totalPrice.toLocaleString()}
                   </td>
@@ -355,9 +380,10 @@ export default function AdminOrderInvoicePage() {
               {/* 빈 행 */}
               {Array.from({ length: EMPTY_ROWS }).map((_, i) => (
                 <tr key={`empty-${i}`} style={{ borderTop: '1px solid #ddd' }}>
-                  {[0, 1, 2, 3].map((col) => (
-                    <td key={col} style={itemTd({ height: '28px' })}></td>
-                  ))}
+                  <td style={itemTd({ height: '28px' })}></td>
+                  <td style={itemTd({ height: '28px' })}></td>
+                  <td style={itemTd({ height: '28px' })}></td>
+                  {showUnitPrice && <td style={itemTd({ height: '28px' })}></td>}
                   <td style={itemTd({ borderRight: 'none', height: '28px' })}></td>
                 </tr>
               ))}

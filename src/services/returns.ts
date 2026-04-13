@@ -17,6 +17,7 @@ export interface ReturnRequest {
   customerName:      string;
   userId:            string;
   items:             ReturnItem[];
+  itemSummary:       string;
   reason:            string;
   description:       string | null;
   status:            ReturnStatus;
@@ -82,7 +83,7 @@ export async function getAllReturnRequests(filters?: {
       refund_amount, refund_method, bank_name, bank_account, account_holder,
       initiated_by, tracking_number, tracking_company_id,
       approved_at, collected_at, processed_at, completed_at, created_at,
-      order:orders(id, order_number, orderer_name)
+      order:orders(id, order_number, orderer_name, order_items(id, product_name))
     `)
     .order('created_at', { ascending: false });
 
@@ -93,31 +94,44 @@ export async function getAllReturnRequests(filters?: {
   const { data, error } = await query;
   if (error || !data) return [];
 
-  return data.map((r: any) => ({
-    id:                r.id,
-    orderId:           r.order?.id ?? '',
-    orderNumber:       r.order?.order_number ?? '',
-    customerName:      r.order?.orderer_name ?? '',
-    userId:            r.user_id,
-    items:             r.items ?? [],
-    reason:            r.reason,
-    description:       r.description,
-    status:            r.status,
-    refundAmount:      r.refund_amount ?? 0,
-    refundMethod:      r.refund_method ?? null,
-    bankName:          r.bank_name ?? null,
-    bankAccount:       r.bank_account ?? null,
-    accountHolder:     r.account_holder ?? null,
-    initiatedBy:       r.initiated_by ?? 'customer',
-    adminMemo:         r.admin_memo,
-    trackingNumber:    r.tracking_number,
-    trackingCompanyId: r.tracking_company_id,
-    approvedAt:        r.approved_at,
-    collectedAt:       r.collected_at,
-    processedAt:       r.processed_at ?? null,
-    completedAt:       r.completed_at,
-    createdAt:         r.created_at,
-  }));
+  return data.map((r: any) => {
+    const returnItems: ReturnItem[] = r.items ?? [];
+    const orderItems: any[] = r.order?.order_items ?? [];
+    const firstItemId = returnItems[0]?.order_item_id;
+    const firstProduct = orderItems.find((oi) => oi.id === firstItemId);
+    const itemSummary = firstProduct
+      ? returnItems.length > 1
+        ? `${firstProduct.product_name} 외 ${returnItems.length - 1}건`
+        : firstProduct.product_name
+      : '';
+
+    return {
+      id:                r.id,
+      orderId:           r.order?.id ?? '',
+      orderNumber:       r.order?.order_number ?? '',
+      customerName:      r.order?.orderer_name ?? '',
+      userId:            r.user_id,
+      items:             returnItems,
+      itemSummary,
+      reason:            r.reason,
+      description:       r.description,
+      status:            r.status,
+      refundAmount:      r.refund_amount ?? 0,
+      refundMethod:      r.refund_method ?? null,
+      bankName:          r.bank_name ?? null,
+      bankAccount:       r.bank_account ?? null,
+      accountHolder:     r.account_holder ?? null,
+      initiatedBy:       r.initiated_by ?? 'customer',
+      adminMemo:         r.admin_memo,
+      trackingNumber:    r.tracking_number,
+      trackingCompanyId: r.tracking_company_id,
+      approvedAt:        r.approved_at,
+      collectedAt:       r.collected_at,
+      processedAt:       r.processed_at ?? null,
+      completedAt:       r.completed_at,
+      createdAt:         r.created_at,
+    };
+  });
 }
 
 // 반품 승인
@@ -250,11 +264,25 @@ export async function completeReturn(
       .update({ returned_amount: prevReturnedAmount + ((ret as any).refund_amount ?? 0) })
       .eq('id', ret.order_id);
 
-    // 주문 상태 전이: return_requested → returned
-    await transitionOrderStatus(ret.order_id, 'returned' as OrderStatus, {
-      note:      `반품 완료 처리 (return #${returnId})`,
-      changedBy,
-    });
+    // 전체 반품 여부 확인 → 조건부 주문 상태 전이
+    const { data: allOrderItemsForCheck } = await supabase
+      .from('order_items')
+      .select('quantity, returned_quantity, exchanged_quantity, item_type')
+      .eq('order_id', ret.order_id);
+
+    const nonGiftItems = (allOrderItemsForCheck ?? []).filter((i: any) => i.item_type !== 'gift');
+    const allFullyProcessed = nonGiftItems.length > 0 && nonGiftItems.every(
+      (i: any) => ((i.returned_quantity ?? 0) + (i.exchanged_quantity ?? 0)) >= i.quantity,
+    );
+
+    if (allFullyProcessed) {
+      // 전체 반품 완료: return_requested → returned
+      await transitionOrderStatus(ret.order_id, 'returned' as OrderStatus, {
+        note:      `반품 완료 처리 (return #${returnId})`,
+        changedBy,
+      });
+    }
+    // 부분 반품인 경우 주문 상태 유지 (처리된 order_items.status = 'returned'만 업데이트됨)
 
     // 반품 상태 업데이트
     const { error: updateErr } = await supabase
@@ -464,14 +492,40 @@ export async function createAdminReturn(params: {
       .update({ returned_amount: prevReturnedAmount + refundAmount })
       .eq('id', params.orderId);
 
-    // 9. 주문 상태 이력 기록
-    await supabase.from('order_status_history').insert({
-      order_id:    params.orderId,
-      from_status: (order as any).status,
-      to_status:   (order as any).status,
-      changed_by:  params.adminId,
-      note:        `관리자 반품 처리 (return #${returnId}), 환불금액: ${refundAmount.toLocaleString()}원`,
-    });
+    // 9. 전체 반품 여부 확인 → 주문 상태 전환 + 이력 기록
+    const { data: latestItems } = await supabase
+      .from('order_items')
+      .select('quantity, returned_quantity, exchanged_quantity, item_type')
+      .eq('order_id', params.orderId);
+
+    const nonGiftItems = (latestItems ?? []).filter((i: any) => i.item_type !== 'gift');
+    const allReturned = nonGiftItems.length > 0 && nonGiftItems.every(
+      (i: any) => ((i.returned_quantity ?? 0) + (i.exchanged_quantity ?? 0)) >= i.quantity,
+    );
+
+    if (allReturned && (order as any).status !== 'returned') {
+      // 전체 반품: 주문 상태를 'returned'로 직접 업데이트 (관리자 직접 처리는 return_requested 단계 없이 즉시 완료)
+      await supabase
+        .from('orders')
+        .update({ status: 'returned' })
+        .eq('id', params.orderId);
+      await supabase.from('order_status_history').insert({
+        order_id:    params.orderId,
+        from_status: (order as any).status,
+        to_status:   'returned',
+        changed_by:  params.adminId,
+        note:        `관리자 반품 처리 완료 (return #${returnId}), 환불금액: ${refundAmount.toLocaleString()}원`,
+      });
+    } else {
+      // 부분 반품 또는 이미 returned 상태: 이력만 기록
+      await supabase.from('order_status_history').insert({
+        order_id:    params.orderId,
+        from_status: (order as any).status,
+        to_status:   (order as any).status,
+        changed_by:  params.adminId,
+        note:        `관리자 반품 처리 (return #${returnId}), 환불금액: ${refundAmount.toLocaleString()}원${!allReturned ? ' (부분반품)' : ''}`,
+      });
+    }
 
     return { success: true, returnId, refundAmount };
   } catch (err: any) {

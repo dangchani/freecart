@@ -442,6 +442,7 @@ export default function AdminRefundsPage() {
                   <tr>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">주문번호</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">고객명</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">상품</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">사유</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">수거 운송장</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">상태</th>
@@ -456,6 +457,7 @@ export default function AdminRefundsPage() {
                         <Link to={`/admin/orders/${r.orderId}`} className="font-mono text-blue-600 hover:underline">{r.orderNumber}</Link>
                       </td>
                       <td className="px-4 py-3">{r.customerName}</td>
+                      <td className="px-4 py-3 max-w-[160px]"><p className="truncate text-xs text-gray-700">{r.itemSummary || '—'}</p></td>
                       <td className="px-4 py-3 max-w-xs"><p className="truncate">{r.reason}</p></td>
                       <td className="px-4 py-3 font-mono text-xs text-gray-600">{r.trackingNumber ?? '—'}</td>
                       <td className="px-4 py-3">
@@ -491,6 +493,7 @@ export default function AdminRefundsPage() {
                   <tr>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">주문번호</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">고객명</th>
+                    <th className="px-4 py-3 text-left font-medium text-gray-600">상품</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">사유</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">수거 운송장</th>
                     <th className="px-4 py-3 text-left font-medium text-gray-600">재발송 운송장</th>
@@ -506,6 +509,7 @@ export default function AdminRefundsPage() {
                         <Link to={`/admin/orders/${e.orderId}`} className="font-mono text-blue-600 hover:underline">{e.orderNumber}</Link>
                       </td>
                       <td className="px-4 py-3">{e.customerName}</td>
+                      <td className="px-4 py-3 max-w-[160px]"><p className="truncate text-xs text-gray-700">{e.itemSummary || '—'}</p></td>
                       <td className="px-4 py-3 max-w-xs"><p className="truncate">{e.reason}</p></td>
                       <td className="px-4 py-3 font-mono text-xs text-gray-600">{e.trackingNumber ?? '—'}</td>
                       <td className="px-4 py-3 font-mono text-xs text-gray-600">{e.reshipTrackingNumber ?? '—'}</td>

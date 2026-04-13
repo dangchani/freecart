@@ -203,7 +203,7 @@ export default function NewBundlePage() {
   // ---------------- Gift Sets ----------------
 
   function newGiftSetDraft(): GiftSetDraft {
-    return { localId: crypto.randomUUID(), dbId: null, name: '', giftType: 'select', isActive: true, startsAt: '', endsAt: '', tiers: [], items: [] };
+    return { localId: crypto.randomUUID(), dbId: null, name: '', giftType: 'select', isActive: true, startsAt: '', endsAt: '', badgeText: '', badgeColor: 'red', tiers: [], items: [] };
   }
 
   function updateGiftSet(localId: string, patch: Partial<GiftSetDraft>) {

@@ -230,6 +230,8 @@ export default function NewProductPage() {
       isActive: true,
       startsAt: '',
       endsAt: '',
+      badgeText: '',
+      badgeColor: 'red',
       tiers: [],
       items: [],
     };
@@ -1484,6 +1486,47 @@ export default function NewProductPage() {
                         <Trash2 className="h-4 w-4 text-red-500" />
                       </Button>
                     </div>
+                  </div>
+
+                  {/* 띠지 설정 */}
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <Label>썸네일 띠지 텍스트 <span className="text-xs font-normal text-gray-400">(최대 20자, 비우면 미표시)</span></Label>
+                      <Input
+                        value={giftSet.badgeText}
+                        onChange={(e) => updateGiftSet(giftSet.localId, { badgeText: e.target.value.slice(0, 20) })}
+                        placeholder="예: 3+1, 기획전, 증정행사"
+                        maxLength={20}
+                      />
+                    </div>
+                    <div className="w-36 shrink-0">
+                      <Label>띠지 색상</Label>
+                      <div className="flex gap-1.5 pt-1">
+                        {([ ['red', 'bg-red-500'], ['yellow', 'bg-yellow-400'], ['green', 'bg-emerald-500'], ['blue', 'bg-blue-500'], ['purple', 'bg-purple-500'] ] as [string, string][]).map(([key, cls]) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => updateGiftSet(giftSet.localId, { badgeColor: key })}
+                            className={`h-7 w-7 rounded-full ${cls} transition-transform ${giftSet.badgeColor === key ? 'ring-2 ring-offset-1 ring-gray-600 scale-110' : 'opacity-60 hover:opacity-100'}`}
+                            title={key}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    {giftSet.badgeText && (
+                      <div className="shrink-0 pb-0.5">
+                        <Label className="invisible">미리보기</Label>
+                        <div className={`rounded px-3 py-1 text-xs font-bold ${{
+                          red: 'bg-red-500 text-white',
+                          yellow: 'bg-yellow-400 text-gray-900',
+                          green: 'bg-emerald-500 text-white',
+                          blue: 'bg-blue-500 text-white',
+                          purple: 'bg-purple-500 text-white',
+                        }[giftSet.badgeColor] ?? 'bg-red-500 text-white'}`}>
+                          {giftSet.badgeText}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* 사은품 구간 (tier) */}
