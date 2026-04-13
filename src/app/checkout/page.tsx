@@ -9,8 +9,9 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { formatCurrency } from '@/lib/utils';
-import { getCart } from '@/services/cart';
+import { getCart, clearCart } from '@/services/cart';
 import { createOrder } from '@/services/orders';
+import { getShippingFields, type ShippingFieldDef } from '@/services/shipping-fields';
 import { getUserCoupons, calculateCouponDiscount, registerCouponByCode, useCoupon, type UserCoupon } from '@/services/coupons';
 import { getUserPoints, validatePointsUsage, usePoints } from '@/services/points';
 import { getUserAddresses, type UserAddress } from '@/services/addresses';
@@ -19,7 +20,8 @@ import { createClient } from '@/lib/supabase/client';
 import { getShippingSettings, getPointSettings, getBankTransferSettings } from '@/services/settings';
 import { getSystemSetting } from '@/lib/permissions';
 import type { CartItem } from '@/types';
-import { Ticket, Coins, Check, X, ChevronDown, ChevronUp, MapPin } from 'lucide-react';
+import { Ticket, Coins, Check, X, ChevronDown, ChevronUp, MapPin, Search } from 'lucide-react';
+import { openDaumPostcode } from '@/lib/daum-postcode';
 
 interface ActivePG {
   provider: string;
@@ -40,8 +42,9 @@ type PaymentMethod = 'pg' | 'bank_transfer';
 const checkoutSchema = z.object({
   recipientName: z.string().min(1, '수령인 이름을 입력해주세요'),
   recipientPhone: z.string().min(10, '휴대폰 번호를 입력해주세요'),
-  address: z.string().min(1, '주소를 입력해주세요'),
   postalCode: z.string().min(5, '우편번호를 입력해주세요'),
+  address: z.string().min(1, '주소를 입력해주세요'),
+  address2: z.string().optional(),
   deliveryRequest: z.string().optional(),
 });
 
@@ -186,6 +189,9 @@ export default function CheckoutPage() {
   // 배송지 관련 state
   const [savedAddresses, setSavedAddresses] = useState<UserAddress[]>([]);
   const [showAddressList, setShowAddressList] = useState(false);
+  const [shippingFields, setShippingFields] = useState<ShippingFieldDef[]>([]);
+  const [extraFieldValues, setExtraFieldValues] = useState<Record<string, string>>({});
+  const [extraFieldErrors, setExtraFieldErrors] = useState<Record<string, string>>({});
 
   // DB 설정값
   const [shippingConfig, setShippingConfig] = useState({ shippingFee: 3000, freeShippingThreshold: 50000 });
@@ -230,6 +236,7 @@ export default function CheckoutPage() {
         }),
         loadAddresses(),
         getShippingSettings().then(setShippingConfig),
+        getShippingFields().then(setShippingFields),
       ]);
     }
   }, [user, authLoading, navigate]);
@@ -282,7 +289,8 @@ export default function CheckoutPage() {
         setValue('recipientName', defaultAddress.recipientName);
         setValue('recipientPhone', defaultAddress.recipientPhone);
         setValue('postalCode', defaultAddress.postalCode);
-        setValue('address', defaultAddress.address1 + (defaultAddress.address2 ? ` ${defaultAddress.address2}` : ''));
+        setValue('address', defaultAddress.address1);
+        setValue('address2', defaultAddress.address2 || '');
       }
     } catch (error) {
       console.error('Failed to load addresses:', error);
@@ -293,8 +301,18 @@ export default function CheckoutPage() {
     setValue('recipientName', address.recipientName);
     setValue('recipientPhone', address.recipientPhone);
     setValue('postalCode', address.postalCode);
-    setValue('address', address.address1 + (address.address2 ? ` ${address.address2}` : ''));
+    setValue('address', address.address1);
+    setValue('address2', address.address2 || '');
     setShowAddressList(false);
+  }
+
+  async function openAddressSearch() {
+    await openDaumPostcode((data) => {
+      setValue('postalCode', data.zonecode);
+      setValue('address', data.roadAddress || data.jibunAddress);
+      setValue('address2', '');
+      document.getElementById('address2')?.focus();
+    });
   }
 
   const subtotal = items.reduce(
@@ -381,6 +399,19 @@ export default function CheckoutPage() {
     if (paymentMethod === 'pg' && !activePG) return;
     if (paymentMethod === 'bank_transfer' && !bankTransfer) return;
 
+    // 동적 배송지 필드 필수값 검증
+    const newExtraErrors: Record<string, string> = {};
+    shippingFields.forEach((f) => {
+      if (f.shipping_is_required && !extraFieldValues[f.field_key]?.trim()) {
+        newExtraErrors[f.field_key] = `${f.label}을(를) 입력해주세요`;
+      }
+    });
+    if (Object.keys(newExtraErrors).length > 0) {
+      setExtraFieldErrors(newExtraErrors);
+      return;
+    }
+    setExtraFieldErrors({});
+
     try {
       setSubmitting(true);
 
@@ -401,25 +432,29 @@ export default function CheckoutPage() {
         recipientPhone: data.recipientPhone,
         postalCode: data.postalCode,
         address1: data.address,
+        address2: data.address2 || '',
         shippingMessage: data.deliveryRequest,
         couponId: selectedCoupon?.id,
         couponDiscount,
         pointsUsed: usePointsAmount,
+        extraShippingFields: Object.keys(extraFieldValues).length > 0 ? extraFieldValues : undefined,
       };
 
       if (paymentMethod === 'bank_transfer') {
-        // 무통장: 즉시 주문 생성 → 입금 대기 페이지로 이동
+        // 무통장: 즉시 주문 생성 → 장바구니 삭제 → 입금 대기 페이지로 이동
         const order = await createOrder(user.id, orderItems, orderInfo, '무통장입금');
         if (selectedCoupon) await useCoupon(selectedCoupon.id);
         if (usePointsAmount > 0) await usePoints(user.id, usePointsAmount, order.id, `주문 ${order.orderNumber} 포인트 사용`);
+        await clearCart(user.id);
         navigate(`/checkout/bank-transfer?orderId=${order.id}&orderNumber=${order.orderNumber}&amount=${total}`);
         return;
       }
 
-      // PG 결제
+      // PG 결제: 주문 생성 → 장바구니 삭제 → PG 결제창
       const order = await createOrder(user.id, orderItems, orderInfo, activePG!.name);
       if (selectedCoupon) await useCoupon(selectedCoupon.id);
       if (usePointsAmount > 0) await usePoints(user.id, usePointsAmount, order.id, `주문 ${order.orderNumber} 포인트 사용`);
+      await clearCart(user.id);
 
       await requestPayment(activePG!, {
         amount: total,
@@ -536,27 +571,51 @@ export default function CheckoutPage() {
                 </div>
 
                 <div>
-                  <Label htmlFor="postalCode">우편번호</Label>
-                  <Input
-                    id="postalCode"
-                    {...register('postalCode')}
-                    placeholder="12345"
-                  />
+                  <Label>우편번호</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="postalCode"
+                      {...register('postalCode')}
+                      placeholder="12345"
+                      readOnly
+                      className="w-32 bg-gray-50"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={openAddressSearch}
+                      className="shrink-0"
+                    >
+                      <Search className="mr-1.5 h-4 w-4" />
+                      주소 검색
+                    </Button>
+                  </div>
                   {errors.postalCode && (
                     <p className="mt-1 text-sm text-red-500">{errors.postalCode.message}</p>
                   )}
                 </div>
 
                 <div>
-                  <Label htmlFor="address">주소</Label>
+                  <Label htmlFor="address">도로명 주소</Label>
                   <Input
                     id="address"
                     {...register('address')}
-                    placeholder="상세 주소를 입력해주세요"
+                    placeholder="주소 검색 버튼을 눌러주세요"
+                    readOnly
+                    className="bg-gray-50"
                   />
                   {errors.address && (
                     <p className="mt-1 text-sm text-red-500">{errors.address.message}</p>
                   )}
+                </div>
+
+                <div>
+                  <Label htmlFor="address2">상세주소</Label>
+                  <Input
+                    id="address2"
+                    {...register('address2')}
+                    placeholder="동, 호수 등 상세주소를 입력해주세요"
+                  />
                 </div>
 
                 <div>
@@ -567,6 +626,67 @@ export default function CheckoutPage() {
                     placeholder="배송 시 요청사항을 입력해주세요"
                   />
                 </div>
+
+                {/* 동적 배송지 추가 필드 */}
+                {shippingFields.map((field) => (
+                  <div key={field.id}>
+                    <Label htmlFor={`extra_${field.field_key}`}>
+                      {field.label}
+                      {!field.shipping_is_required && <span className="ml-1 text-xs text-gray-400">(선택)</span>}
+                    </Label>
+                    {field.field_type === 'textarea' ? (
+                      <textarea
+                        id={`extra_${field.field_key}`}
+                        value={extraFieldValues[field.field_key] ?? ''}
+                        onChange={(e) => {
+                          setExtraFieldValues((prev) => ({ ...prev, [field.field_key]: e.target.value }));
+                          if (extraFieldErrors[field.field_key]) {
+                            setExtraFieldErrors((prev) => { const n = { ...prev }; delete n[field.field_key]; return n; });
+                          }
+                        }}
+                        placeholder={field.placeholder ?? ''}
+                        rows={3}
+                        className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
+                      />
+                    ) : field.field_type === 'select' ? (
+                      <select
+                        id={`extra_${field.field_key}`}
+                        value={extraFieldValues[field.field_key] ?? ''}
+                        onChange={(e) => {
+                          setExtraFieldValues((prev) => ({ ...prev, [field.field_key]: e.target.value }));
+                          if (extraFieldErrors[field.field_key]) {
+                            setExtraFieldErrors((prev) => { const n = { ...prev }; delete n[field.field_key]; return n; });
+                          }
+                        }}
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        <option value="">{field.placeholder ?? '선택하세요'}</option>
+                        {(field.options ?? []).map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <Input
+                        id={`extra_${field.field_key}`}
+                        type={field.field_type === 'phone' ? 'tel' : field.field_type === 'number' ? 'number' : 'text'}
+                        value={extraFieldValues[field.field_key] ?? ''}
+                        onChange={(e) => {
+                          setExtraFieldValues((prev) => ({ ...prev, [field.field_key]: e.target.value }));
+                          if (extraFieldErrors[field.field_key]) {
+                            setExtraFieldErrors((prev) => { const n = { ...prev }; delete n[field.field_key]; return n; });
+                          }
+                        }}
+                        placeholder={field.placeholder ?? ''}
+                      />
+                    )}
+                    {field.help_text && (
+                      <p className="mt-1 text-xs text-gray-500">{field.help_text}</p>
+                    )}
+                    {extraFieldErrors[field.field_key] && (
+                      <p className="mt-1 text-sm text-red-500">{extraFieldErrors[field.field_key]}</p>
+                    )}
+                  </div>
+                ))}
               </div>
             </Card>
 

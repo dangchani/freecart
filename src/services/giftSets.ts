@@ -31,6 +31,8 @@ export interface GiftSet {
   startsAt: string | null;
   endsAt: string | null;
   sortOrder: number;
+  badgeText: string | null;
+  badgeColor: string;
   tiers: GiftTier[];
   items: GiftSetItem[];
 }
@@ -44,6 +46,8 @@ export interface GiftSetDraft {
   isActive: boolean;
   startsAt: string;
   endsAt: string;
+  badgeText: string;
+  badgeColor: string;
   tiers: GiftTierDraft[];
   items: GiftSetItemDraft[];
 }
@@ -81,6 +85,7 @@ export interface AutoGiftResult {
 
 const GIFT_SET_QUERY = `
   id, product_id, name, gift_type, is_active, starts_at, ends_at, sort_order,
+  badge_text, badge_color,
   product_gift_tiers(id, min_quantity, free_count, sort_order),
   product_gift_set_items(
     id, gift_product_id, sort_order,
@@ -157,6 +162,8 @@ function mapGiftSet(s: any): GiftSet {
     startsAt: s.starts_at ?? null,
     endsAt: s.ends_at ?? null,
     sortOrder: s.sort_order,
+    badgeText: s.badge_text ?? null,
+    badgeColor: s.badge_color ?? 'red',
     tiers,
     items,
   };
@@ -194,6 +201,8 @@ export async function saveGiftSets(
         starts_at: draft.startsAt || null,
         ends_at: draft.endsAt || null,
         sort_order: i,
+        badge_text: draft.badgeText.trim() || null,
+        badge_color: draft.badgeColor || 'red',
       })
       .select('id')
       .single();

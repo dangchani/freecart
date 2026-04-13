@@ -23,9 +23,9 @@ export type PaymentStatus =
 /** 각 상태에서 전이 가능한 다음 상태 목록 */
 export const ORDER_STATUS_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   pending:          ['paid', 'cancelled'],
-  paid:             ['processing', 'cancelled'],
-  processing:       ['shipped', 'cancelled'],
-  shipped:          ['delivered'],
+  paid:             ['processing', 'pending', 'cancelled'],
+  processing:       ['shipped', 'paid', 'cancelled'],
+  shipped:          ['delivered', 'processing'],
   delivered:        ['confirmed', 'return_requested'],
   confirmed:        [],
   cancelled:        [],

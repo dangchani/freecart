@@ -83,6 +83,7 @@ export async function createOrder(
     couponId?: string;
     couponDiscount?: number;
     pointsUsed?: number;
+    extraShippingFields?: Record<string, string>;
   },
   paymentMethod: string
 ): Promise<Order> {
@@ -131,6 +132,9 @@ export async function createOrder(
       address1: shippingInfo.address1,
       address2: shippingInfo.address2 || null,
       shipping_message: shippingInfo.shippingMessage || null,
+      extra_shipping_fields: shippingInfo.extraShippingFields && Object.keys(shippingInfo.extraShippingFields).length > 0
+        ? shippingInfo.extraShippingFields
+        : null,
       payment_method: paymentMethod,
       status: 'pending',
     })

@@ -54,6 +54,7 @@ import {
   type OrderStatus,
 } from '@/constants/orderStatus';
 import { transitionOrderStatus } from '@/services/orders';
+import { getSystemSetting } from '@/lib/permissions';
 
 const PAGE_SIZE = 20;
 
@@ -253,11 +254,13 @@ export default function AdminOrdersPage() {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   // 컬럼 가시성 (선택 컬럼 + 인디케이터 컬럼 통합 관리)
+  // localStorage에 개인 설정이 있으면 우선 적용, 없으면 system_settings 기본값 사용
   const [visibleColumns, setVisibleColumns] = useState<Set<AnyColumnKey>>(() => {
     try {
       const saved = localStorage.getItem('admin_orders_columns');
       if (saved) return new Set(JSON.parse(saved) as AnyColumnKey[]);
     } catch {}
+    // localStorage 없음 → 하드코딩 기본값으로 초기화 (system_settings는 useEffect에서 비동기 적용)
     return new Set([
       ...COLUMN_DEFS.filter((c) => c.defaultVisible).map((c) => c.key),
       ...INDICATOR_DEFS.filter((c) => c.defaultVisible).map((c) => c.key),
@@ -295,6 +298,14 @@ export default function AdminOrdersPage() {
       loadStats();
       loadAutoConfirmPending();
       loadUnpaidExpired();
+      // localStorage에 개인 설정이 없을 때만 system_settings 기본값 적용
+      if (!localStorage.getItem('admin_orders_columns')) {
+        getSystemSetting<string[]>('order_list_columns').then((cols) => {
+          if (Array.isArray(cols) && cols.length > 0) {
+            setVisibleColumns(new Set(cols as AnyColumnKey[]));
+          }
+        });
+      }
     }
   }, [user, authLoading, navigate]);
 

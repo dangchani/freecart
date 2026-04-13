@@ -55,6 +55,8 @@ export interface Product {
   isNew: boolean;
   isBest: boolean;
   isSale: boolean;
+  activeBadgeText?: string | null;
+  activeBadgeColor?: string | null;
   viewCount?: number;
   salesCount?: number;
   reviewCount?: number;

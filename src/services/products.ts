@@ -33,7 +33,22 @@ export interface ProductVariant {
 /** 선택 옵션에서 "선택 안 함"을 나타내는 sentinel valueId */
 export const OPTION_NONE_VALUE_ID = '__none__';
 
+function resolveActiveBadge(p: any): { activeBadgeText: string | null; activeBadgeColor: string | null } {
+  const now = new Date().toISOString();
+  const active = ((p.product_gift_sets as any[]) || []).find((gs) =>
+    gs.is_active &&
+    gs.badge_text &&
+    (!gs.starts_at || gs.starts_at <= now) &&
+    (!gs.ends_at   || gs.ends_at   >= now)
+  );
+  return {
+    activeBadgeText:  active?.badge_text  ?? null,
+    activeBadgeColor: active?.badge_color ?? null,
+  };
+}
+
 function mapProduct(p: any): Product {
+  const { activeBadgeText, activeBadgeColor } = resolveActiveBadge(p);
   return {
     id: p.id,
     categoryId: p.category_id,
@@ -54,6 +69,8 @@ function mapProduct(p: any): Product {
     isNew: p.is_new,
     isBest: p.is_best,
     isSale: p.is_sale,
+    activeBadgeText,
+    activeBadgeColor,
     viewCount: p.view_count,
     salesCount: p.sales_count,
     reviewCount: p.review_count,
@@ -90,7 +107,7 @@ export async function getProducts(params?: {
 
   let query = supabase
     .from('products')
-    .select('*, product_images(*)', { count: 'exact' })
+    .select('*, product_images(*), product_gift_sets(badge_text, badge_color, is_active, starts_at, ends_at)', { count: 'exact' })
     .eq('status', 'active')
     .order('created_at', { ascending: false })
     .range(from, to);
@@ -124,7 +141,7 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
 
   const { data, error } = await supabase
     .from('products')
-    .select('*, product_images(*)')
+    .select('*, product_images(*), product_gift_sets(badge_text, badge_color, is_active, starts_at, ends_at)')
     .eq('slug', slug)
     .eq('status', 'active')
     .single();
@@ -140,7 +157,7 @@ export async function getFeaturedProducts(limit = 10): Promise<Product[]> {
 
   const { data, error } = await supabase
     .from('products')
-    .select('*, product_images(*)')
+    .select('*, product_images(*), product_gift_sets(badge_text, badge_color, is_active, starts_at, ends_at)')
     .eq('status', 'active')
     .eq('is_featured', true)
     .limit(limit);

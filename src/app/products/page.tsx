@@ -132,7 +132,7 @@ export default function ProductsPage() {
 
       let query = supabase
         .from('products')
-        .select('*, product_images(*)', { count: 'exact' })
+        .select('*, product_images(*), product_gift_sets(badge_text, badge_color, is_active, starts_at, ends_at)', { count: 'exact' })
         .eq('status', 'active')
         .range(from, to);
 
@@ -195,22 +195,32 @@ export default function ProductsPage() {
       const { data, error, count } = await query;
       if (error) throw error;
 
+      const now = new Date().toISOString();
       setTotal(count || 0);
       setProducts(
-        (data || []).map((p: any) => ({
-          id: p.id, categoryId: p.category_id, brandId: p.brand_id,
-          name: p.name, slug: p.slug, summary: p.summary, description: p.description,
-          regularPrice: p.regular_price, salePrice: p.sale_price,
-          stockQuantity: p.stock_quantity, status: p.status,
-          isFeatured: p.is_featured, isNew: p.is_new, isBest: p.is_best, isSale: p.is_sale,
-          viewCount: p.view_count, salesCount: p.sales_count,
-          reviewCount: p.review_count, reviewAvg: p.review_avg ? parseFloat(p.review_avg) : 0,
-          hasOptions: p.has_options,
-          images: (p.product_images || []).map((img: any) => ({
-            id: img.id, url: img.url, isPrimary: img.is_primary,
-          })),
-          createdAt: p.created_at, updatedAt: p.updated_at,
-        }))
+        (data || []).map((p: any) => {
+          const activeBadgeSet = ((p.product_gift_sets as any[]) || []).find((gs: any) =>
+            gs.is_active && gs.badge_text &&
+            (!gs.starts_at || gs.starts_at <= now) &&
+            (!gs.ends_at   || gs.ends_at   >= now)
+          );
+          return {
+            id: p.id, categoryId: p.category_id, brandId: p.brand_id,
+            name: p.name, slug: p.slug, summary: p.summary, description: p.description,
+            regularPrice: p.regular_price, salePrice: p.sale_price,
+            stockQuantity: p.stock_quantity, status: p.status,
+            isFeatured: p.is_featured, isNew: p.is_new, isBest: p.is_best, isSale: p.is_sale,
+            activeBadgeText:  activeBadgeSet?.badge_text  ?? null,
+            activeBadgeColor: activeBadgeSet?.badge_color ?? null,
+            viewCount: p.view_count, salesCount: p.sales_count,
+            reviewCount: p.review_count, reviewAvg: p.review_avg ? parseFloat(p.review_avg) : 0,
+            hasOptions: p.has_options,
+            images: (p.product_images || []).map((img: any) => ({
+              id: img.id, url: img.url, isPrimary: img.is_primary,
+            })),
+            createdAt: p.created_at, updatedAt: p.updated_at,
+          };
+        })
       );
     } catch (err) {
       console.error('Failed to load products:', err);

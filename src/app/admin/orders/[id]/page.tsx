@@ -828,8 +828,13 @@ export default function AdminOrderDetailPage() {
     : null;
 
   const ACTION_LABELS: Partial<Record<OrderStatus, { label: string; color: string }>> = {
-    paid:       { label: '상품준비 시작', color: 'bg-indigo-600 text-white hover:bg-indigo-700' },
-    processing: { label: '배송중 처리', color: 'bg-purple-600 text-white hover:bg-purple-700' },
+    paid:       order.status === 'processing'
+                  ? { label: '← 입금확인으로 되돌리기', color: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' }
+                  : { label: '상품준비 시작', color: 'bg-indigo-600 text-white hover:bg-indigo-700' },
+    pending:    { label: '← 입금대기로 되돌리기', color: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' },
+    processing: order.status === 'shipped'
+                  ? { label: '← 상품준비중으로 되돌리기', color: 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' }
+                  : { label: '배송중 처리', color: 'bg-purple-600 text-white hover:bg-purple-700' },
     shipped:    { label: '배송완료 처리', color: 'bg-teal-600 text-white hover:bg-teal-700' },
     delivered:  { label: '구매확정 처리', color: 'bg-green-600 text-white hover:bg-green-700' },
     cancelled:  { label: '취소 처리', color: 'bg-red-100 text-red-700 hover:bg-red-200' },

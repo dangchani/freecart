@@ -211,6 +211,8 @@ export default function EditProductPage() {
       isActive: true,
       startsAt: '',
       endsAt: '',
+      badgeText: '',
+      badgeColor: 'red',
       tiers: [],
       items: [],
     };
@@ -539,6 +541,8 @@ export default function EditProductPage() {
         isActive: s.isActive,
         startsAt: s.startsAt ?? '',
         endsAt: s.endsAt ?? '',
+        badgeText: s.badgeText ?? '',
+        badgeColor: s.badgeColor ?? 'red',
         tiers: s.tiers.map((t) => ({
           localId: crypto.randomUUID(),
           dbId: t.id,

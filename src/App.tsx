@@ -13,6 +13,7 @@ import LoginPage from './app/auth/login/page';
 import ClosedMallLoginPage from './app/auth/closed-mall/page';
 import SignupPage from './app/auth/signup/page';
 import ForgotPasswordPage from './app/auth/forgot-password/page';
+import ForgotIdPage from './app/auth/forgot-id/page';
 import ResetPasswordPage from './app/auth/reset-password/page';
 import AuthCallbackPage from './app/auth/callback/page';
 
@@ -169,6 +170,7 @@ export default function App() {
             {/* 인증 */}
             <Route path="/auth/login" element={<LoginPage />} />
             <Route path="/auth/signup" element={<SignupPage />} />
+            <Route path="/auth/forgot-id" element={<ForgotIdPage />} />
             <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
             <Route path="/auth/callback" element={<AuthCallbackPage />} />

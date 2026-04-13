@@ -110,7 +110,7 @@ export default function CategoryPage() {
 
       let query = supabase
         .from('products')
-        .select('*, product_images(*)', { count: 'exact' })
+        .select('*, product_images(*), product_gift_sets(badge_text, badge_color, is_active, starts_at, ends_at)', { count: 'exact' })
         .eq('status', 'active')
         .in('category_id', allIds)
         .range(from, to);
@@ -124,22 +124,32 @@ export default function CategoryPage() {
       }
 
       const { data, count } = await query;
+      const now = new Date().toISOString();
       setProducts(
-        (data || []).map((p: any) => ({
-          id: p.id, name: p.name, slug: p.slug,
-          categoryId: p.category_id, brandId: p.brand_id,
-          regularPrice: p.regular_price, salePrice: p.sale_price,
-          isSale: p.is_sale ?? false, hasOptions: p.has_options ?? false,
-          images: (p.product_images || []).map((img: any) => ({
-            id: img.id, url: img.url, isPrimary: img.is_primary, sortOrder: img.sort_order,
-          })),
-          reviewAvg: p.review_avg ? parseFloat(p.review_avg) : 0,
-          reviewCount: p.review_count || 0,
-          salesCount: p.sales_count || 0,
-          isNew: p.is_new ?? false, isBest: p.is_best ?? false, isFeatured: p.is_featured ?? false,
-          stockQuantity: p.stock_quantity, status: p.status,
-          createdAt: p.created_at, updatedAt: p.updated_at,
-        }))
+        (data || []).map((p: any) => {
+          const activeBadgeSet = ((p.product_gift_sets as any[]) || []).find((gs: any) =>
+            gs.is_active && gs.badge_text &&
+            (!gs.starts_at || gs.starts_at <= now) &&
+            (!gs.ends_at   || gs.ends_at   >= now)
+          );
+          return {
+            id: p.id, name: p.name, slug: p.slug,
+            categoryId: p.category_id, brandId: p.brand_id,
+            regularPrice: p.regular_price, salePrice: p.sale_price,
+            isSale: p.is_sale ?? false, hasOptions: p.has_options ?? false,
+            images: (p.product_images || []).map((img: any) => ({
+              id: img.id, url: img.url, isPrimary: img.is_primary, sortOrder: img.sort_order,
+            })),
+            reviewAvg: p.review_avg ? parseFloat(p.review_avg) : 0,
+            reviewCount: p.review_count || 0,
+            salesCount: p.sales_count || 0,
+            isNew: p.is_new ?? false, isBest: p.is_best ?? false, isFeatured: p.is_featured ?? false,
+            activeBadgeText:  activeBadgeSet?.badge_text  ?? null,
+            activeBadgeColor: activeBadgeSet?.badge_color ?? null,
+            stockQuantity: p.stock_quantity, status: p.status,
+            createdAt: p.created_at, updatedAt: p.updated_at,
+          };
+        })
       );
       setTotal(count || 0);
     } finally {

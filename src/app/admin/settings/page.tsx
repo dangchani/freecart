@@ -164,6 +164,9 @@ export default function AdminSettingsPage() {
   const [allowCustomerReturn,   setAllowCustomerReturn]   = useState(true);
   const [allowCustomerExchange, setAllowCustomerExchange] = useState(true);
 
+  // 주문 목록 기본 컬럼 설정
+  const [orderListColumns, setOrderListColumns] = useState<string[]>(['product', 'memo', 'deadline']);
+
   // 테스트 이메일 발송 상태
   const [testEmailSending, setTestEmailSending] = useState(false);
   const [testEmailMsg, setTestEmailMsg] = useState('');
@@ -249,7 +252,7 @@ export default function AdminSettingsPage() {
       const { data: sysRows } = await supabase
         .from('system_settings')
         .select('key, value')
-        .in('key', ['require_signup_approval', 'enable_user_assignment', 'enable_user_tags', 'use_user_levels', 'use_points', 'point_label', 'allow_customer_return', 'allow_customer_exchange']);
+        .in('key', ['require_signup_approval', 'enable_user_assignment', 'enable_user_tags', 'use_user_levels', 'use_points', 'point_label', 'allow_customer_return', 'allow_customer_exchange', 'order_list_columns']);
       for (const row of sysRows ?? []) {
         if (row.key === 'require_signup_approval') setRequireSignupApproval(row.value === true);
         if (row.key === 'enable_user_assignment') setEnableUserAssignment(row.value === true);
@@ -259,6 +262,7 @@ export default function AdminSettingsPage() {
         if (row.key === 'point_label' && typeof row.value === 'string') setPointLabel(row.value);
         if (row.key === 'allow_customer_return')   setAllowCustomerReturn(row.value !== false);
         if (row.key === 'allow_customer_exchange') setAllowCustomerExchange(row.value !== false);
+        if (row.key === 'order_list_columns' && Array.isArray(row.value)) setOrderListColumns(row.value as string[]);
       }
     } catch {
       setError('설정을 불러오는 중 오류가 발생했습니다.');
@@ -309,6 +313,7 @@ export default function AdminSettingsPage() {
         { key: 'point_label', value: pointLabel },
         { key: 'allow_customer_return',   value: allowCustomerReturn },
         { key: 'allow_customer_exchange', value: allowCustomerExchange },
+        { key: 'order_list_columns', value: orderListColumns },
       ];
       for (const { key, value } of sysUpdates) {
         const { error: sysError } = await supabase
@@ -1283,6 +1288,49 @@ export default function AdminSettingsPage() {
                   allowCustomerExchange ? 'translate-x-6' : 'translate-x-1'
                 }`} />
               </button>
+            </div>
+
+            <div className="border-t" />
+
+            {/* 주문 목록 기본 컬럼 설정 */}
+            <div>
+              <p className="font-medium text-sm mb-1">주문 목록 기본 표시 항목</p>
+              <p className="text-xs text-gray-400 mb-3">관리자가 처음 접속했을 때 표시될 기본 컬럼을 선택합니다. 각 관리자는 개인적으로 변경할 수 있습니다.</p>
+              <div className="space-y-2">
+                {([
+                  { key: 'product',   label: '상품 요약',   desc: '독립 컬럼' },
+                  { key: 'recipient', label: '수령인',      desc: '독립 컬럼' },
+                  { key: 'address',   label: '배송주소',    desc: '독립 컬럼' },
+                  { key: 'discount',  label: '할인/배송비', desc: '독립 컬럼' },
+                  { key: 'memo',     label: '메모 아이콘',  desc: '결제금액 셀 내 표시' },
+                  { key: 'deadline', label: '입금마감',     desc: '주문상태 셀 내 표시' },
+                ] as const).map(({ key, label, desc }) => {
+                  const on = orderListColumns.includes(key);
+                  return (
+                    <div key={key} className="flex items-center justify-between py-1">
+                      <div>
+                        <span className="text-sm">{label}</span>
+                        <span className="ml-2 text-xs text-gray-400">{desc}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOrderListColumns((prev) =>
+                            on ? prev.filter((k) => k !== key) : [...prev, key],
+                          )
+                        }
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                          on ? 'bg-blue-600' : 'bg-gray-200'
+                        }`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                          on ? 'translate-x-6' : 'translate-x-1'
+                        }`} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </Card>

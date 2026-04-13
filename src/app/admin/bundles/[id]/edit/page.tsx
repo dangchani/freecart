@@ -202,6 +202,8 @@ export default function EditBundlePage() {
         isActive: s.isActive,
         startsAt: s.startsAt ?? '',
         endsAt: s.endsAt ?? '',
+        badgeText: s.badgeText ?? '',
+        badgeColor: s.badgeColor ?? 'red',
         tiers: s.tiers.map((t) => ({ localId: crypto.randomUUID(), dbId: t.id, minQuantity: t.minQuantity, freeCount: t.freeCount })),
         items: s.items.map((i) => ({ localId: crypto.randomUUID(), dbId: i.id, giftProductId: i.giftProductId, giftProductName: i.giftProductName, giftProductImageUrl: i.giftProductImageUrl, giftProductSalePrice: i.giftProductSalePrice })),
       })));
@@ -292,7 +294,7 @@ export default function EditBundlePage() {
   // ---------------- Gift Sets ----------------
 
   function newGiftSetDraft(): GiftSetDraft {
-    return { localId: crypto.randomUUID(), dbId: null, name: '', giftType: 'select', isActive: true, startsAt: '', endsAt: '', tiers: [], items: [] };
+    return { localId: crypto.randomUUID(), dbId: null, name: '', giftType: 'select', isActive: true, startsAt: '', endsAt: '', badgeText: '', badgeColor: 'red', tiers: [], items: [] };
   }
 
   function updateGiftSet(localId: string, patch: Partial<GiftSetDraft>) {

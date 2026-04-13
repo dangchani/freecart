@@ -19,6 +19,7 @@ DROP FUNCTION IF EXISTS public.handle_new_user CASCADE;
 DROP FUNCTION IF EXISTS public.auto_confirm_user CASCADE;
 DROP FUNCTION IF EXISTS public.update_updated_at_column CASCADE;
 DROP FUNCTION IF EXISTS public.get_email_by_login_id CASCADE;
+DROP FUNCTION IF EXISTS public.find_login_id_by_contact CASCADE;
 DROP FUNCTION IF EXISTS public.decrement_variant_stock CASCADE;
 DROP FUNCTION IF EXISTS public.decrement_product_stock CASCADE;
 DROP FUNCTION IF EXISTS public.increment_variant_stock CASCADE;
