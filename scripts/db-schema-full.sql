@@ -41,7 +41,7 @@ DROP TABLE IF EXISTS
   cart_items, carts, user_coupons, coupons, user_recently_viewed, user_wishlist,
   product_subscriptions, product_qna, product_quantity_discounts, product_level_prices,
   product_discounts, bundle_items, product_stock_alerts, product_gift_set_items, product_gift_tiers, product_gift_sets, product_sets, product_related,
-  product_attribute_values, product_attributes, product_tag_map, product_tags,
+  product_attribute_value_map, product_attribute_values, product_attributes, product_tag_map, product_tags,
   product_images, product_variants, product_option_values, product_options, products,
   product_brands, product_categories, notification_settings, user_messages,
   user_attendance, user_deposits_history, user_points_history, user_addresses,
@@ -446,6 +446,35 @@ CREATE TABLE IF NOT EXISTS product_attribute_values (
 );
 
 CREATE INDEX IF NOT EXISTS idx_product_attr_values_attr ON product_attribute_values(attribute_id);
+
+-- 2.8-4 product_attribute_value_map (상품↔속성값 매핑)
+CREATE TABLE IF NOT EXISTS product_attribute_value_map (
+  product_id         UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  attribute_value_id UUID NOT NULL REFERENCES product_attribute_values(id) ON DELETE CASCADE,
+  PRIMARY KEY (product_id, attribute_value_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_attr_value_map_product
+  ON product_attribute_value_map(product_id);
+
+CREATE INDEX IF NOT EXISTS idx_product_attr_value_map_value
+  ON product_attribute_value_map(attribute_value_id);
+
+ALTER TABLE product_attribute_value_map ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "product_attr_value_map_public_read" ON product_attribute_value_map;
+CREATE POLICY "product_attr_value_map_public_read"
+  ON product_attribute_value_map FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "product_attr_value_map_admin_all" ON product_attribute_value_map;
+CREATE POLICY "product_attr_value_map_admin_all"
+  ON product_attribute_value_map FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM users
+      WHERE id = auth.uid() AND role IN ('admin', 'super_admin')
+    )
+  );
 
 -- 2.9 product_related (관련 상품)
 CREATE TABLE IF NOT EXISTS product_related (

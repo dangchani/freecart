@@ -18,6 +18,7 @@ export interface ExchangeRequest {
   customerName:         string;
   userId:               string;
   items:                ExchangeItem[];
+  itemSummary:          string;
   reason:               string;
   status:               ExchangeStatus;
   priceDiff:            number;
@@ -67,7 +68,7 @@ export async function getAllExchangeRequests(filters?: {
       tracking_number, tracking_company_id,
       reship_tracking_number, reship_company_id,
       approved_at, collected_at, processed_at, reshipped_at, completed_at, created_at,
-      order:orders(id, order_number, orderer_name)
+      order:orders(id, order_number, orderer_name, order_items(id, product_name))
     `)
     .order('created_at', { ascending: false });
 
@@ -78,29 +79,42 @@ export async function getAllExchangeRequests(filters?: {
   const { data, error } = await query;
   if (error || !data) return [];
 
-  return data.map((e: any) => ({
-    id:                   e.id,
-    orderId:              e.order?.id ?? '',
-    orderNumber:          e.order?.order_number ?? '',
-    customerName:         e.order?.orderer_name ?? '',
-    userId:               e.user_id,
-    items:                e.items ?? [],
-    reason:               e.reason,
-    status:               e.status,
-    priceDiff:            e.price_diff ?? 0,
-    initiatedBy:          e.initiated_by ?? 'customer',
-    adminMemo:            e.admin_memo,
-    trackingNumber:       e.tracking_number,
-    trackingCompanyId:    e.tracking_company_id,
-    reshipTrackingNumber: e.reship_tracking_number,
-    reshipCompanyId:      e.reship_company_id,
-    approvedAt:           e.approved_at,
-    collectedAt:          e.collected_at,
-    processedAt:          e.processed_at ?? null,
-    reshippedAt:          e.reshipped_at,
-    completedAt:          e.completed_at,
-    createdAt:            e.created_at,
-  }));
+  return data.map((e: any) => {
+    const exchangeItems: ExchangeItem[] = e.items ?? [];
+    const orderItems: any[] = e.order?.order_items ?? [];
+    const firstItemId = exchangeItems[0]?.order_item_id;
+    const firstProduct = orderItems.find((oi) => oi.id === firstItemId);
+    const itemSummary = firstProduct
+      ? exchangeItems.length > 1
+        ? `${firstProduct.product_name} 외 ${exchangeItems.length - 1}건`
+        : firstProduct.product_name
+      : '';
+
+    return {
+      id:                   e.id,
+      orderId:              e.order?.id ?? '',
+      orderNumber:          e.order?.order_number ?? '',
+      customerName:         e.order?.orderer_name ?? '',
+      userId:               e.user_id,
+      items:                exchangeItems,
+      itemSummary,
+      reason:               e.reason,
+      status:               e.status,
+      priceDiff:            e.price_diff ?? 0,
+      initiatedBy:          e.initiated_by ?? 'customer',
+      adminMemo:            e.admin_memo,
+      trackingNumber:       e.tracking_number,
+      trackingCompanyId:    e.tracking_company_id,
+      reshipTrackingNumber: e.reship_tracking_number,
+      reshipCompanyId:      e.reship_company_id,
+      approvedAt:           e.approved_at,
+      collectedAt:          e.collected_at,
+      processedAt:          e.processed_at ?? null,
+      reshippedAt:          e.reshipped_at,
+      completedAt:          e.completed_at,
+      createdAt:            e.created_at,
+    };
+  });
 }
 
 // 교환 승인
@@ -212,6 +226,20 @@ export async function completeExchange(
       .eq('order_id', exc.order_id)
       .in('id', itemIds);
 
+    // 교환 상품 재고 사전 확인 (음수 재고 방지)
+    for (const exItem of exchangeItems) {
+      if (exItem.exchange_variant_id && exItem.quantity > 0) {
+        const { data: variant } = await supabase
+          .from('product_variants')
+          .select('stock_quantity, option_text')
+          .eq('id', exItem.exchange_variant_id)
+          .single();
+        if ((variant?.stock_quantity ?? 0) < exItem.quantity) {
+          return { success: false, error: `교환 상품의 재고가 부족합니다 (${(variant as any)?.option_text ?? exItem.exchange_variant_id})` };
+        }
+      }
+    }
+
     // 원 상품 재고 복구 (교환 수량 기준)
     for (const exItem of exchangeItems) {
       const orderItem = (orderItems ?? []).find((o: any) => o.id === exItem.order_item_id);
@@ -265,6 +293,21 @@ export async function completeExchange(
       .eq('id', exchangeId);
 
     if (updateErr) return { success: false, error: '완료 처리에 실패했습니다.' };
+
+    // 주문 이력 기록 (교환 완료 감사 이력)
+    const { data: exchOrder } = await supabase
+      .from('orders')
+      .select('status')
+      .eq('id', exc.order_id)
+      .single();
+
+    await supabase.from('order_status_history').insert({
+      order_id:    exc.order_id,
+      from_status: (exchOrder as any)?.status ?? 'delivered',
+      to_status:   (exchOrder as any)?.status ?? 'delivered',
+      note:        `교환 완료 처리 (exchange #${exchangeId})`,
+    });
+
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message ?? '교환 완료 처리 중 오류가 발생했습니다.' };
@@ -387,6 +430,19 @@ export async function createAdminExchange(params: {
       );
       totalPriceDiff += priceDiff;
     }
+
+    // 3b. 교환 상품 재고 사전 확인 (음수 재고 방지)
+    for (const exItem of params.items) {
+      const { data: variant } = await supabase
+        .from('product_variants')
+        .select('stock_quantity, option_text')
+        .eq('id', exItem.exchange_variant_id)
+        .single();
+      if ((variant?.stock_quantity ?? 0) < exItem.quantity) {
+        return { success: false, error: `교환 상품의 재고가 부족합니다 (${(variant as any)?.option_text ?? exItem.exchange_variant_id})` };
+      }
+    }
+
 
     // 4. exchanges 레코드 삽입
     const now = new Date().toISOString();

@@ -124,7 +124,30 @@ interface Product {
 interface Category {
   id: string;
   name: string;
-  depth: number;
+  parentId: string | null;
+}
+
+/** 플랫 카테고리 배열 → DFS 순서로 정렬된 {id, name, level} 배열 */
+function flattenCategoryTree(cats: Category[]): { id: string; name: string; level: number }[] {
+  const childrenMap: Record<string, Category[]> = {};
+  const roots: Category[] = [];
+  cats.forEach((c) => {
+    if (c.parentId) {
+      if (!childrenMap[c.parentId]) childrenMap[c.parentId] = [];
+      childrenMap[c.parentId].push(c);
+    } else {
+      roots.push(c);
+    }
+  });
+  const result: { id: string; name: string; level: number }[] = [];
+  function walk(list: Category[], level: number) {
+    list.forEach((c) => {
+      result.push({ id: c.id, name: c.name, level });
+      if (childrenMap[c.id]) walk(childrenMap[c.id], level + 1);
+    });
+  }
+  walk(roots, 0);
+  return result;
 }
 
 export default function AdminProductsPage() {
@@ -137,6 +160,7 @@ export default function AdminProductsPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
   // 선택 관련
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -216,9 +240,11 @@ export default function AdminProductsPage() {
       const supabase = createClient();
       const { data } = await supabase
         .from('product_categories')
-        .select('id, name, depth')
+        .select('id, name, parent_id')
         .order('sort_order', { ascending: true });
-      setCategories(data || []);
+      setCategories(
+        (data || []).map((c: any) => ({ id: c.id, name: c.name, parentId: c.parent_id ?? null }))
+      );
     } catch (error) {
       console.error('Failed to load categories:', error);
     }
@@ -804,7 +830,17 @@ export default function AdminProductsPage() {
       (statusFilter === 'active' && product.isActive) ||
       (statusFilter === 'inactive' && !product.isActive);
 
-    return matchesSearch && matchesStatus;
+    const matchesCategory = (() => {
+      if (categoryFilter === 'all') return true;
+      if (product.categoryId === categoryFilter) return true;
+      // 선택한 카테고리의 하위 카테고리 상품도 포함
+      const childIds = categories
+        .filter((c) => c.parentId === categoryFilter)
+        .map((c) => c.id);
+      return childIds.includes(product.categoryId ?? '');
+    })();
+
+    return matchesSearch && matchesStatus && matchesCategory;
   });
 
   if (authLoading || loading) {
@@ -868,6 +904,19 @@ export default function AdminProductsPage() {
               className="pl-10"
             />
           </div>
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="전체 카테고리" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체 카테고리</SelectItem>
+              {flattenCategoryTree(categories).map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.level > 0 ? `${'　'.repeat(c.level)}↳ ${c.name}` : c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-[150px]">
               <Filter className="mr-2 h-4 w-4" />
@@ -1299,9 +1348,9 @@ export default function AdminProductsPage() {
                     <SelectValue placeholder="선택 안함" />
                   </SelectTrigger>
                   <SelectContent>
-                    {categories.map((cat) => (
+                    {flattenCategoryTree(categories).map((cat) => (
                       <SelectItem key={cat.id} value={cat.id}>
-                        {'─'.repeat(cat.depth || 0)} {cat.name}
+                        {cat.level > 0 ? `${'　'.repeat(cat.level)}↳ ${cat.name}` : cat.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
