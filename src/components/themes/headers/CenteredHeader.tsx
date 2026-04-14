@@ -7,37 +7,23 @@ import { Link } from 'react-router-dom';
 import { Search, ShoppingCart, User, Heart, Menu } from 'lucide-react';
 import { useCartStore } from '@/store/cart';
 import { useAuth } from '@/hooks/useAuth';
+import { useMenuItems } from '@/hooks/useMenuItems';
 
 interface Props {
   logo?: string;
   siteName?: string;
-  menuItems?: { label: string; href: string }[];
 }
 
-export default function CenteredHeader({ logo, siteName = 'Freecart', menuItems }: Props) {
+export default function CenteredHeader({ logo, siteName = 'Freecart' }: Props) {
   const itemCount = useCartStore((state) => state.getItemCount());
   const { user } = useAuth();
-
-  const defaultMenuItems = [
-    { label: 'HOME', href: '/' },
-    { label: 'SHOP', href: '/products' },
-    { label: 'NEW', href: '/products?sort=newest' },
-    { label: 'BEST', href: '/products?sort=best' },
-    { label: 'SALE', href: '/products?sale=true' },
-    { label: 'COMMUNITY', href: '/boards' },
-  ];
-
-  const items = menuItems || defaultMenuItems;
+  const { items } = useMenuItems();
 
   return (
     <header className="bg-white sticky top-0 z-50">
       {/* 상단 유틸리티 바 */}
       <div className="border-b">
-        <div className="max-w-7xl mx-auto px-4 py-2 flex justify-between text-xs text-gray-500">
-          <div className="flex gap-4">
-            <Link to="/notices" className="hover:text-gray-900">공지사항</Link>
-            <Link to="/faqs" className="hover:text-gray-900">FAQ</Link>
-          </div>
+        <div className="max-w-7xl mx-auto px-4 py-2 flex justify-end text-xs text-gray-500">
           <div className="flex gap-4">
             {user ? (
               <>
@@ -98,9 +84,9 @@ export default function CenteredHeader({ logo, siteName = 'Freecart', menuItems 
         <div className="max-w-7xl mx-auto px-4">
           <ul className="flex justify-center gap-8">
             {items.map((item) => (
-              <li key={item.href}>
+              <li key={item.id}>
                 <Link
-                  to={item.href}
+                  to={item.url}
                   className="block py-4 text-sm font-medium tracking-wide text-gray-700 hover:text-black border-b-2 border-transparent hover:border-black transition-colors"
                 >
                   {item.label}

@@ -1509,17 +1509,6 @@ INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
 SELECT 'faq',         'FAQ',      true, true, 110, 'header'
 WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'faq' AND is_system = true);
 
-INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
-SELECT 'inquiry',     '1:1 문의', true, true, 120, 'header'
-WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'inquiry' AND is_system = true);
-
-INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
-SELECT 'product_qna', '상품 Q&A', true, true, 130, 'header'
-WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'product_qna' AND is_system = true);
-
-INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
-SELECT 'review',      '리뷰',     true, true, 140, 'header'
-WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'review' AND is_system = true);
 
 DROP TRIGGER IF EXISTS trg_menus_updated_at ON menus;
 CREATE TRIGGER trg_menus_updated_at
@@ -2259,6 +2248,18 @@ ON CONFLICT (slug) DO NOTHING;
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- =============================================================================
 
+-- settings: 공개 읽기 (푸터·전체 사이트에서 사용), 관리자만 쓰기
+ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "settings_public_read" ON settings;
+CREATE POLICY "settings_public_read" ON settings
+  FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "settings_admin_write" ON settings;
+CREATE POLICY "settings_admin_write" ON settings
+  FOR ALL USING (is_admin(auth.uid()))
+  WITH CHECK (is_admin(auth.uid()));
+
 -- Enable RLS on main tables
 ALTER TABLE users                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_addresses         ENABLE ROW LEVEL SECURITY;
@@ -2376,10 +2377,22 @@ DROP POLICY IF EXISTS "user_points_history_read_own" ON user_points_history;
 CREATE POLICY "user_points_history_read_own" ON user_points_history
   FOR SELECT USING (auth.uid()::text = user_id::text);
 
+-- user_points_history: admin full access (구매확정 포인트 적립 등)
+DROP POLICY IF EXISTS "user_points_history_admin_all" ON user_points_history;
+CREATE POLICY "user_points_history_admin_all" ON user_points_history
+  FOR ALL USING (is_admin(auth.uid()))
+  WITH CHECK (is_admin(auth.uid()));
+
 -- user_deposits_history: read own history
 DROP POLICY IF EXISTS "user_deposits_history_read_own" ON user_deposits_history;
 CREATE POLICY "user_deposits_history_read_own" ON user_deposits_history
   FOR SELECT USING (auth.uid()::text = user_id::text);
+
+-- user_deposits_history: admin full access
+DROP POLICY IF EXISTS "user_deposits_history_admin_all" ON user_deposits_history;
+CREATE POLICY "user_deposits_history_admin_all" ON user_deposits_history
+  FOR ALL USING (is_admin(auth.uid()))
+  WITH CHECK (is_admin(auth.uid()));
 
 -- user_wishlist: users manage their own wishlist
 DROP POLICY IF EXISTS "user_wishlist_own" ON user_wishlist;

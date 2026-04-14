@@ -11,11 +11,8 @@ export interface MenuItem {
 }
 
 const SYSTEM_URL_MAP: Record<string, string> = {
-  notice:      '/notices',
-  faq:         '/faq',
-  inquiry:     '/inquiry',
-  product_qna: '/product-qna',
-  review:      '/reviews',
+  notice: '/notices',
+  faq:    '/faqs',
 };
 
 export function useMenuItems() {

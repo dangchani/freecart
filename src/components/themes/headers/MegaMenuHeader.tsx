@@ -99,8 +99,17 @@ export default function MegaMenuHeader({ logo, siteName: siteNameProp }: Props) 
         <div className="max-w-7xl mx-auto px-4 py-2 flex justify-between">
           <span>무료배송 5만원 이상 구매 시</span>
           <div className="flex gap-4">
-            <Link to="/notices" className="hover:underline">공지사항</Link>
-            <Link to="/faq" className="hover:underline">FAQ</Link>
+            {user ? (
+              <>
+                <Link to="/mypage" className="hover:underline">마이페이지</Link>
+                <Link to="/mypage/orders" className="hover:underline">주문조회</Link>
+              </>
+            ) : (
+              <>
+                <Link to="/auth/login" className="hover:underline">로그인</Link>
+                <Link to="/auth/signup" className="hover:underline">회원가입</Link>
+              </>
+            )}
           </div>
         </div>
       </div>
