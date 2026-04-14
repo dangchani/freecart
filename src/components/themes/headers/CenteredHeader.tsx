@@ -4,7 +4,7 @@
  */
 
 import { Link } from 'react-router-dom';
-import { Search, ShoppingCart, User, Heart, Menu } from 'lucide-react';
+import { ShoppingCart, User, Heart, Menu } from 'lucide-react';
 import { useCartStore } from '@/store/cart';
 import { useAuth } from '@/hooks/useAuth';
 import { useMenuItems } from '@/hooks/useMenuItems';
@@ -43,12 +43,8 @@ export default function CenteredHeader({ logo, siteName = 'Freecart' }: Props) {
       {/* 로고 영역 */}
       <div className="py-6 border-b">
         <div className="max-w-7xl mx-auto px-4 flex items-center justify-between">
-          {/* 왼쪽: 검색 */}
-          <div className="w-40">
-            <button className="p-2 hover:bg-gray-100 rounded-full">
-              <Search className="h-5 w-5 text-gray-600" />
-            </button>
-          </div>
+          {/* 왼쪽 여백 */}
+          <div className="w-40" />
 
           {/* 중앙: 로고 */}
           <Link to="/" className="text-center">

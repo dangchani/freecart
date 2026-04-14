@@ -134,8 +134,15 @@ import PopupManager from './components/popup/PopupManager';
 function MainLayout() {
   const [siteInfo, setSiteInfo] = useState<Awaited<ReturnType<typeof getSiteInfo>> | null>(null);
 
-  useEffect(() => {
+  function reload() {
     getSiteInfo().then(setSiteInfo);
+  }
+
+  useEffect(() => {
+    reload();
+    // 관리자 설정 저장 후 즉시 반영
+    window.addEventListener('freecart:settings-changed', reload);
+    return () => window.removeEventListener('freecart:settings-changed', reload);
   }, []);
 
   const companyInfo = siteInfo ? {
@@ -148,7 +155,11 @@ function MainLayout() {
   } : undefined;
 
   return (
-    <ThemeLayout siteName={siteInfo?.siteName} companyInfo={companyInfo}>
+    <ThemeLayout
+      siteName={siteInfo?.siteName}
+      logo={siteInfo?.logoUrl || undefined}
+      companyInfo={companyInfo}
+    >
       <PopupManager />
       <Outlet />
     </ThemeLayout>
@@ -226,6 +237,8 @@ export default function App() {
               <Route path="/brands" element={<BrandsPage />} />
               <Route path="/brands/:id" element={<BrandDetailPage />} />
               <Route path="/inquiries/new" element={<NewInquiryPage />} />
+              <Route path="/terms" element={<Navigate to="/pages/terms" replace />} />
+              <Route path="/privacy" element={<Navigate to="/pages/privacy" replace />} />
               <Route path="/pages/:slug" element={<ContentPage />} />
 
               <Route element={<RequireAuth />}>

@@ -1,5 +1,23 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  MeasuringStrategy,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,14 +58,79 @@ const categoryLabels: Record<string, string> = Object.fromEntries(
   categoryOptions.map((c) => [c.value, c.label])
 );
 
+// ── SortableRow ──────────────────────────────────────────────────────────────
+
+function SortableRow({
+  faq,
+  isGhost,
+  onEdit,
+  onToggle,
+  onDelete,
+}: {
+  faq: FAQ;
+  isGhost?: boolean;
+  onEdit: (faq: FAQ) => void;
+  onToggle: (faq: FAQ) => void;
+  onDelete: (id: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isSorting } =
+    useSortable({ id: faq.id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition: isSorting ? transition : undefined }}
+      className={isGhost ? 'opacity-40' : ''}
+    >
+      <div className="flex items-start gap-3 p-4 hover:bg-gray-50 transition-colors">
+        {/* 드래그 핸들 */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="mt-0.5 cursor-grab touch-none text-gray-300 hover:text-gray-500 active:cursor-grabbing shrink-0"
+        >
+          <GripVertical className="h-5 w-5" />
+        </button>
+
+        <div className="flex-1 min-w-0">
+          <div className="mb-1 flex items-center gap-2 flex-wrap">
+            <h3 className="font-medium truncate">{faq.question}</h3>
+            <Badge variant="outline" className="shrink-0">{categoryLabels[faq.category] || faq.category}</Badge>
+            {!faq.isVisible && <Badge variant="secondary" className="shrink-0">비공개</Badge>}
+          </div>
+          <p className="line-clamp-2 text-sm text-gray-500">{faq.answer}</p>
+        </div>
+
+        <div className="flex gap-1 shrink-0">
+          <Button size="sm" variant="ghost" onClick={() => onToggle(faq)} title={faq.isVisible ? '숨기기' : '공개'}>
+            {faq.isVisible
+              ? <Eye className="h-4 w-4 text-green-600" />
+              : <EyeOff className="h-4 w-4 text-gray-400" />}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => onEdit(faq)}>
+            <Edit2 className="h-4 w-4" />
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => onDelete(faq.id)}>
+            <Trash2 className="h-4 w-4 text-red-500" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 메인 페이지 ──────────────────────────────────────────────────────────────
+
 export default function AdminFAQsPage() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [faqs, setFaqs] = useState<FAQ[]>([]);
   const [loading, setLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [saving, setSaving] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
-  // 모달 상태
+  // 모달
   const [modalOpen, setModalOpen] = useState(false);
   const [editingFaq, setEditingFaq] = useState<FAQ | null>(null);
   const [formData, setFormData] = useState({
@@ -56,17 +139,19 @@ export default function AdminFAQsPage() {
     category: 'other',
     isVisible: true,
   });
-  const [saving, setSaving] = useState(false);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   useEffect(() => {
     if (!authLoading) {
-      if (!user) {
-        navigate('/auth/login');
-        return;
-      }
+      if (!user) { navigate('/auth/login'); return; }
       loadFAQs();
     }
   }, [user, authLoading, navigate]);
+
+  useEffect(() => {
+    if (!authLoading && user) loadFAQs();
+  }, [categoryFilter]);
 
   async function loadFAQs() {
     try {
@@ -81,7 +166,6 @@ export default function AdminFAQsPage() {
       }
 
       const { data, error } = await query;
-
       if (error) throw error;
 
       setFaqs(
@@ -94,18 +178,48 @@ export default function AdminFAQsPage() {
           sortOrder: f.sort_order,
         }))
       );
-    } catch (error) {
-      console.error('Failed to load FAQs:', error);
+    } catch (err) {
+      console.error('Failed to load FAQs:', err);
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
-    if (!authLoading && user) {
-      loadFAQs();
+  // ── 드래그 ────────────────────────────────────────────────────────────────
+
+  function handleDragStart({ active }: DragStartEvent) {
+    setActiveId(active.id as string);
+  }
+
+  function handleDragEnd({ active, over }: DragEndEvent) {
+    setActiveId(null);
+    if (!over || active.id === over.id) return;
+
+    setFaqs((prev) => {
+      const oldIdx = prev.findIndex((f) => f.id === active.id);
+      const newIdx = prev.findIndex((f) => f.id === over.id);
+      const reordered = arrayMove(prev, oldIdx, newIdx);
+      saveSortOrders(reordered);
+      return reordered;
+    });
+  }
+
+  async function saveSortOrders(ordered: FAQ[]) {
+    setSaving(true);
+    try {
+      const supabase = createClient();
+      for (const [idx, faq] of ordered.entries()) {
+        await supabase.from('faqs').update({ sort_order: idx }).eq('id', faq.id);
+      }
+    } catch (err) {
+      console.error('Failed to update sort order:', err);
+      alert('순서 변경 중 오류가 발생했습니다.');
+    } finally {
+      setSaving(false);
     }
-  }, [categoryFilter]);
+  }
+
+  // ── 모달 ─────────────────────────────────────────────────────────────────
 
   function openCreateModal() {
     setEditingFaq(null);
@@ -115,12 +229,7 @@ export default function AdminFAQsPage() {
 
   function openEditModal(faq: FAQ) {
     setEditingFaq(faq);
-    setFormData({
-      question: faq.question,
-      answer: faq.answer,
-      category: faq.category,
-      isVisible: faq.isVisible,
-    });
+    setFormData({ question: faq.question, answer: faq.answer, category: faq.category, isVisible: faq.isVisible });
     setModalOpen(true);
   }
 
@@ -129,28 +238,17 @@ export default function AdminFAQsPage() {
       alert('질문과 답변을 모두 입력해주세요.');
       return;
     }
-
     setSaving(true);
     try {
       const supabase = createClient();
-
       if (editingFaq) {
         const { error } = await supabase
           .from('faqs')
-          .update({
-            question: formData.question,
-            answer: formData.answer,
-            category: formData.category,
-            is_visible: formData.isVisible,
-          })
+          .update({ question: formData.question, answer: formData.answer, category: formData.category, is_visible: formData.isVisible })
           .eq('id', editingFaq.id);
-
         if (error) throw error;
-        alert('FAQ가 수정되었습니다.');
       } else {
-        // 새 FAQ 생성 시 sort_order 계산
         const maxOrder = faqs.length > 0 ? Math.max(...faqs.map((f) => f.sortOrder)) : 0;
-
         const { error } = await supabase.from('faqs').insert({
           question: formData.question,
           answer: formData.answer,
@@ -158,15 +256,12 @@ export default function AdminFAQsPage() {
           is_visible: formData.isVisible,
           sort_order: maxOrder + 1,
         });
-
         if (error) throw error;
-        alert('FAQ가 등록되었습니다.');
       }
-
       setModalOpen(false);
       await loadFAQs();
-    } catch (error) {
-      console.error('Failed to save FAQ:', error);
+    } catch (err) {
+      console.error('Failed to save FAQ:', err);
       alert('저장 중 오류가 발생했습니다.');
     } finally {
       setSaving(false);
@@ -174,75 +269,29 @@ export default function AdminFAQsPage() {
   }
 
   async function handleToggleVisibility(faq: FAQ) {
-    try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from('faqs')
-        .update({ is_visible: !faq.isVisible })
-        .eq('id', faq.id);
-
-      if (error) throw error;
-      await loadFAQs();
-    } catch (error) {
-      console.error('Failed to toggle visibility:', error);
-      alert('상태 변경 중 오류가 발생했습니다.');
-    }
+    const supabase = createClient();
+    await supabase.from('faqs').update({ is_visible: !faq.isVisible }).eq('id', faq.id);
+    await loadFAQs();
   }
 
   async function handleDelete(faqId: string) {
     if (!confirm('정말 삭제하시겠습니까?')) return;
-
-    try {
-      const supabase = createClient();
-      const { error } = await supabase.from('faqs').delete().eq('id', faqId);
-
-      if (error) throw error;
-      alert('FAQ가 삭제되었습니다.');
-      await loadFAQs();
-    } catch (error) {
-      console.error('Failed to delete FAQ:', error);
-      alert('삭제 중 오류가 발생했습니다.');
-    }
+    const supabase = createClient();
+    await supabase.from('faqs').delete().eq('id', faqId);
+    await loadFAQs();
   }
 
-  async function handleMoveUp(index: number) {
-    if (index === 0) return;
-    const newFaqs = [...faqs];
-    [newFaqs[index - 1], newFaqs[index]] = [newFaqs[index], newFaqs[index - 1]];
-    await updateSortOrders(newFaqs);
-  }
+  if (authLoading || loading) return <div className="container py-8">로딩 중...</div>;
 
-  async function handleMoveDown(index: number) {
-    if (index === faqs.length - 1) return;
-    const newFaqs = [...faqs];
-    [newFaqs[index], newFaqs[index + 1]] = [newFaqs[index + 1], newFaqs[index]];
-    await updateSortOrders(newFaqs);
-  }
-
-  async function updateSortOrders(newFaqs: FAQ[]) {
-    try {
-      const supabase = createClient();
-      for (let i = 0; i < newFaqs.length; i++) {
-        await supabase
-          .from('faqs')
-          .update({ sort_order: i })
-          .eq('id', newFaqs[i].id);
-      }
-      setFaqs(newFaqs.map((f, i) => ({ ...f, sortOrder: i })));
-    } catch (error) {
-      console.error('Failed to update sort order:', error);
-      alert('순서 변경 중 오류가 발생했습니다.');
-    }
-  }
-
-  if (authLoading || loading) {
-    return <div className="container py-8">로딩 중...</div>;
-  }
+  const draggingFaq = activeId ? faqs.find((f) => f.id === activeId) : null;
 
   return (
     <div className="container py-8">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-3xl font-bold">FAQ 관리</h1>
+        <div>
+          <h1 className="text-3xl font-bold">FAQ 관리</h1>
+          {saving && <p className="text-xs text-gray-400 mt-1 animate-pulse">저장 중...</p>}
+        </div>
         <Button onClick={openCreateModal}>
           <Plus className="mr-1.5 h-4 w-4" />
           FAQ 추가
@@ -258,9 +307,7 @@ export default function AdminFAQsPage() {
           <SelectContent>
             <SelectItem value="all">전체 카테고리</SelectItem>
             {categoryOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
+              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -272,60 +319,44 @@ export default function AdminFAQsPage() {
         </Card>
       ) : (
         <Card>
-          <div className="divide-y">
-            {faqs.map((faq, index) => (
-              <div key={faq.id} className="flex items-start gap-4 p-4">
-                <div className="flex flex-col gap-1">
-                  <button
-                    onClick={() => handleMoveUp(index)}
-                    disabled={index === 0}
-                    className="text-gray-400 hover:text-gray-600 disabled:opacity-30"
-                  >
-                    <GripVertical className="h-4 w-4 rotate-180" />
-                  </button>
-                  <button
-                    onClick={() => handleMoveDown(index)}
-                    disabled={index === faqs.length - 1}
-                    className="text-gray-400 hover:text-gray-600 disabled:opacity-30"
-                  >
-                    <GripVertical className="h-4 w-4" />
-                  </button>
-                </div>
-
-                <div className="flex-1">
-                  <div className="mb-1 flex items-center gap-2">
-                    <h3 className="font-medium">{faq.question}</h3>
-                    <Badge variant="outline">{categoryLabels[faq.category] || faq.category}</Badge>
-                    {!faq.isVisible && (
-                      <Badge variant="secondary">비공개</Badge>
-                    )}
-                  </div>
-                  <p className="line-clamp-2 text-sm text-gray-500">{faq.answer}</p>
-                </div>
-
-                <div className="flex gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleToggleVisibility(faq)}
-                    title={faq.isVisible ? '숨기기' : '공개'}
-                  >
-                    {faq.isVisible ? (
-                      <Eye className="h-4 w-4 text-green-600" />
-                    ) : (
-                      <EyeOff className="h-4 w-4 text-gray-400" />
-                    )}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => openEditModal(faq)}>
-                    <Edit2 className="h-4 w-4" />
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => handleDelete(faq.id)}>
-                    <Trash2 className="h-4 w-4 text-red-500" />
-                  </Button>
-                </div>
-              </div>
-            ))}
+          <div className="text-xs text-gray-400 px-4 pt-3 pb-1">
+            드래그하여 순서를 변경할 수 있습니다.
           </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => setActiveId(null)}
+          >
+            <SortableContext items={faqs.map((f) => f.id)} strategy={verticalListSortingStrategy}>
+              <div className="divide-y">
+                {faqs.map((faq) => (
+                  <SortableRow
+                    key={faq.id}
+                    faq={faq}
+                    isGhost={activeId === faq.id}
+                    onEdit={openEditModal}
+                    onToggle={handleToggleVisibility}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+
+            <DragOverlay dropAnimation={null}>
+              {draggingFaq && (
+                <div className="flex items-start gap-3 p-4 bg-white border-2 border-blue-400 rounded-lg shadow-xl">
+                  <GripVertical className="h-5 w-5 text-blue-400 mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{draggingFaq.question}</p>
+                    <p className="text-sm text-gray-400 truncate">{draggingFaq.answer}</p>
+                  </div>
+                </div>
+              )}
+            </DragOverlay>
+          </DndContext>
         </Card>
       )}
 
@@ -352,9 +383,7 @@ export default function AdminFAQsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {categoryOptions.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </SelectItem>
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -396,12 +425,8 @@ export default function AdminFAQsPage() {
             </div>
 
             <div className="mt-6 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setModalOpen(false)}>
-                취소
-              </Button>
-              <Button onClick={handleSave} disabled={saving}>
-                {saving ? '저장 중...' : '저장'}
-              </Button>
+              <Button variant="outline" onClick={() => setModalOpen(false)}>취소</Button>
+              <Button onClick={handleSave} disabled={saving}>{saving ? '저장 중...' : '저장'}</Button>
             </div>
           </Card>
         </div>

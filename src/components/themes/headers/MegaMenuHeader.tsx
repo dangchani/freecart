@@ -4,8 +4,8 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Search, ShoppingCart, User, ChevronDown, Menu, X, Shield } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ShoppingCart, User, ChevronDown, Menu, X, Shield } from 'lucide-react';
 import { useCartStore } from '@/store/cart';
 import { useAuth } from '@/hooks/useAuth';
 import { getSetting } from '@/services/settings';
@@ -64,10 +64,8 @@ function DesktopNavItem({ item }: { item: MenuItem }) {
 export default function MegaMenuHeader({ logo, siteName: siteNameProp }: Props) {
   const itemCount = useCartStore((state) => state.getItemCount());
   const { user, isAdmin } = useAuth();
-  const navigate = useNavigate();
   const [openMobile, setOpenMobile] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [searchQuery, setSearchQuery] = useState('');
   const [siteName, setSiteName] = useState(siteNameProp || 'Freecart');
 
   const { items } = useMenuItems();
@@ -77,12 +75,6 @@ export default function MegaMenuHeader({ logo, siteName: siteNameProp }: Props) 
       getSetting('site_name', 'Freecart').then(setSiteName);
     }
   }, [siteNameProp]);
-
-  function handleSearchSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const q = searchQuery.trim();
-    if (q) navigate(`/products/search?q=${encodeURIComponent(q)}`);
-  }
 
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {
@@ -125,22 +117,6 @@ export default function MegaMenuHeader({ logo, siteName: siteNameProp }: Props) 
               <span className="text-xl font-bold text-gray-900">{siteName}</span>
             )}
           </Link>
-
-          {/* 검색바 (데스크탑) */}
-          <form onSubmit={handleSearchSubmit} className="hidden md:flex flex-1 max-w-md mx-8">
-            <div className="relative w-full">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="상품 검색..."
-                className="w-full border rounded-full px-4 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2">
-                <Search className="h-5 w-5 text-gray-400" />
-              </button>
-            </div>
-          </form>
 
           {/* 우측 아이콘 */}
           <div className="flex items-center gap-3 shrink-0">
@@ -201,25 +177,6 @@ export default function MegaMenuHeader({ logo, siteName: siteNameProp }: Props) 
       {/* 모바일 메뉴 */}
       {openMobile && (
         <div className="md:hidden border-t bg-white">
-          {/* 모바일 검색 */}
-          <div className="p-4 border-b">
-            <form onSubmit={handleSearchSubmit}>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="상품 검색..."
-                  className="w-full border rounded-lg px-4 py-2 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  autoFocus
-                />
-                <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <Search className="h-4 w-4 text-gray-400" />
-                </button>
-              </div>
-            </form>
-          </div>
-
           {/* 모바일 메뉴 목록 */}
           <nav className="py-2">
             {items.map((item) => (

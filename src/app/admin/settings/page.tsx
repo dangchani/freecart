@@ -10,6 +10,7 @@ import { getOAuthConnection, startOAuthFlow, disconnectOAuth, OAuthConnection } 
 interface Settings {
   // 사이트 기본 정보
   siteName: string;
+  logoUrl: string;
   siteDescription: string;
   // 사업자 정보
   companyName: string;
@@ -23,6 +24,8 @@ interface Settings {
   // 배송 설정
   shippingFee: string;
   freeShippingThreshold: string;
+  defaultShippingNotice: string;
+  defaultReturnNotice: string;
   // 포인트 설정
   pointEarnRate: string;
   signupPoints: string;
@@ -60,6 +63,7 @@ interface Settings {
 
 const defaultSettings: Settings = {
   siteName: '',
+  logoUrl: '',
   siteDescription: '',
   companyName: '',
   companyCeo: '',
@@ -70,6 +74,8 @@ const defaultSettings: Settings = {
   githubUrl: '',
   shippingFee: '',
   freeShippingThreshold: '',
+  defaultShippingNotice: '',
+  defaultReturnNotice: '',
   pointEarnRate: '',
   signupPoints: '',
   pointsMinThreshold: '',
@@ -103,6 +109,7 @@ const defaultSettings: Settings = {
 // settings 테이블의 key와 JS 프로퍼티 매핑
 const keyMap: Record<keyof Settings, string> = {
   siteName: 'site_name',
+  logoUrl: 'site_logo',
   siteDescription: 'site_description',
   companyName: 'company_name',
   companyCeo: 'company_ceo',
@@ -113,6 +120,8 @@ const keyMap: Record<keyof Settings, string> = {
   githubUrl: 'github_url',
   shippingFee: 'shipping_fee',
   freeShippingThreshold: 'free_shipping_threshold',
+  defaultShippingNotice: 'default_shipping_notice',
+  defaultReturnNotice: 'default_return_notice',
   pointEarnRate: 'point_earn_rate',
   signupPoints: 'signup_points',
   pointsMinThreshold: 'points_min_threshold',
@@ -233,9 +242,17 @@ export default function AdminSettingsPage() {
   const [pointLabel, setPointLabel] = useState('포인트');
   const [allowCustomerReturn,   setAllowCustomerReturn]   = useState(true);
   const [allowCustomerExchange, setAllowCustomerExchange] = useState(true);
+  const [noticeBarEnabled, setNoticeBarEnabled] = useState(true);
+  const [noticeBarColor, setNoticeBarColor] = useState('#2563eb');
+  const [imageBannerEnabled, setImageBannerEnabled] = useState(true);
 
   // 주문 목록 기본 컬럼 설정
   const [orderListColumns, setOrderListColumns] = useState<string[]>(['product', 'memo', 'deadline']);
+
+  // 로고 업로드 상태
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string>('');
+  const [logoUploading, setLogoUploading] = useState(false);
 
   // 테스트 이메일 발송 상태
   const [testEmailSending, setTestEmailSending] = useState(false);
@@ -317,12 +334,13 @@ export default function AdminSettingsPage() {
       }
 
       setSettings(loaded as Settings);
+      if (loaded.logoUrl) setLogoPreview(loaded.logoUrl);
 
       // system_settings 일괄 로드
       const { data: sysRows } = await supabase
         .from('system_settings')
         .select('key, value')
-        .in('key', ['require_signup_approval', 'enable_user_assignment', 'enable_user_tags', 'use_user_levels', 'use_points', 'point_label', 'allow_customer_return', 'allow_customer_exchange', 'order_list_columns']);
+        .in('key', ['require_signup_approval', 'enable_user_assignment', 'enable_user_tags', 'use_user_levels', 'use_points', 'point_label', 'allow_customer_return', 'allow_customer_exchange', 'order_list_columns', 'notice_bar_enabled', 'notice_bar_color', 'image_banner_enabled']);
       for (const row of sysRows ?? []) {
         if (row.key === 'require_signup_approval') setRequireSignupApproval(row.value === true);
         if (row.key === 'enable_user_assignment') setEnableUserAssignment(row.value === true);
@@ -333,6 +351,9 @@ export default function AdminSettingsPage() {
         if (row.key === 'allow_customer_return')   setAllowCustomerReturn(row.value !== false);
         if (row.key === 'allow_customer_exchange') setAllowCustomerExchange(row.value !== false);
         if (row.key === 'order_list_columns' && Array.isArray(row.value)) setOrderListColumns(row.value as string[]);
+        if (row.key === 'notice_bar_enabled') setNoticeBarEnabled(row.value !== false);
+        if (row.key === 'notice_bar_color' && typeof row.value === 'string') setNoticeBarColor(row.value);
+        if (row.key === 'image_banner_enabled') setImageBannerEnabled(row.value !== false);
       }
     } catch {
       setError('설정을 불러오는 중 오류가 발생했습니다.');
@@ -346,6 +367,31 @@ export default function AdminSettingsPage() {
     setSettings((prev) => ({ ...prev, [name]: value }));
   }
 
+  function handleLogoFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
+  }
+
+  function handleLogoRemove() {
+    setLogoFile(null);
+    setLogoPreview('');
+    setSettings((prev) => ({ ...prev, logoUrl: '' }));
+  }
+
+  async function uploadLogoImage(file: File): Promise<string> {
+    const supabase = createClient();
+    const ext = file.name.split('.').pop() || 'png';
+    const path = `logo.${ext}`;
+    const { error: upErr } = await supabase.storage
+      .from('logos')
+      .upload(path, file, { upsert: true, contentType: file.type });
+    if (upErr) throw upErr;
+    const { data } = supabase.storage.from('logos').getPublicUrl(path);
+    return data.publicUrl;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
@@ -353,6 +399,21 @@ export default function AdminSettingsPage() {
     setSuccess('');
     try {
       const supabase = createClient();
+
+      // 로고 파일이 선택된 경우 먼저 업로드
+      if (logoFile) {
+        setLogoUploading(true);
+        try {
+          const url = await uploadLogoImage(logoFile);
+          setSettings((prev) => ({ ...prev, logoUrl: url }));
+          setLogoFile(null);
+          setLogoPreview('');
+          // keyMap 순회 전에 settings를 직접 갱신해야 하므로 임시로 반영
+          (settings as any).logoUrl = url;
+        } finally {
+          setLogoUploading(false);
+        }
+      }
 
       for (const [prop, dbKey] of Object.entries(keyMap)) {
         const rawValue = (settings as any)[prop] || '';
@@ -384,6 +445,9 @@ export default function AdminSettingsPage() {
         { key: 'allow_customer_return',   value: allowCustomerReturn },
         { key: 'allow_customer_exchange', value: allowCustomerExchange },
         { key: 'order_list_columns', value: orderListColumns },
+        { key: 'notice_bar_enabled', value: noticeBarEnabled },
+        { key: 'notice_bar_color', value: noticeBarColor },
+        { key: 'image_banner_enabled', value: imageBannerEnabled },
       ];
       for (const { key, value } of sysUpdates) {
         const { error: sysError } = await supabase
@@ -517,6 +581,45 @@ export default function AdminSettingsPage() {
               <label className="mb-1 block text-sm font-medium text-gray-700">사이트 이름</label>
               <input type="text" name="siteName" value={settings.siteName} onChange={handleChange} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Freecart" />
             </div>
+
+            {/* 로고 이미지 업로드 */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">로고 이미지</label>
+              <p className="mb-2 text-xs text-gray-500">권장 크기: 가로 160px × 세로 50px. 미등록 시 사이트 이름이 텍스트로 표시됩니다.</p>
+              {/* 미리보기 영역 (고정 크기 160×50) */}
+              <div className="mb-3 flex items-center gap-4">
+                <div className="flex h-[50px] w-[160px] items-center justify-center overflow-hidden rounded border bg-gray-50">
+                  {logoPreview ? (
+                    <img src={logoPreview} alt="로고 미리보기" className="h-full w-full object-contain" />
+                  ) : (
+                    <span className="text-xs text-gray-400">미리보기</span>
+                  )}
+                </div>
+                {logoPreview && (
+                  <button
+                    type="button"
+                    onClick={handleLogoRemove}
+                    className="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                  >
+                    로고 삭제
+                  </button>
+                )}
+              </div>
+              <label className="inline-block cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                {logoUploading ? '업로드 중...' : '이미지 선택'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoFileChange}
+                  className="hidden"
+                  disabled={logoUploading}
+                />
+              </label>
+              {logoFile && (
+                <span className="ml-2 text-xs text-gray-500">{logoFile.name}</span>
+              )}
+            </div>
+
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">사이트 설명</label>
               <textarea name="siteDescription" value={settings.siteDescription} onChange={handleChange} rows={2} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="쇼핑몰 설명" />
@@ -571,6 +674,33 @@ export default function AdminSettingsPage() {
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">무료배송 기준금액 (원)</label>
               <input type="number" name="freeShippingThreshold" value={settings.freeShippingThreshold} onChange={handleChange} min="0" className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="50000" />
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">기본 배송 안내</label>
+              <p className="mb-1 text-xs text-gray-500">상품별 안내가 없을 때 표시됩니다. HTML 태그 사용 가능.</p>
+              <textarea
+                name="defaultShippingNotice"
+                value={settings.defaultShippingNotice}
+                onChange={handleChange}
+                rows={4}
+                className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder={"배송 기간: 결제 후 1~3 영업일 이내 출고됩니다.\n기본 배송비: 3,000원 (50,000원 이상 구매 시 무료)"}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">기본 환불·교환 안내</label>
+              <p className="mb-1 text-xs text-gray-500">상품별 안내가 없을 때 표시됩니다. HTML 태그 사용 가능.</p>
+              <textarea
+                name="defaultReturnNotice"
+                value={settings.defaultReturnNotice}
+                onChange={handleChange}
+                rows={4}
+                className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder={"교환/반품 신청 기간: 상품 수령 후 7일 이내\n상품 불량·오배송 시: 무료 교환 또는 전액 환불"}
+              />
             </div>
           </div>
         </Card>
@@ -1176,6 +1306,89 @@ export default function AdminSettingsPage() {
           <p className="text-sm text-gray-500 mb-5">사이트에서 사용할 기능을 켜거나 끕니다.</p>
 
           <div className="space-y-6">
+            {/* 공지 배너 */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-sm">공지 배너 표시</p>
+                  <p className="text-xs text-gray-400 mt-0.5">켜면 메인 페이지 상단에 최신 공지 1개를 배너로 표시합니다.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNoticeBarEnabled((prev) => !prev)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                    noticeBarEnabled ? 'bg-blue-600' : 'bg-gray-200'
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    noticeBarEnabled ? 'translate-x-6' : 'translate-x-1'
+                  }`} />
+                </button>
+              </div>
+
+              {/* 배너 색상 */}
+              <div className={`flex items-center gap-3 transition-opacity ${!noticeBarEnabled ? 'opacity-40 pointer-events-none' : ''}`}>
+                <label className="text-xs text-gray-500 shrink-0">배너 색상</label>
+                <div className="flex items-center gap-2 flex-1">
+                  <input
+                    type="color"
+                    value={noticeBarColor}
+                    onChange={(e) => setNoticeBarColor(e.target.value)}
+                    className="h-8 w-10 rounded border border-gray-200 cursor-pointer p-0.5"
+                    title="배너 배경색 선택"
+                  />
+                  <input
+                    type="text"
+                    value={noticeBarColor}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (/^#([0-9a-fA-F]{0,6})$/.test(v)) setNoticeBarColor(v);
+                    }}
+                    maxLength={7}
+                    placeholder="#2563eb"
+                    className="w-28 rounded-md border px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {/* 미리보기 */}
+                  <div
+                    className="flex-1 rounded-md px-3 py-1.5 text-white text-xs font-medium truncate"
+                    style={{ backgroundColor: /^#[0-9a-fA-F]{6}$/.test(noticeBarColor) ? noticeBarColor : '#2563eb' }}
+                  >
+                    공지사항 미리보기
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setNoticeBarColor('#2563eb')}
+                    className="text-xs text-gray-400 hover:text-gray-600 shrink-0"
+                  >
+                    초기화
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t" />
+
+            {/* 이미지 배너 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">이미지 배너 표시</p>
+                <p className="text-xs text-gray-400 mt-0.5">켜면 메인 페이지에 배너 관리에서 등록한 활성 이미지 배너를 표시합니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setImageBannerEnabled((prev) => !prev)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  imageBannerEnabled ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  imageBannerEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            <div className="border-t" />
+
             {/* 담당자 기능 */}
             <div className="flex items-center justify-between">
               <div>

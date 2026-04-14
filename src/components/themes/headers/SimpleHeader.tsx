@@ -4,7 +4,7 @@
  */
 
 import { Link } from 'react-router-dom';
-import { Search, ShoppingCart, User, Menu } from 'lucide-react';
+import { ShoppingCart, User, Menu } from 'lucide-react';
 import { useCartStore } from '@/store/cart';
 import { useAuth } from '@/hooks/useAuth';
 import { useMenuItems } from '@/hooks/useMenuItems';
@@ -47,10 +47,6 @@ export default function SimpleHeader({ logo, siteName = 'Freecart' }: Props) {
 
           {/* 우측 아이콘 */}
           <div className="flex items-center gap-4">
-            <button className="p-2 hover:bg-gray-100 rounded-full">
-              <Search className="h-5 w-5 text-gray-600" />
-            </button>
-
             <Link to={user ? '/mypage' : '/auth/login'} className="p-2 hover:bg-gray-100 rounded-full">
               <User className="h-5 w-5 text-gray-600" />
             </Link>

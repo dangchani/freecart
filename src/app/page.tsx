@@ -1,6 +1,11 @@
 import { useState, useEffect, Suspense } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight, Tag, Truck, RefreshCw, Shield, Headphones } from 'lucide-react';
+import { Swiper, SwiperSlide } from 'swiper/react';
+import { Autoplay, Navigation, Pagination } from 'swiper/modules';
+import 'swiper/css';
+import 'swiper/css/navigation';
+import 'swiper/css/pagination';
 import { createClient } from '@/lib/supabase/client';
 import { useHomeSections, useThemeConfig } from '@/lib/theme/theme-context';
 import type { HomeSectionConfig } from '@/lib/theme/types';
@@ -159,26 +164,8 @@ function ProductsSection({ section }: { section: HomeSectionConfig }) {
   );
 }
 
-/** 배너/히어로 섹션 */
-function BannerSection({ section }: { section: HomeSectionConfig }) {
-  const settings = section.settings || {};
-
-  // 커스텀 이미지 배너
-  if (settings.imageUrl) {
-    return (
-      <section className="relative overflow-hidden">
-        <a href={(settings.linkUrl as string) || '#'}>
-          <img
-            src={settings.imageUrl as string}
-            alt={section.title || '배너'}
-            className="w-full object-cover max-h-[500px]"
-          />
-        </a>
-      </section>
-    );
-  }
-
-  // 기본 히어로 배너
+// 기본 히어로 배너 (banners DB에 등록된 배너가 없을 때 표시)
+function HeroBanner() {
   return (
     <section className="relative bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-700 text-white overflow-hidden">
       <div className="absolute inset-0 opacity-10">
@@ -217,6 +204,83 @@ function BannerSection({ section }: { section: HomeSectionConfig }) {
           </div>
         </div>
       </div>
+    </section>
+  );
+}
+
+/** 배너/히어로 섹션 — banners DB의 활성 메인 배너를 Swiper 슬라이더로 표시 */
+function BannerSection({ section: _section }: { section: HomeSectionConfig }) {
+  interface BannerItem { id: string; imageUrl: string; linkUrl: string | null; name: string; }
+  const [banners, setBanners] = useState<BannerItem[]>([]);
+  const [enabled, setEnabled] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+    (async () => {
+      try {
+        // 이미지 배너 전역 on/off 확인
+        const { data: setting } = await supabase
+          .from('system_settings')
+          .select('value')
+          .eq('key', 'image_banner_enabled')
+          .maybeSingle();
+        if (setting?.value === false) { setEnabled(false); setLoaded(true); return; }
+
+        // 활성 메인 배너 조회
+        const { data, error: bannerError } = await supabase
+          .from('banners')
+          .select('id, name, image_url, link_url')
+          .eq('position', 'main')
+          .eq('is_active', true)
+          .order('sort_order', { ascending: true });
+
+        if (bannerError) {
+          console.error('[BannerSection] 배너 조회 오류:', bannerError.message);
+        }
+
+        setBanners(
+          (data || []).map((b: any) => ({
+            id: b.id,
+            imageUrl: b.image_url,
+            linkUrl: b.link_url,
+            name: b.name,
+          }))
+        );
+      } catch {
+        // ignore
+      } finally {
+        setLoaded(true);
+      }
+    })();
+  }, []);
+
+  if (!loaded) return null;
+  if (!enabled) return null;
+  if (banners.length === 0) return <HeroBanner />;
+
+  return (
+    <section className="w-full overflow-hidden">
+      <Swiper
+        modules={[Autoplay, Navigation, Pagination]}
+        autoplay={{ delay: 4000, disableOnInteraction: false, pauseOnMouseEnter: true }}
+        navigation={banners.length > 1}
+        pagination={banners.length > 1 ? { clickable: true } : false}
+        loop={banners.length > 1}
+        className="w-full"
+      >
+        {banners.map((b) => (
+          <SwiperSlide key={b.id}>
+            {b.linkUrl ? (
+              <a href={b.linkUrl} target="_blank" rel="noopener noreferrer" className="block w-full">
+                <img src={b.imageUrl} alt={b.name} className="w-full object-cover block" style={{ maxHeight: 560 }} />
+              </a>
+            ) : (
+              <img src={b.imageUrl} alt={b.name} className="w-full object-cover block" style={{ maxHeight: 560 }} />
+            )}
+          </SwiperSlide>
+        ))}
+      </Swiper>
     </section>
   );
 }
@@ -446,39 +510,62 @@ function HtmlThemeHomeRenderer({
 // 공지 스트립 (항상 상단에 표시)
 // =============================================================================
 
+const DEFAULT_NOTICE_COLOR = '#2563eb';
+
 function NoticeStrip() {
-  const [notices, setNotices] = useState<{ id: string; title: string }[]>([]);
+  const [notice, setNotice] = useState<{ id: string; title: string } | null>(null);
+  const [color, setColor] = useState(DEFAULT_NOTICE_COLOR);
 
   useEffect(() => {
     const supabase = createClient();
     (async () => {
       try {
+        // 배너 설정 일괄 조회
+        const { data: settings } = await supabase
+          .from('system_settings')
+          .select('key, value')
+          .in('key', ['notice_bar_enabled', 'notice_bar_color']);
+
+        const map: Record<string, any> = {};
+        for (const s of settings ?? []) map[s.key] = s.value;
+
+        if (map['notice_bar_enabled'] === false) return;
+
+        const rawColor = map['notice_bar_color'];
+        if (typeof rawColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(rawColor)) {
+          setColor(rawColor);
+        }
+
+        // 최신 공지 1개
         const { data } = await supabase
           .from('notices')
           .select('id, title')
           .order('created_at', { ascending: false })
-          .limit(3);
-        setNotices((data || []).map((n: any) => ({ id: n.id, title: n.title })));
+          .limit(1)
+          .maybeSingle();
+        if (data) setNotice({ id: data.id, title: data.title });
       } catch {
         // ignore
       }
     })();
   }, []);
 
-  if (notices.length === 0) return null;
+  if (!notice) return null;
 
   return (
-    <div className="bg-blue-600 text-white py-2">
+    <div className="py-2">
       <div className="container mx-auto px-4">
-        <div className="flex items-center gap-4 overflow-x-auto scrollbar-hide">
-          <span className="text-xs font-bold bg-white text-blue-600 px-2 py-0.5 rounded shrink-0">공지</span>
-          <div className="flex items-center gap-6 text-sm">
-            {notices.map((n) => (
-              <Link key={n.id} to={`/notices/${n.id}`} className="hover:underline whitespace-nowrap">
-                {n.title}
-              </Link>
-            ))}
-          </div>
+        <div
+          className="text-white rounded-lg px-4 py-2 flex items-center gap-3"
+          style={{ backgroundColor: color }}
+        >
+          <span className="text-xs font-bold bg-white px-2 py-0.5 rounded shrink-0" style={{ color }}>공지</span>
+          <Link
+            to={`/notices/${notice.id}`}
+            className="text-sm hover:underline truncate"
+          >
+            {notice.title}
+          </Link>
         </div>
       </div>
     </div>
@@ -511,36 +598,38 @@ export default function HomePage() {
       <NoticeStrip />
 
       {hasHtmlTheme ? (
-        /* ── HTML 테마 렌더링 (homeSections 순서 기준, 데이터 섹션은 React) ── */
+        /* ── HTML 테마 렌더링 ── */
         <HtmlThemeHomeRenderer htmlUrls={htmlUrls} themeSettings={themeSettings} />
-      ) : useSections ? (
-        /* ── React 컴포넌트 기반 섹션 렌더링 ── */
-        <>
-          {sections.map((section) => (
-            <div key={section.id}>
-              {renderSection(section)}
-              {section.type === 'banner' && <BenefitSection />}
-            </div>
-          ))}
-          <div className="container mx-auto px-4">
-            <PromoBannerSection />
-          </div>
-        </>
       ) : (
-        /* ── 기본 레이아웃 (테마 미설정 시) ── */
+        /* ── React 렌더링: 이미지 배너는 섹션 설정과 무관하게 항상 최상단 ── */
         <>
           <BannerSection section={{ id: 'hero', type: 'banner', style: 'hero' }} />
-          <BenefitSection />
-          <div className="container mx-auto px-4">
-            <CategoriesSection section={{ id: 'categories', type: 'categories', style: 'grid', title: '카테고리' }} />
-            <hr className="border-gray-100" />
-            <ProductsSection section={{ id: 'featured', type: 'products', style: 'grid', title: '추천 상품', settings: { filter: 'isFeatured', badge: 'PICK' } }} />
-            <hr className="border-gray-100" />
-            <ProductsSection section={{ id: 'new', type: 'products', style: 'grid', title: '신상품', settings: { filter: 'isNew', badge: 'NEW' } }} />
-            <hr className="border-gray-100" />
-            <ProductsSection section={{ id: 'best', type: 'products', style: 'grid', title: '베스트 상품', settings: { filter: 'isBest', badge: 'BEST' } }} />
-            <PromoBannerSection />
-          </div>
+
+          {useSections ? (
+            /* 커스텀 섹션이 있으면 그 섹션들 렌더링 (banner 타입 제외 — 이미 위에서 렌더링) */
+            <div className="container mx-auto px-4">
+              {sections
+                .filter((s) => s.type !== 'banner')
+                .map((section) => (
+                  <div key={section.id}>
+                    {renderSection(section)}
+                  </div>
+                ))}
+              <PromoBannerSection />
+            </div>
+          ) : (
+            /* 기본 레이아웃 */
+            <div className="container mx-auto px-4">
+              <CategoriesSection section={{ id: 'categories', type: 'categories', style: 'grid', title: '카테고리' }} />
+              <hr className="border-gray-100" />
+              <ProductsSection section={{ id: 'featured', type: 'products', style: 'grid', title: '추천 상품', settings: { filter: 'isFeatured', badge: 'PICK' } }} />
+              <hr className="border-gray-100" />
+              <ProductsSection section={{ id: 'new', type: 'products', style: 'grid', title: '신상품', settings: { filter: 'isNew', badge: 'NEW' } }} />
+              <hr className="border-gray-100" />
+              <ProductsSection section={{ id: 'best', type: 'products', style: 'grid', title: '베스트 상품', settings: { filter: 'isBest', badge: 'BEST' } }} />
+              <PromoBannerSection />
+            </div>
+          )}
         </>
       )}
     </div>

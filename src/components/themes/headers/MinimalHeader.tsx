@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, X, ShoppingCart, User, Search } from 'lucide-react';
+import { Menu, X, ShoppingCart, User } from 'lucide-react';
 import { useCartStore } from '@/store/cart';
 import { useAuth } from '@/hooks/useAuth';
 import { useMenuItems } from '@/hooks/useMenuItems';
@@ -72,18 +72,6 @@ export default function MinimalHeader({ logo, siteName = 'Freecart' }: Props) {
               <button onClick={() => setMenuOpen(false)} className="p-2 hover:bg-gray-100 rounded-full">
                 <X className="h-5 w-5" />
               </button>
-            </div>
-
-            {/* 검색 */}
-            <div className="p-4 border-b">
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="검색"
-                  className="w-full border rounded-lg px-4 py-2 pr-10 text-sm"
-                />
-                <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              </div>
             </div>
 
             {/* 메뉴 링크 (DB 기반) */}

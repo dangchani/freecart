@@ -42,6 +42,7 @@ import { RecentlyViewed } from '@/components/recently-viewed';
 import { useAuth } from '@/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 import { getSystemSetting } from '@/lib/permissions';
+import { getSetting } from '@/services/settings';
 import { Button } from '@/components/ui/button';
 import { formatCurrency } from '@/lib/utils';
 import { Minus, Plus, ShoppingCart, Zap, ArrowLeft, Check, Star, ChevronDown, ChevronUp, Heart, AlertCircle, Crown } from 'lucide-react';
@@ -79,6 +80,10 @@ interface Product {
   productType?: 'single' | 'bundle';
   minPurchaseQuantity?: number | null;
   maxPurchaseQuantity?: number | null;
+  shippingType?: string;
+  shippingFee?: number | null;
+  shippingNotice?: string | null;
+  returnNotice?: string | null;
   images?: { id: string; url: string; alt?: string; isPrimary: boolean; sortOrder: number }[];
 }
 
@@ -96,6 +101,7 @@ export default function ProductDetailPage() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [qnaList, setQnaList] = useState<QnA[]>([]);
+  const [qnaCount, setQnaCount] = useState<number>(0);
   const [qnaLoading, setQnaLoading] = useState(false);
   const [qnaQuestion, setQnaQuestion] = useState('');
   const [qnaSecret, setQnaSecret] = useState(false);
@@ -138,6 +144,15 @@ export default function ProductDetailPage() {
   const [stockAlertEmail, setStockAlertEmail] = useState('');
   const [stockAlertLoading, setStockAlertLoading] = useState(false);
   const [showStockAlertForm, setShowStockAlertForm] = useState(false);
+
+  // 배송/환불 안내 state
+  const [defaultShippingNotice, setDefaultShippingNotice] = useState('');
+  const [defaultReturnNotice, setDefaultReturnNotice] = useState('');
+
+  useEffect(() => {
+    getSetting('default_shipping_notice').then(setDefaultShippingNotice);
+    getSetting('default_return_notice').then(setDefaultReturnNotice);
+  }, []);
 
   useEffect(() => {
     if (!slug) return;
@@ -196,6 +211,17 @@ export default function ProductDetailPage() {
     }
     getProductLevelPrices(product.id).then(setLevelPrices);
   }, [product, useLevels]);
+
+  // Q&A 카운트 (탭에 표시용 — 탭 진입 전에도 보이도록)
+  useEffect(() => {
+    if (!product) return;
+    const supabase = createClient();
+    supabase
+      .from('product_qna')
+      .select('*', { count: 'exact', head: true })
+      .eq('product_id', product.id)
+      .then(({ count }) => setQnaCount(count ?? 0));
+  }, [product]);
 
   // 수량별 할인 및 타임세일 로드
   useEffect(() => {
@@ -307,8 +333,19 @@ export default function ProductDetailPage() {
       try {
         const { data: prod2 } = await supabase.from('products').select('id').eq('slug', slug).single();
         if (!prod2) { setQnaList([]); setQnaLoading(false); return; }
-        const { data } = await supabase.from('product_qna').select('*, users(name)').eq('product_id', prod2.id);
-        setQnaList(data?.map((q: any) => ({ ...q, userName: q.users?.name || '익명' })) || []);
+        const { data } = await supabase.from('product_qna').select('*, users(name)').eq('product_id', prod2.id).order('created_at', { ascending: false });
+        const mapped = (data || []).map((q: any) => ({
+          id: q.id,
+          userId: q.user_id,
+          userName: q.users?.name || '익명',
+          question: q.question,
+          answer: q.answer,
+          isSecret: q.is_secret,
+          createdAt: q.created_at,
+          answeredAt: q.answered_at,
+        }));
+        setQnaList(mapped);
+        setQnaCount(mapped.length);
       } catch { setQnaList([]); } finally { setQnaLoading(false); }
     }
     if (activeTab === 'reviews' && reviews.length === 0) loadReviews();
@@ -434,6 +471,7 @@ export default function ProductDetailPage() {
         setQnaQuestion('');
         setQnaSecret(false);
         setQnaList([]);
+        setQnaCount((prev) => prev + 1);
         showToast('문의가 등록되었습니다.', 'success');
       } else {
         showToast('문의 등록에 실패했습니다.', 'error');
@@ -1022,7 +1060,7 @@ export default function ProductDetailPage() {
 
       <div className="mt-12">
         <div className="flex border-b">
-          {([{ key: 'detail', label: '상품 상세' }, { key: 'reviews', label: `리뷰 (${reviews.length})` }, { key: 'qna', label: 'Q&A' }, { key: 'shipping', label: '배송/환불 안내' }] as const).map((tab) => (
+          {([{ key: 'detail', label: '상품 상세' }, { key: 'reviews', label: `리뷰 (${reviews.length})` }, { key: 'qna', label: `Q&A (${qnaCount})` }, { key: 'shipping', label: '배송/환불 안내' }] as const).map((tab) => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
               {tab.label}
             </button>
@@ -1060,40 +1098,87 @@ export default function ProductDetailPage() {
 
           {activeTab === 'qna' && (
             <div>
-              <div className="mb-6 p-4 bg-gray-50 rounded-xl">
-                <h3 className="font-semibold mb-3">상품 문의하기</h3>
-                <textarea className="w-full border rounded-lg p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500" rows={4} placeholder="상품에 대해 궁금한 점을 문의해주세요." value={qnaQuestion} onChange={(e) => setQnaQuestion(e.target.value)} />
-                <div className="flex items-center justify-between mt-3">
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input type="checkbox" checked={qnaSecret} onChange={(e) => setQnaSecret(e.target.checked)} />비밀글
-                  </label>
-                  <button onClick={submitQuestion} disabled={qnaSubmitting || !qnaQuestion.trim()} className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-5 py-2 rounded-lg disabled:opacity-50">
-                    {qnaSubmitting ? '등록 중...' : '문의 등록'}
-                  </button>
+              {/* 문의 작성 폼 */}
+              {user ? (
+                <div className="mb-6 p-4 bg-gray-50 rounded-xl">
+                  <h3 className="font-semibold mb-3">상품 문의하기</h3>
+                  <textarea
+                    className="w-full border rounded-lg p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={4}
+                    placeholder="상품에 대해 궁금한 점을 문의해주세요."
+                    value={qnaQuestion}
+                    onChange={(e) => setQnaQuestion(e.target.value)}
+                  />
+                  <div className="flex items-center justify-between mt-3">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={qnaSecret}
+                        onChange={(e) => setQnaSecret(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 accent-blue-600"
+                      />
+                      <span className="text-gray-700">비밀글로 등록</span>
+                      <span className="text-xs text-gray-400">(작성자 본인만 확인 가능)</span>
+                    </label>
+                    <button
+                      onClick={submitQuestion}
+                      disabled={qnaSubmitting || !qnaQuestion.trim()}
+                      className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-5 py-2 rounded-lg disabled:opacity-50"
+                    >
+                      {qnaSubmitting ? '등록 중...' : '문의 등록'}
+                    </button>
+                  </div>
                 </div>
-              </div>
-              {qnaLoading ? <div className="flex justify-center py-12"><span className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" /></div>
-                : qnaList.length === 0 ? <p className="text-center text-gray-400 py-12">등록된 문의가 없습니다.</p>
-                : <div className="space-y-4">{qnaList.map((qna) => <QnAItem key={qna.id} qna={qna} />)}</div>}
+              ) : (
+                <div className="mb-6 p-5 bg-gray-50 rounded-xl text-center">
+                  <p className="text-sm text-gray-500 mb-3">상품 문의는 로그인 후 이용하실 수 있습니다.</p>
+                  <Link
+                    to={`/auth/login?redirect=${encodeURIComponent(window.location.pathname)}`}
+                    className="inline-block bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-5 py-2 rounded-lg"
+                  >
+                    로그인하기
+                  </Link>
+                </div>
+              )}
+              {/* 문의 목록 */}
+              {qnaLoading
+                ? <div className="flex justify-center py-12"><span className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" /></div>
+                : qnaList.length === 0
+                  ? <p className="text-center text-gray-400 py-12">등록된 문의가 없습니다.</p>
+                  : <div className="space-y-4">{qnaList.map((qna) => <QnAItem key={qna.id} qna={qna} currentUserId={user?.id} />)}</div>}
             </div>
           )}
 
           {activeTab === 'shipping' && (
-            <div className="space-y-4 text-sm text-gray-700">
+            <div className="space-y-6 text-sm text-gray-700">
+              {/* 배송 안내 */}
               <div>
-                <h3 className="font-bold mb-2">배송 안내</h3>
-                <ul className="space-y-1 list-disc list-inside text-gray-600">
-                  <li>배송 비용: 3,000원 (50,000원 이상 무료)</li>
-                  <li>배송 기간: 결제 후 1~3 영업일</li>
-                </ul>
+                <h3 className="mb-3 font-bold text-gray-900">배송 안내</h3>
+                {(() => {
+                  const notice = product?.shippingNotice || defaultShippingNotice;
+                  if (!notice) return <p className="text-gray-500">배송 안내가 없습니다.</p>;
+                  const hasHtml = /<[a-z][\s\S]*>/i.test(notice);
+                  return hasHtml ? (
+                    <div className="prose prose-sm max-w-none text-gray-600" dangerouslySetInnerHTML={{ __html: notice }} />
+                  ) : (
+                    <p className="whitespace-pre-wrap text-gray-600">{notice}</p>
+                  );
+                })()}
               </div>
               <hr />
+              {/* 환불·교환 안내 */}
               <div>
-                <h3 className="font-bold mb-2">교환 / 반품 안내</h3>
-                <ul className="space-y-1 list-disc list-inside text-gray-600">
-                  <li>교환/반품 기간: 상품 수령 후 7일 이내</li>
-                  <li>상품 불량/오배송 시: 무료 교환 또는 환불</li>
-                </ul>
+                <h3 className="mb-3 font-bold text-gray-900">교환 / 반품 안내</h3>
+                {(() => {
+                  const notice = product?.returnNotice || defaultReturnNotice;
+                  if (!notice) return <p className="text-gray-500">환불·교환 안내가 없습니다.</p>;
+                  const hasHtml = /<[a-z][\s\S]*>/i.test(notice);
+                  return hasHtml ? (
+                    <div className="prose prose-sm max-w-none text-gray-600" dangerouslySetInnerHTML={{ __html: notice }} />
+                  ) : (
+                    <p className="whitespace-pre-wrap text-gray-600">{notice}</p>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -1138,26 +1223,37 @@ export default function ProductDetailPage() {
   );
 }
 
-function QnAItem({ qna }: { qna: QnA }) {
+function QnAItem({ qna, currentUserId }: { qna: QnA; currentUserId?: string }) {
   const [open, setOpen] = useState(false);
+  const canView = !qna.isSecret || qna.userId === currentUserId;
+
   return (
     <div className="border rounded-xl overflow-hidden">
       <button onClick={() => setOpen((v) => !v)} className="w-full flex items-start gap-3 p-4 text-left hover:bg-gray-50">
         <span className="shrink-0 text-blue-600 font-bold text-sm">Q</span>
         <div className="flex-1">
-          <p className="text-sm font-medium">{qna.isSecret ? '🔒 비밀글입니다.' : qna.question}</p>
-          <p className="text-xs text-gray-400 mt-0.5">{qna.userName} · {new Date(qna.createdAt).toLocaleDateString('ko-KR')}</p>
+          <p className="text-sm font-medium">
+            {qna.isSecret && <span className="mr-1">🔒</span>}
+            {canView ? qna.question : '비밀글입니다.'}
+          </p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {canView ? qna.userName : '***'} · {qna.createdAt ? new Date(qna.createdAt).toLocaleDateString('ko-KR') : '-'}
+          </p>
         </div>
         {open ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
       </button>
       {open && (
         <div className="p-4 bg-blue-50 border-t">
-          {qna.answer ? (
-            <div className="flex gap-3">
-              <span className="text-red-600 font-bold text-sm">A</span>
-              <p className="text-sm text-gray-700">{qna.answer}</p>
-            </div>
-          ) : <p className="text-sm text-gray-400">아직 답변이 등록되지 않았습니다.</p>}
+          {canView ? (
+            qna.answer ? (
+              <div className="flex gap-3">
+                <span className="text-red-600 font-bold text-sm">A</span>
+                <p className="text-sm text-gray-700">{qna.answer}</p>
+              </div>
+            ) : <p className="text-sm text-gray-400">아직 답변이 등록되지 않았습니다.</p>
+          ) : (
+            <p className="text-sm text-gray-400">비밀글입니다. 작성자만 확인할 수 있습니다.</p>
+          )}
         </div>
       )}
     </div>
