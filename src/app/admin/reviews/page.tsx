@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { format } from 'date-fns';
-import { Star } from 'lucide-react';
+import { Star, Search } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
 interface Review {
@@ -19,6 +19,27 @@ interface Review {
   isBest: boolean;
 }
 
+interface Category {
+  id: string;
+  name: string;
+  parentId: string | null;
+}
+
+const VISIBILITY_TABS = [
+  { value: '', label: '전체' },
+  { value: 'visible', label: '노출' },
+  { value: 'hidden', label: '숨김' },
+];
+
+const RATING_OPTIONS = [
+  { value: '', label: '전체 별점' },
+  { value: '5', label: '★ 5점' },
+  { value: '4', label: '★ 4점' },
+  { value: '3', label: '★ 3점' },
+  { value: '2', label: '★ 2점' },
+  { value: '1', label: '★ 1점' },
+];
+
 export default function AdminReviewsPage() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
@@ -28,39 +49,103 @@ export default function AdminReviewsPage() {
   const [replyingId, setReplyingId] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState('');
 
+  // 필터 상태
+  const [rootCategories, setRootCategories] = useState<Category[]>([]);
+  const [subCategories, setSubCategories] = useState<Category[]>([]);
+  const [selectedRoot, setSelectedRoot] = useState('');
+  const [selectedSub, setSelectedSub] = useState('');
+  const [productSearch, setProductSearch] = useState('');
+  const [productSearchInput, setProductSearchInput] = useState('');
+  const [visibilityFilter, setVisibilityFilter] = useState('');
+  const [ratingFilter, setRatingFilter] = useState('');
+
   useEffect(() => {
     if (!authLoading) {
-      if (!user) {
-        navigate('/auth/login');
-        return;
-      }
-      loadReviews();
+      if (!user) { navigate('/auth/login'); return; }
+      loadCategories();
     }
   }, [user, authLoading, navigate]);
+
+  useEffect(() => {
+    if (!authLoading && user) loadReviews();
+  }, [user, authLoading, selectedRoot, selectedSub, productSearch, visibilityFilter, ratingFilter]);
+
+  // 루트 카테고리 선택 시 하위 카테고리 로드
+  useEffect(() => {
+    setSelectedSub('');
+    if (!selectedRoot) { setSubCategories([]); return; }
+    const supabase = createClient();
+    supabase
+      .from('product_categories')
+      .select('id, name, parent_id')
+      .eq('parent_id', selectedRoot)
+      .eq('is_visible', true)
+      .order('sort_order')
+      .then(({ data }) => setSubCategories((data || []).map((c: any) => ({ id: c.id, name: c.name, parentId: c.parent_id }))));
+  }, [selectedRoot]);
+
+  async function loadCategories() {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from('product_categories')
+      .select('id, name, parent_id')
+      .is('parent_id', null)
+      .eq('is_visible', true)
+      .order('sort_order');
+    setRootCategories((data || []).map((c: any) => ({ id: c.id, name: c.name, parentId: null })));
+  }
 
   async function loadReviews() {
     try {
       setLoading(true);
       const supabase = createClient();
-      const { data, error: fetchError } = await supabase
+
+      // 카테고리 필터가 있으면 해당 상품 id 목록 먼저 조회
+      let productIds: string[] | null = null;
+      const categoryId = selectedSub || selectedRoot;
+      if (categoryId) {
+        const { data: prods } = await supabase
+          .from('products')
+          .select('id')
+          .eq('category_id', categoryId);
+        productIds = (prods || []).map((p: any) => p.id);
+        if (productIds.length === 0) {
+          setReviews([]);
+          setLoading(false);
+          return;
+        }
+      }
+
+      let query = supabase
         .from('reviews')
-        .select('id, rating, content, is_visible, is_best, created_at, products(name), users(name)')
+        .select('id, rating, content, is_visible, is_best, created_at, products(id, name), users(name)')
         .order('created_at', { ascending: false });
 
+      if (productIds) query = query.in('product_id', productIds);
+      if (visibilityFilter === 'visible') query = query.eq('is_visible', true);
+      if (visibilityFilter === 'hidden') query = query.eq('is_visible', false);
+      if (ratingFilter) query = query.eq('rating', parseInt(ratingFilter));
+
+      const { data, error: fetchError } = await query;
       if (fetchError) throw fetchError;
 
-      setReviews(
-        (data || []).map((r: any) => ({
-          id: r.id,
-          productName: r.products?.name || '',
-          authorName: r.users?.name || '',
-          rating: r.rating,
-          content: r.content,
-          createdAt: r.created_at,
-          isVisible: r.is_visible,
-          isBest: r.is_best,
-        }))
-      );
+      let result = (data || []).map((r: any) => ({
+        id: r.id,
+        productName: r.products?.name || '',
+        authorName: r.users?.name || '',
+        rating: r.rating,
+        content: r.content,
+        createdAt: r.created_at,
+        isVisible: r.is_visible,
+        isBest: r.is_best,
+      }));
+
+      // 상품명 텍스트 검색 (클라이언트 필터)
+      if (productSearch.trim()) {
+        result = result.filter((r) => r.productName.includes(productSearch.trim()));
+      }
+
+      setReviews(result);
     } catch {
       setError('리뷰 목록을 불러오는 중 오류가 발생했습니다.');
     } finally {
@@ -69,49 +154,26 @@ export default function AdminReviewsPage() {
   }
 
   async function handleToggleVisible(reviewId: string, current: boolean) {
-    try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from('reviews')
-        .update({ is_visible: !current })
-        .eq('id', reviewId);
-      if (error) throw error;
-      await loadReviews();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : '처리 중 오류가 발생했습니다.');
-    }
+    const supabase = createClient();
+    await supabase.from('reviews').update({ is_visible: !current }).eq('id', reviewId);
+    await loadReviews();
   }
 
   async function handleToggleBest(reviewId: string, current: boolean) {
-    try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from('reviews')
-        .update({ is_best: !current })
-        .eq('id', reviewId);
-      if (error) throw error;
-      await loadReviews();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : '처리 중 오류가 발생했습니다.');
-    }
+    const supabase = createClient();
+    await supabase.from('reviews').update({ is_best: !current }).eq('id', reviewId);
+    await loadReviews();
   }
 
   async function handleReplySubmit(reviewId: string) {
-    if (!replyContent.trim()) {
-      alert('답변 내용을 입력해주세요.');
-      return;
-    }
+    if (!replyContent.trim()) { alert('답변 내용을 입력해주세요.'); return; }
     try {
       const supabase = createClient();
-      const { error } = await supabase
-        .from('reviews')
-        .update({
-          admin_reply: replyContent,
-          admin_replied_at: new Date().toISOString(),
-        })
-        .eq('id', reviewId);
+      const { error } = await supabase.from('reviews').update({
+        admin_reply: replyContent,
+        admin_replied_at: new Date().toISOString(),
+      }).eq('id', reviewId);
       if (error) throw error;
-      alert('답변이 등록되었습니다.');
       setReplyingId(null);
       setReplyContent('');
       await loadReviews();
@@ -126,9 +188,108 @@ export default function AdminReviewsPage() {
     <div className="container py-8">
       <h1 className="mb-6 text-3xl font-bold">리뷰 관리</h1>
 
-      {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-4 text-red-700">{error}</div>
-      )}
+      {/* 필터 영역 */}
+      <div className="mb-4 flex flex-wrap gap-3 items-end">
+        {/* 루트 카테고리 */}
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-gray-500">카테고리</label>
+          <select
+            value={selectedRoot}
+            onChange={(e) => setSelectedRoot(e.target.value)}
+            className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[140px]"
+          >
+            <option value="">전체 카테고리</option>
+            {rootCategories.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* 하위 카테고리 */}
+        {subCategories.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-gray-500">하위 카테고리</label>
+            <select
+              value={selectedSub}
+              onChange={(e) => setSelectedSub(e.target.value)}
+              className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[140px]"
+            >
+              <option value="">전체</option>
+              {subCategories.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* 상품명 검색 */}
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-gray-500">상품명 검색</label>
+          <div className="flex gap-1">
+            <input
+              type="text"
+              value={productSearchInput}
+              onChange={(e) => setProductSearchInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && setProductSearch(productSearchInput)}
+              placeholder="상품명 입력"
+              className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-40"
+            />
+            <button
+              onClick={() => setProductSearch(productSearchInput)}
+              className="border rounded-lg px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              <Search className="h-4 w-4 text-gray-500" />
+            </button>
+          </div>
+        </div>
+
+        {/* 별점 필터 */}
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-gray-500">별점</label>
+          <select
+            value={ratingFilter}
+            onChange={(e) => setRatingFilter(e.target.value)}
+            className="border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {RATING_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* 필터 초기화 */}
+        {(selectedRoot || productSearch || ratingFilter || visibilityFilter) && (
+          <button
+            onClick={() => {
+              setSelectedRoot(''); setSelectedSub('');
+              setProductSearch(''); setProductSearchInput('');
+              setRatingFilter(''); setVisibilityFilter('');
+            }}
+            className="text-xs text-gray-400 hover:text-gray-600 underline self-end pb-2"
+          >
+            필터 초기화
+          </button>
+        )}
+      </div>
+
+      {/* 노출 탭 */}
+      <div className="mb-4 flex gap-1 border-b">
+        {VISIBILITY_TABS.map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => setVisibilityFilter(tab.value)}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${
+              visibilityFilter === tab.value
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {error && <div className="mb-4 rounded-md bg-red-50 p-4 text-red-700">{error}</div>}
 
       {loading ? (
         <div className="py-8 text-center text-gray-500">로딩 중...</div>
@@ -167,9 +328,7 @@ export default function AdminReviewsPage() {
                         <span className="line-clamp-2">{review.content}</span>
                       </td>
                       <td className="px-4 py-3 text-gray-600">
-                        {review.createdAt
-                          ? format(new Date(review.createdAt), 'yyyy.MM.dd')
-                          : '-'}
+                        {review.createdAt ? format(new Date(review.createdAt), 'yyyy.MM.dd') : '-'}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-col gap-1">
@@ -181,27 +340,16 @@ export default function AdminReviewsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap justify-center gap-1">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleToggleVisible(review.id, review.isVisible)}
-                          >
+                          <Button size="sm" variant="outline" onClick={() => handleToggleVisible(review.id, review.isVisible)}>
                             {review.isVisible ? '숨기기' : '노출'}
                           </Button>
-                          <Button
-                            size="sm"
-                            variant={review.isBest ? 'default' : 'outline'}
-                            onClick={() => handleToggleBest(review.id, review.isBest)}
-                          >
+                          <Button size="sm" variant={review.isBest ? 'default' : 'outline'} onClick={() => handleToggleBest(review.id, review.isBest)}>
                             베스트
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => {
-                              setReplyingId(replyingId === review.id ? null : review.id);
-                              setReplyContent('');
-                            }}
+                            onClick={() => { setReplyingId(replyingId === review.id ? null : review.id); setReplyContent(''); }}
                           >
                             답변
                           </Button>
@@ -220,19 +368,8 @@ export default function AdminReviewsPage() {
                               className="flex-1 rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                             <div className="flex flex-col gap-1">
-                              <Button
-                                size="sm"
-                                onClick={() => handleReplySubmit(review.id)}
-                              >
-                                등록
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setReplyingId(null)}
-                              >
-                                취소
-                              </Button>
+                              <Button size="sm" onClick={() => handleReplySubmit(review.id)}>등록</Button>
+                              <Button size="sm" variant="outline" onClick={() => setReplyingId(null)}>취소</Button>
                             </div>
                           </div>
                         </td>

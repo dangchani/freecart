@@ -78,6 +78,8 @@ function mapProduct(p: any): Product {
     hasOptions: p.has_options,
     shippingType: p.shipping_type,
     shippingFee: p.shipping_fee,
+    shippingNotice: p.shipping_notice ?? null,
+    returnNotice: p.return_notice ?? null,
     tags: p.tags,
     videoUrl: p.video_url,
     sku: p.sku,

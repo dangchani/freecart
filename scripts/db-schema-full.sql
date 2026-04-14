@@ -330,6 +330,8 @@ CREATE TABLE IF NOT EXISTS products (
   product_type          TEXT NOT NULL DEFAULT 'single' CHECK (product_type IN ('single', 'bundle')),
   shipping_type         VARCHAR(20) NOT NULL DEFAULT 'default',
   shipping_fee          INTEGER,
+  shipping_notice       TEXT,
+  return_notice         TEXT,
   seo_title             VARCHAR(255),
   seo_description       VARCHAR(500),
   seo_keywords          VARCHAR(255),
@@ -1387,6 +1389,12 @@ CREATE TRIGGER trg_banners_updated_at
   BEFORE UPDATE ON banners
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+ALTER TABLE banners ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "banners_select_public" ON banners
+  FOR SELECT USING (is_active = true);
+CREATE POLICY "banners_admin_all" ON banners
+  FOR ALL USING (is_admin(auth.uid()));
+
 -- 9.2 popups (팝업)
 CREATE TABLE IF NOT EXISTS popups (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1509,17 +1517,6 @@ INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
 SELECT 'faq',         'FAQ',      true, true, 110, 'header'
 WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'faq' AND is_system = true);
 
-INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
-SELECT 'inquiry',     '1:1 문의', true, true, 120, 'header'
-WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'inquiry' AND is_system = true);
-
-INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
-SELECT 'product_qna', '상품 Q&A', true, true, 130, 'header'
-WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'product_qna' AND is_system = true);
-
-INSERT INTO menus (menu_type, name, is_system, is_visible, sort_order, position)
-SELECT 'review',      '리뷰',     true, true, 140, 'header'
-WHERE NOT EXISTS (SELECT 1 FROM menus WHERE menu_type = 'review' AND is_system = true);
 
 DROP TRIGGER IF EXISTS trg_menus_updated_at ON menus;
 CREATE TRIGGER trg_menus_updated_at
@@ -1540,6 +1537,12 @@ CREATE TABLE IF NOT EXISTS terms (
 );
 
 CREATE INDEX IF NOT EXISTS idx_terms_type ON terms(type, is_active);
+
+ALTER TABLE terms ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "terms_select_public" ON terms
+  FOR SELECT USING (is_active = true);
+CREATE POLICY "terms_admin_all" ON terms
+  FOR ALL USING (is_admin(auth.uid()));
 
 -- 10.4 content_pages (컨텐츠 페이지)
 CREATE TABLE IF NOT EXISTS content_pages (
@@ -1567,6 +1570,12 @@ DROP TRIGGER IF EXISTS trg_content_pages_updated_at ON content_pages;
 CREATE TRIGGER trg_content_pages_updated_at
   BEFORE UPDATE ON content_pages
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+ALTER TABLE content_pages ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "content_pages_select_public" ON content_pages
+  FOR SELECT USING (is_visible = true);
+CREATE POLICY "content_pages_admin_all" ON content_pages
+  FOR ALL USING (is_admin(auth.uid()));
 
 -- 10.5 main_sections (메인 페이지 섹션)
 CREATE TABLE IF NOT EXISTS main_sections (
@@ -2259,6 +2268,18 @@ ON CONFLICT (slug) DO NOTHING;
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- =============================================================================
 
+-- settings: 공개 읽기 (푸터·전체 사이트에서 사용), 관리자만 쓰기
+ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "settings_public_read" ON settings;
+CREATE POLICY "settings_public_read" ON settings
+  FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "settings_admin_write" ON settings;
+CREATE POLICY "settings_admin_write" ON settings
+  FOR ALL USING (is_admin(auth.uid()))
+  WITH CHECK (is_admin(auth.uid()));
+
 -- Enable RLS on main tables
 ALTER TABLE users                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_addresses         ENABLE ROW LEVEL SECURITY;
@@ -2274,6 +2295,7 @@ ALTER TABLE carts                  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cart_items             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders                 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE product_qna            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reviews                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE review_likes           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE post_likes             ENABLE ROW LEVEL SECURITY;
@@ -2376,10 +2398,22 @@ DROP POLICY IF EXISTS "user_points_history_read_own" ON user_points_history;
 CREATE POLICY "user_points_history_read_own" ON user_points_history
   FOR SELECT USING (auth.uid()::text = user_id::text);
 
+-- user_points_history: admin full access (구매확정 포인트 적립 등)
+DROP POLICY IF EXISTS "user_points_history_admin_all" ON user_points_history;
+CREATE POLICY "user_points_history_admin_all" ON user_points_history
+  FOR ALL USING (is_admin(auth.uid()))
+  WITH CHECK (is_admin(auth.uid()));
+
 -- user_deposits_history: read own history
 DROP POLICY IF EXISTS "user_deposits_history_read_own" ON user_deposits_history;
 CREATE POLICY "user_deposits_history_read_own" ON user_deposits_history
   FOR SELECT USING (auth.uid()::text = user_id::text);
+
+-- user_deposits_history: admin full access
+DROP POLICY IF EXISTS "user_deposits_history_admin_all" ON user_deposits_history;
+CREATE POLICY "user_deposits_history_admin_all" ON user_deposits_history
+  FOR ALL USING (is_admin(auth.uid()))
+  WITH CHECK (is_admin(auth.uid()));
 
 -- user_wishlist: users manage their own wishlist
 DROP POLICY IF EXISTS "user_wishlist_own" ON user_wishlist;
@@ -2503,6 +2537,25 @@ CREATE POLICY "order_items_manage_admin" ON order_items
     )
   );
 
+-- product_qna: 공개글은 누구나 읽기, 비밀글은 작성자·관리자만 읽기
+DROP POLICY IF EXISTS "product_qna_read_public" ON product_qna;
+CREATE POLICY "product_qna_read_public" ON product_qna
+  FOR SELECT USING (is_secret = false AND is_visible = true);
+
+DROP POLICY IF EXISTS "product_qna_read_own_secret" ON product_qna;
+CREATE POLICY "product_qna_read_own_secret" ON product_qna
+  FOR SELECT USING (is_secret = true AND auth.uid()::text = user_id::text);
+
+DROP POLICY IF EXISTS "product_qna_admin_all" ON product_qna;
+CREATE POLICY "product_qna_admin_all" ON product_qna
+  FOR ALL USING (is_admin(auth.uid()))
+  WITH CHECK (is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS "product_qna_manage_own" ON product_qna;
+CREATE POLICY "product_qna_manage_own" ON product_qna
+  FOR ALL USING (auth.uid()::text = user_id::text)
+  WITH CHECK (auth.uid()::text = user_id::text);
+
 -- reviews: anyone can read visible reviews; users manage their own
 DROP POLICY IF EXISTS "reviews_read_public" ON reviews;
 CREATE POLICY "reviews_read_public" ON reviews
@@ -2526,6 +2579,12 @@ CREATE POLICY "post_likes_own" ON post_likes
 DROP POLICY IF EXISTS "inquiries_own" ON inquiries;
 CREATE POLICY "inquiries_own" ON inquiries
   FOR ALL USING (auth.uid()::text = user_id::text);
+
+-- inquiries: admin full access
+DROP POLICY IF EXISTS "inquiries_admin_all" ON inquiries;
+CREATE POLICY "inquiries_admin_all" ON inquiries
+  FOR ALL USING (is_admin(auth.uid()))
+  WITH CHECK (is_admin(auth.uid()));
 
 -- notifications: users read their own notifications
 DROP POLICY IF EXISTS "notifications_read_own" ON notifications;
@@ -2893,7 +2952,10 @@ INSERT INTO settings (key, value, description) VALUES
   ('notification_from_email',    '"noreply@example.com"','알림 발신 이메일 주소'),
   ('notification_from_name',     '"프리카트"',            '알림 발신자 이름'),
   ('notification_email_enabled', '"true"',               '이메일 알림 활성화 여부 (true/false)'),
-  ('email_provider',             '"resend"',             '트랜잭션 이메일 발송 방식 (resend | smtp)')
+  ('email_provider',             '"resend"',             '트랜잭션 이메일 발송 방식 (resend | smtp)'),
+  -- 배송/환불 기본 안내
+  ('default_shipping_notice',    '"배송 기간: 결제 후 1~3 영업일 이내 출고됩니다.\n기본 배송비: 3,000원 (50,000원 이상 구매 시 무료)\n도서·산간 지역은 추가 배송비가 발생할 수 있습니다."', '기본 배송 안내 텍스트'),
+  ('default_return_notice',      '"교환/반품 신청 기간: 상품 수령 후 7일 이내\n상품 불량·오배송 시: 무료 교환 또는 전액 환불\n단순 변심 반품 시: 왕복 배송비 고객 부담\n사용·세탁·훼손된 상품은 교환/반품이 불가합니다."', '기본 환불·교환 안내 텍스트')
 ON CONFLICT (key) DO NOTHING;
 
 -- =============================================================================
@@ -3074,6 +3136,56 @@ CREATE POLICY "popups_storage_insert" ON storage.objects
 DROP POLICY IF EXISTS "popups_storage_delete" ON storage.objects;
 CREATE POLICY "popups_storage_delete" ON storage.objects
   FOR DELETE USING (bucket_id = 'popups' AND auth.role() = 'authenticated');
+
+-- 배너 이미지 버킷 (공개)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'banners',
+  'banners',
+  true,
+  10485760,  -- 10MB
+  ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "banners_storage_select" ON storage.objects;
+CREATE POLICY "banners_storage_select" ON storage.objects
+  FOR SELECT USING (bucket_id = 'banners');
+
+DROP POLICY IF EXISTS "banners_storage_insert" ON storage.objects;
+CREATE POLICY "banners_storage_insert" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'banners' AND auth.role() = 'authenticated');
+
+DROP POLICY IF EXISTS "banners_storage_delete" ON storage.objects;
+CREATE POLICY "banners_storage_delete" ON storage.objects
+  FOR DELETE USING (bucket_id = 'banners' AND auth.role() = 'authenticated');
+
+-- 로고 이미지 버킷 (공개)
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'logos',
+  'logos',
+  true,
+  2097152,  -- 2MB
+  ARRAY['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml']
+)
+ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS "logos_select_public" ON storage.objects;
+CREATE POLICY "logos_select_public" ON storage.objects
+  FOR SELECT USING (bucket_id = 'logos');
+
+DROP POLICY IF EXISTS "logos_insert_admin" ON storage.objects;
+CREATE POLICY "logos_insert_admin" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'logos' AND is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS "logos_update_admin" ON storage.objects;
+CREATE POLICY "logos_update_admin" ON storage.objects
+  FOR UPDATE USING (bucket_id = 'logos' AND is_admin(auth.uid()));
+
+DROP POLICY IF EXISTS "logos_delete_admin" ON storage.objects;
+CREATE POLICY "logos_delete_admin" ON storage.objects
+  FOR DELETE USING (bucket_id = 'logos' AND is_admin(auth.uid()));
 
 -- =============================================================================
 -- SEED DATA: 기본 카테고리 / 브랜드 / 상품
@@ -3327,7 +3439,13 @@ INSERT INTO system_settings (key, value, description) VALUES
   ('allow_customer_exchange', 'true'::jsonb,
    '고객이 마이페이지에서 직접 교환 신청 가능 여부. false이면 교환 신청 폼 대신 고객센터 안내 메시지 표시'),
   ('order_list_columns', '["product","memo","deadline"]'::jsonb,
-   '주문 목록 기본 표시 컬럼. localStorage 개인 설정이 없는 관리자에게 적용되는 기본값')
+   '주문 목록 기본 표시 컬럼. localStorage 개인 설정이 없는 관리자에게 적용되는 기본값'),
+  ('notice_bar_enabled', 'true'::jsonb,
+   '메인 페이지 상단 공지 배너 표시 여부. true이면 최신 공지 1개를 배너로 표시'),
+  ('notice_bar_color', '"#2563eb"'::jsonb,
+   '공지 배너 배경색. HEX 값(예: #2563eb). 비어있으면 기본 파란색 사용'),
+  ('image_banner_enabled', 'true'::jsonb,
+   '메인 페이지 이미지 배너 섹션 표시 여부. true이면 banners 테이블의 활성 배너를 메인에 표시')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -3696,8 +3814,11 @@ ALTER TABLE user_tags                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_tag_members         ENABLE ROW LEVEL SECURITY;
 
 -- system_settings: 관리자 조회, super_admin만 수정
+-- 메인 페이지 공개 키는 비로그인 사용자도 읽을 수 있도록 허용
 CREATE POLICY "system_settings_select_admin" ON system_settings
   FOR SELECT USING (is_admin(auth.uid()));
+CREATE POLICY "system_settings_select_public" ON system_settings
+  FOR SELECT USING (key IN ('notice_bar_enabled', 'notice_bar_color', 'image_banner_enabled'));
 CREATE POLICY "system_settings_modify_super" ON system_settings
   FOR ALL USING (is_super_admin(auth.uid()))
   WITH CHECK (is_super_admin(auth.uid()));

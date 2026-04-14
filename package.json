@@ -4,7 +4,7 @@
   "description": "무료 오픈소스 쇼핑몰/커뮤니티 솔루션",
   "private": true,
   "scripts": {
-    "dev": "vite --port 4000",
+    "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint .",

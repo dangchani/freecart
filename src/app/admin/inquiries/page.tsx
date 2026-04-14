@@ -31,7 +31,7 @@ const categoryLabels: Record<string, string> = {
   product: '상품',
   payment: '결제',
   refund: '환불',
-  etc: '기타',
+  other: '기타',
 };
 
 export default function AdminInquiriesPage() {

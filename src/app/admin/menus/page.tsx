@@ -42,11 +42,8 @@ interface BoardOption    { id: string; name: string; slug: string; }
 // ─── 헬퍼 ───────────────────────────────────────────────────────────────────
 
 const SYSTEM_URL_MAP: Partial<Record<MenuType, string>> = {
-  notice:      '/notices',
-  faq:         '/faq',
-  inquiry:     '/inquiry',
-  product_qna: '/product-qna',
-  review:      '/reviews',
+  notice: '/notices',
+  faq:    '/faqs',
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

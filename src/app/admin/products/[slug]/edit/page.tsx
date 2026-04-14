@@ -76,6 +76,8 @@ const productSchema = z.object({
   isSale: z.boolean().default(false),
   shippingType: z.enum(['default', 'free', 'custom']).default('default'),
   shippingFee: z.number().min(0).optional(),
+  shippingNotice: z.string().optional(),
+  returnNotice: z.string().optional(),
   seoTitle: z.string().max(255).optional(),
   seoDescription: z.string().max(500).optional(),
   seoKeywords: z.string().max(255).optional(),
@@ -399,7 +401,7 @@ export default function EditProductPage() {
           regular_price, sale_price, cost_price, point_rate,
           stock_quantity, stock_alert_quantity, min_purchase_quantity, max_purchase_quantity, daily_purchase_limit,
           status, is_featured, is_new, is_best, is_sale,
-          shipping_type, shipping_fee,
+          shipping_type, shipping_fee, shipping_notice, return_notice,
           seo_title, seo_description, seo_keywords,
           has_options, tags,
           product_images(id, url, is_primary, sort_order),
@@ -512,6 +514,8 @@ export default function EditProductPage() {
         isSale: product.is_sale,
         shippingType: (['default', 'free', 'custom'].includes(product.shipping_type) ? product.shipping_type : 'default') as 'default' | 'free' | 'custom',
         shippingFee: product.shipping_fee || undefined,
+        shippingNotice: product.shipping_notice || '',
+        returnNotice: product.return_notice || '',
         seoTitle: product.seo_title || '',
         seoDescription: product.seo_description || '',
         seoKeywords: product.seo_keywords || '',
@@ -739,6 +743,8 @@ export default function EditProductPage() {
           is_sale: data.isSale,
           shipping_type: data.shippingType,
           shipping_fee: data.shippingFee || null,
+          shipping_notice: data.shippingNotice || null,
+          return_notice: data.returnNotice || null,
           seo_title: data.seoTitle || null,
           seo_description: data.seoDescription || null,
           seo_keywords: data.seoKeywords || null,
@@ -1798,6 +1804,30 @@ export default function EditProductPage() {
                   />
                 </div>
               )}
+
+              <div>
+                <Label htmlFor="shippingNotice">배송 안내 (상품별)</Label>
+                <p className="mb-1 text-xs text-gray-500">비워두면 관리자 설정의 기본 배송 안내가 표시됩니다. HTML 태그 사용 가능.</p>
+                <textarea
+                  id="shippingNotice"
+                  {...register('shippingNotice')}
+                  rows={4}
+                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder={"배송 기간: 결제 후 1~3 영업일 이내 출고됩니다.\n기본 배송비: 3,000원 (50,000원 이상 구매 시 무료)"}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="returnNotice">환불·교환 안내 (상품별)</Label>
+                <p className="mb-1 text-xs text-gray-500">비워두면 관리자 설정의 기본 환불·교환 안내가 표시됩니다. HTML 태그 사용 가능.</p>
+                <textarea
+                  id="returnNotice"
+                  {...register('returnNotice')}
+                  rows={4}
+                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder={"교환/반품 신청 기간: 상품 수령 후 7일 이내\n상품 불량·오배송 시: 무료 교환 또는 전액 환불"}
+                />
+              </div>
             </div>
           )}
         </Card>

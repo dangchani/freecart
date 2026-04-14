@@ -4,46 +4,57 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { format } from 'date-fns';
-import { ArrowLeft, Star, Edit, Trash2 } from 'lucide-react';
+import { Star, Edit, Trash2, PenLine } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
 interface Review {
   id: string;
   productId: string;
+  productSlug: string;
   productName: string;
   rating: number;
-  title: string;
   content: string;
   images: string[];
   createdAt: string;
 }
 
+interface WritableReview {
+  orderItemId: string;
+  productId: string;
+  productSlug: string;
+  productName: string;
+  productImage: string;
+  orderedAt: string;
+}
+
+const TABS = [
+  { value: 'written', label: '작성한 리뷰' },
+  { value: 'writable', label: '작성 가능한 리뷰' },
+];
+
 export default function ReviewsPage() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
+  const [activeTab, setActiveTab] = useState<'written' | 'writable'>('written');
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [writableReviews, setWritableReviews] = useState<WritableReview[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!authLoading) {
-      if (!user) {
-        navigate('/auth/login');
-        return;
-      }
-      loadReviews();
+      if (!user) { navigate('/auth/login'); return; }
+      if (activeTab === 'written') loadReviews();
+      else loadWritableReviews();
     }
-  }, [user, authLoading, navigate]);
+  }, [user, authLoading, navigate, activeTab]);
 
   async function loadReviews() {
     try {
+      setLoading(true);
       const supabase = createClient();
       const { data, error } = await supabase
         .from('reviews')
-        .select(`
-          id, product_id, rating, content, created_at,
-          products(name),
-          review_images(url)
-        `)
+        .select('id, product_id, rating, content, created_at, products(name, slug), review_images(url)')
         .eq('user_id', user!.id)
         .order('created_at', { ascending: false });
 
@@ -53,118 +64,201 @@ export default function ReviewsPage() {
         (data || []).map((r: any) => ({
           id: r.id,
           productId: r.product_id,
+          productSlug: r.products?.slug || '',
           productName: r.products?.name || '',
           rating: r.rating,
-          title: '',
           content: r.content,
           images: (r.review_images || []).map((img: any) => img.url),
           createdAt: r.created_at,
         }))
       );
-    } catch (error) {
-      console.error('Failed to load reviews:', error);
+    } catch (err) {
+      console.error('Failed to load reviews:', err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadWritableReviews() {
+    try {
+      setLoading(true);
+      const supabase = createClient();
+
+      // 구매확정된 주문 아이템 조회
+      const { data: orderItems, error } = await supabase
+        .from('order_items')
+        .select(`
+          id, product_id, order_id,
+          products(name, slug, thumbnail_url),
+          orders!inner(status, confirmed_at)
+        `)
+        .eq('orders.user_id', user!.id)
+        .eq('orders.status', 'delivered')
+        .order('id', { ascending: false });
+
+      if (error) throw error;
+
+      if (!orderItems || orderItems.length === 0) {
+        setWritableReviews([]);
+        return;
+      }
+
+      // 이미 작성한 리뷰의 order_item_id 목록 조회
+      const orderItemIds = orderItems.map((i: any) => i.id);
+      const { data: existingReviews } = await supabase
+        .from('reviews')
+        .select('order_item_id')
+        .eq('user_id', user!.id)
+        .in('order_item_id', orderItemIds);
+
+      const reviewedItemIds = new Set((existingReviews || []).map((r: any) => r.order_item_id));
+
+      // 리뷰 미작성 아이템만 필터
+      const writable = (orderItems || [])
+        .filter((item: any) => !reviewedItemIds.has(item.id))
+        .map((item: any) => ({
+          orderItemId: item.id,
+          productId: item.product_id,
+          productSlug: item.products?.slug || '',
+          productName: item.products?.name || '',
+          productImage: item.products?.thumbnail_url || '',
+          orderedAt: item.orders?.confirmed_at || '',
+        }));
+
+      setWritableReviews(writable);
+    } catch (err) {
+      console.error('Failed to load writable reviews:', err);
     } finally {
       setLoading(false);
     }
   }
 
   async function handleDelete(reviewId: string) {
-    if (!confirm('리뷰를 삭제하시겠습니까?')) {
-      return;
-    }
-
+    if (!confirm('리뷰를 삭제하시겠습니까?')) return;
     try {
       const supabase = createClient();
-      const { error } = await supabase
-        .from('reviews')
-        .delete()
-        .eq('id', reviewId)
-        .eq('user_id', user!.id);
-
+      const { error } = await supabase.from('reviews').delete().eq('id', reviewId).eq('user_id', user!.id);
       if (error) throw error;
-
-      alert('리뷰가 삭제되었습니다.');
       await loadReviews();
-    } catch (error) {
-      console.error('Failed to delete review:', error);
-      alert(error instanceof Error ? error.message : '리뷰 삭제 중 오류가 발생했습니다.');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '리뷰 삭제 중 오류가 발생했습니다.');
     }
   }
 
-  if (authLoading || loading) {
-    return <div className="container py-8">로딩 중...</div>;
-  }
+  if (authLoading) return <div className="py-8">로딩 중...</div>;
 
   return (
-    <div className="container py-8">
-      <Link to="/mypage" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
-        <ArrowLeft className="mr-1 h-4 w-4" />
-        마이페이지로 돌아가기
-      </Link>
+    <div>
+      <h2 className="text-xl font-bold mb-4">리뷰 관리</h2>
 
-      <h1 className="mb-8 text-3xl font-bold">내 리뷰</h1>
+      {/* 탭 */}
+      <div className="flex gap-1 border-b mb-6">
+        {TABS.map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => setActiveTab(tab.value as 'written' | 'writable')}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === tab.value
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-      {reviews.length === 0 ? (
-        <Card className="p-12 text-center">
-          <Star className="mx-auto mb-4 h-12 w-12 text-gray-400" />
-          <p className="mb-4 text-gray-500">작성한 리뷰가 없습니다.</p>
-          <Link to="/products">
-            <Button>쇼핑하러 가기</Button>
-          </Link>
-        </Card>
-      ) : (
-        <div className="space-y-4">
-          {reviews.map((review) => (
-            <Card key={review.id} className="p-6">
-              <div className="mb-3 flex items-start justify-between">
-                <div>
-                  <Link to={`/products/${review.productId}`} className="font-bold hover:underline">
-                    {review.productName}
-                  </Link>
-                  <div className="mt-1 flex items-center gap-1">
-                    {[...Array(5)].map((_, i) => (
-                      <Star
-                        key={i}
-                        className={`h-4 w-4 ${
-                          i < review.rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'
-                        }`}
-                      />
-                    ))}
-                    <span className="ml-2 text-sm text-gray-500">
-                      {format(new Date(review.createdAt), 'yyyy.MM.dd')}
-                    </span>
+      {loading ? (
+        <div className="py-12 text-center text-gray-400">불러오는 중...</div>
+      ) : activeTab === 'written' ? (
+        /* ── 작성한 리뷰 탭 ── */
+        reviews.length === 0 ? (
+          <div className="py-16 text-center">
+            <Star className="mx-auto mb-3 h-10 w-10 text-gray-300" />
+            <p className="text-sm text-gray-400 mb-4">작성한 리뷰가 없습니다.</p>
+            <Link to="/products"><Button size="sm">쇼핑하러 가기</Button></Link>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {reviews.map((review) => (
+              <Card key={review.id} className="p-5">
+                <div className="mb-3 flex items-start justify-between">
+                  <div>
+                    <Link
+                      to={review.productSlug ? `/products/${review.productSlug}` : `/products/${review.productId}`}
+                      className="font-semibold hover:underline text-gray-900"
+                    >
+                      {review.productName}
+                    </Link>
+                    <div className="mt-1 flex items-center gap-1">
+                      {[...Array(5)].map((_, i) => (
+                        <Star key={i} className={`h-4 w-4 ${i < review.rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}`} />
+                      ))}
+                      <span className="ml-2 text-xs text-gray-400">
+                        {format(new Date(review.createdAt), 'yyyy.MM.dd')}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Link to={`/mypage/reviews/${review.id}/edit`}>
+                      <Button size="sm" variant="outline"><Edit className="h-4 w-4" /></Button>
+                    </Link>
+                    <Button size="sm" variant="ghost" onClick={() => handleDelete(review.id)}>
+                      <Trash2 className="h-4 w-4 text-red-500" />
+                    </Button>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Link to={`/mypage/reviews/${review.id}/edit`}>
-                    <Button size="sm" variant="outline">
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                  </Link>
-                  <Button size="sm" variant="ghost" onClick={() => handleDelete(review.id)}>
-                    <Trash2 className="h-4 w-4 text-red-500" />
-                  </Button>
-                </div>
-              </div>
-
-              {review.title && <h3 className="mb-2 font-semibold">{review.title}</h3>}
-              <p className="mb-3 whitespace-pre-wrap text-gray-600">{review.content}</p>
-
-              {review.images && review.images.length > 0 && (
-                <div className="flex gap-2">
-                  {review.images.map((image, index) => (
-                    <div
-                      key={index}
-                      className="h-20 w-20 overflow-hidden rounded-lg border bg-gray-100"
-                    >
-                      <img src={image} alt={`리뷰 이미지 ${index + 1}`} className="h-full w-full object-cover" />
+                <p className="whitespace-pre-wrap text-sm text-gray-600 mb-3">{review.content}</p>
+                {review.images.length > 0 && (
+                  <div className="flex gap-2 flex-wrap">
+                    {review.images.map((img, i) => (
+                      <div key={i} className="h-20 w-20 overflow-hidden rounded-lg border bg-gray-100">
+                        <img src={img} alt={`리뷰 이미지 ${i + 1}`} className="h-full w-full object-cover" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            ))}
+          </div>
+        )
+      ) : (
+        /* ── 작성 가능한 리뷰 탭 ── */
+        writableReviews.length === 0 ? (
+          <div className="py-16 text-center">
+            <PenLine className="mx-auto mb-3 h-10 w-10 text-gray-300" />
+            <p className="text-sm text-gray-400">작성 가능한 리뷰가 없습니다.</p>
+            <p className="text-xs text-gray-300 mt-1">구매확정된 상품의 리뷰를 작성할 수 있어요.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {writableReviews.map((item) => (
+              <Card key={item.orderItemId} className="p-4">
+                <div className="flex items-center gap-4">
+                  {item.productImage && (
+                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border bg-gray-100">
+                      <img src={item.productImage} alt={item.productName} className="h-full w-full object-cover" />
                     </div>
-                  ))}
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900 truncate">{item.productName}</p>
+                    {item.orderedAt && (
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        구매확정일: {format(new Date(item.orderedAt), 'yyyy.MM.dd')}
+                      </p>
+                    )}
+                  </div>
+                  <Link
+                    to={`/products/${item.productSlug || item.productId}?tab=reviews&write=1&orderItemId=${item.orderItemId}`}
+                    className="shrink-0"
+                  >
+                    <Button size="sm">리뷰 작성</Button>
+                  </Link>
                 </div>
-              )}
-            </Card>
-          ))}
-        </div>
+              </Card>
+            ))}
+          </div>
+        )
       )}
     </div>
   );

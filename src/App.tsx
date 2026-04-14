@@ -1,7 +1,9 @@
 import { BrowserRouter, Routes, Route, Outlet, Navigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { ThemeProvider } from './components/theme-provider';
 import ThemeLayout from './components/themes/ThemeLayout';
 import { useAuth } from './hooks/useAuth';
+import { getSiteInfo } from './services/settings';
 
 // Pages
 import HomePage from './app/page';
@@ -49,6 +51,7 @@ import MypageWishlistPage from './app/mypage/wishlist/page';
 import MypageReviewsPage from './app/mypage/reviews/page';
 import MypageEditReviewPage from './app/mypage/reviews/[id]/edit/page';
 import MypageSubscriptionsPage from './app/mypage/subscriptions/page';
+import MypageQnAPage from './app/mypage/qna/page';
 import MypageInquiriesPage from './app/mypage/inquiries/page';
 import MypageInquiryNewPage from './app/mypage/inquiries/new/page';
 import MypageNotificationsPage from './app/mypage/notifications/page';
@@ -129,8 +132,34 @@ import PopupManager from './components/popup/PopupManager';
 
 // 테마 레이아웃 (DB layout_config 기반 헤더/푸터 동적 렌더링)
 function MainLayout() {
+  const [siteInfo, setSiteInfo] = useState<Awaited<ReturnType<typeof getSiteInfo>> | null>(null);
+
+  function reload() {
+    getSiteInfo().then(setSiteInfo);
+  }
+
+  useEffect(() => {
+    reload();
+    // 관리자 설정 저장 후 즉시 반영
+    window.addEventListener('freecart:settings-changed', reload);
+    return () => window.removeEventListener('freecart:settings-changed', reload);
+  }, []);
+
+  const companyInfo = siteInfo ? {
+    name: siteInfo.companyName,
+    ceo: siteInfo.companyCeo,
+    address: siteInfo.companyAddress,
+    tel: siteInfo.companyPhone,
+    email: siteInfo.companyEmail,
+    businessNumber: siteInfo.companyBusinessNumber,
+  } : undefined;
+
   return (
-    <ThemeLayout>
+    <ThemeLayout
+      siteName={siteInfo?.siteName}
+      logo={siteInfo?.logoUrl || undefined}
+      companyInfo={companyInfo}
+    >
       <PopupManager />
       <Outlet />
     </ThemeLayout>
@@ -208,6 +237,8 @@ export default function App() {
               <Route path="/brands" element={<BrandsPage />} />
               <Route path="/brands/:id" element={<BrandDetailPage />} />
               <Route path="/inquiries/new" element={<NewInquiryPage />} />
+              <Route path="/terms" element={<Navigate to="/pages/terms" replace />} />
+              <Route path="/privacy" element={<Navigate to="/pages/privacy" replace />} />
               <Route path="/pages/:slug" element={<ContentPage />} />
 
               <Route element={<RequireAuth />}>
@@ -226,6 +257,7 @@ export default function App() {
                   <Route path="/mypage/reviews" element={<MypageReviewsPage />} />
                   <Route path="/mypage/reviews/:id/edit" element={<MypageEditReviewPage />} />
                   <Route path="/mypage/subscriptions" element={<MypageSubscriptionsPage />} />
+                  <Route path="/mypage/qna" element={<MypageQnAPage />} />
                   <Route path="/mypage/inquiries" element={<MypageInquiriesPage />} />
                   <Route path="/mypage/inquiries/new" element={<MypageInquiryNewPage />} />
                   <Route path="/mypage/notifications" element={<MypageNotificationsPage />} />

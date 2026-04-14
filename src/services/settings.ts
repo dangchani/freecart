@@ -148,6 +148,7 @@ export async function getPrivateMallSettings(): Promise<{
 
 export async function getSiteInfo(): Promise<{
   siteName: string;
+  logoUrl: string;
   siteDescription: string;
   companyName: string;
   companyCeo: string;
@@ -162,6 +163,7 @@ export async function getSiteInfo(): Promise<{
   await ensureLoaded();
   return {
     siteName: parseValue(cache['site_name']) || 'Freecart',
+    logoUrl: parseValue(cache['site_logo']) || '',
     siteDescription: parseValue(cache['site_description']) || '무료 오픈소스 쇼핑몰 솔루션',
     companyName: parseValue(cache['company_name']) || '',
     companyCeo: parseValue(cache['company_ceo']) || '',

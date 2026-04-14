@@ -10,6 +10,7 @@ import { getOAuthConnection, startOAuthFlow, disconnectOAuth, OAuthConnection } 
 interface Settings {
   // 사이트 기본 정보
   siteName: string;
+  logoUrl: string;
   siteDescription: string;
   // 사업자 정보
   companyName: string;
@@ -23,6 +24,8 @@ interface Settings {
   // 배송 설정
   shippingFee: string;
   freeShippingThreshold: string;
+  defaultShippingNotice: string;
+  defaultReturnNotice: string;
   // 포인트 설정
   pointEarnRate: string;
   signupPoints: string;
@@ -60,6 +63,7 @@ interface Settings {
 
 const defaultSettings: Settings = {
   siteName: '',
+  logoUrl: '',
   siteDescription: '',
   companyName: '',
   companyCeo: '',
@@ -70,6 +74,8 @@ const defaultSettings: Settings = {
   githubUrl: '',
   shippingFee: '',
   freeShippingThreshold: '',
+  defaultShippingNotice: '',
+  defaultReturnNotice: '',
   pointEarnRate: '',
   signupPoints: '',
   pointsMinThreshold: '',
@@ -103,6 +109,7 @@ const defaultSettings: Settings = {
 // settings 테이블의 key와 JS 프로퍼티 매핑
 const keyMap: Record<keyof Settings, string> = {
   siteName: 'site_name',
+  logoUrl: 'site_logo',
   siteDescription: 'site_description',
   companyName: 'company_name',
   companyCeo: 'company_ceo',
@@ -113,6 +120,8 @@ const keyMap: Record<keyof Settings, string> = {
   githubUrl: 'github_url',
   shippingFee: 'shipping_fee',
   freeShippingThreshold: 'free_shipping_threshold',
+  defaultShippingNotice: 'default_shipping_notice',
+  defaultReturnNotice: 'default_return_notice',
   pointEarnRate: 'point_earn_rate',
   signupPoints: 'signup_points',
   pointsMinThreshold: 'points_min_threshold',
@@ -142,13 +151,83 @@ const keyMap: Record<keyof Settings, string> = {
   closedMallMode: 'closed_mall_mode',
 };
 
+const SMTP_PROVIDERS = [
+  {
+    id: 'mailgun',
+    label: 'Mailgun',
+    host: 'smtp.mailgun.org',
+    port: '587',
+    userPlaceholder: 'postmaster@mg.yourdomain.com',
+    passPlaceholder: 'SMTP 비밀번호',
+    guide: 'Mailgun → Sending → Domain Settings → SMTP credentials에서 사용자명/비밀번호 확인',
+  },
+  {
+    id: 'gmail',
+    label: 'Gmail',
+    host: 'smtp.gmail.com',
+    port: '587',
+    userPlaceholder: 'your@gmail.com',
+    passPlaceholder: '앱 비밀번호 (일반 비밀번호 아님)',
+    guide: 'Google 계정 → 보안 → 2단계 인증 ON → 앱 비밀번호 생성 후 입력',
+  },
+  {
+    id: 'outlook',
+    label: 'Outlook / Microsoft 365',
+    host: 'smtp.office365.com',
+    port: '587',
+    userPlaceholder: 'your@outlook.com',
+    passPlaceholder: 'Microsoft 계정 비밀번호',
+    guide: 'Outlook → 설정 → 메일 → POP 및 IMAP → SMTP 허용 ON',
+  },
+  {
+    id: 'naver',
+    label: '네이버',
+    host: 'smtp.naver.com',
+    port: '587',
+    userPlaceholder: 'your@naver.com',
+    passPlaceholder: '네이버 로그인 비밀번호',
+    guide: '네이버 메일 → 환경설정 → POP3/SMTP 설정 → SMTP 사용 ON',
+  },
+  {
+    id: 'daum',
+    label: '다음 (Kakao)',
+    host: 'smtp.daum.net',
+    port: '465',
+    userPlaceholder: 'your@daum.net',
+    passPlaceholder: '카카오 계정 비밀번호',
+    guide: '다음 메일 → 환경설정 → 외부메일 → SMTP 허용 ON',
+  },
+  {
+    id: 'nate',
+    label: '네이트',
+    host: 'smtp.nate.com',
+    port: '465',
+    userPlaceholder: 'your@nate.com',
+    passPlaceholder: '네이트 로그인 비밀번호',
+    guide: '네이트 메일 → 환경설정 → 메일설정 → SMTP 사용 허용 ON',
+  },
+  {
+    id: 'custom',
+    label: '사용자 지정 SMTP 서버',
+    host: '',
+    port: '587',
+    userPlaceholder: '사용자명',
+    passPlaceholder: '비밀번호',
+    guide: null,
+  },
+] as const;
+
+type SmtpProviderId = (typeof SMTP_PROVIDERS)[number]['id'];
+
 export default function AdminSettingsPage() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [applying, setApplying] = useState(false);
+  const [applyingSmtp, setApplyingSmtp] = useState(false);
+  const [applyingEmailConfirm, setApplyingEmailConfirm] = useState(false);
+  const [smtpProvider, setSmtpProvider] = useState<SmtpProviderId>('custom');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [applyError, setApplyError] = useState('');
@@ -163,9 +242,17 @@ export default function AdminSettingsPage() {
   const [pointLabel, setPointLabel] = useState('포인트');
   const [allowCustomerReturn,   setAllowCustomerReturn]   = useState(true);
   const [allowCustomerExchange, setAllowCustomerExchange] = useState(true);
+  const [noticeBarEnabled, setNoticeBarEnabled] = useState(true);
+  const [noticeBarColor, setNoticeBarColor] = useState('#2563eb');
+  const [imageBannerEnabled, setImageBannerEnabled] = useState(true);
 
   // 주문 목록 기본 컬럼 설정
   const [orderListColumns, setOrderListColumns] = useState<string[]>(['product', 'memo', 'deadline']);
+
+  // 로고 업로드 상태
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string>('');
+  const [logoUploading, setLogoUploading] = useState(false);
 
   // 테스트 이메일 발송 상태
   const [testEmailSending, setTestEmailSending] = useState(false);
@@ -247,12 +334,13 @@ export default function AdminSettingsPage() {
       }
 
       setSettings(loaded as Settings);
+      if (loaded.logoUrl) setLogoPreview(loaded.logoUrl);
 
       // system_settings 일괄 로드
       const { data: sysRows } = await supabase
         .from('system_settings')
         .select('key, value')
-        .in('key', ['require_signup_approval', 'enable_user_assignment', 'enable_user_tags', 'use_user_levels', 'use_points', 'point_label', 'allow_customer_return', 'allow_customer_exchange', 'order_list_columns']);
+        .in('key', ['require_signup_approval', 'enable_user_assignment', 'enable_user_tags', 'use_user_levels', 'use_points', 'point_label', 'allow_customer_return', 'allow_customer_exchange', 'order_list_columns', 'notice_bar_enabled', 'notice_bar_color', 'image_banner_enabled']);
       for (const row of sysRows ?? []) {
         if (row.key === 'require_signup_approval') setRequireSignupApproval(row.value === true);
         if (row.key === 'enable_user_assignment') setEnableUserAssignment(row.value === true);
@@ -263,6 +351,9 @@ export default function AdminSettingsPage() {
         if (row.key === 'allow_customer_return')   setAllowCustomerReturn(row.value !== false);
         if (row.key === 'allow_customer_exchange') setAllowCustomerExchange(row.value !== false);
         if (row.key === 'order_list_columns' && Array.isArray(row.value)) setOrderListColumns(row.value as string[]);
+        if (row.key === 'notice_bar_enabled') setNoticeBarEnabled(row.value !== false);
+        if (row.key === 'notice_bar_color' && typeof row.value === 'string') setNoticeBarColor(row.value);
+        if (row.key === 'image_banner_enabled') setImageBannerEnabled(row.value !== false);
       }
     } catch {
       setError('설정을 불러오는 중 오류가 발생했습니다.');
@@ -276,6 +367,31 @@ export default function AdminSettingsPage() {
     setSettings((prev) => ({ ...prev, [name]: value }));
   }
 
+  function handleLogoFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
+  }
+
+  function handleLogoRemove() {
+    setLogoFile(null);
+    setLogoPreview('');
+    setSettings((prev) => ({ ...prev, logoUrl: '' }));
+  }
+
+  async function uploadLogoImage(file: File): Promise<string> {
+    const supabase = createClient();
+    const ext = file.name.split('.').pop() || 'png';
+    const path = `logo.${ext}`;
+    const { error: upErr } = await supabase.storage
+      .from('logos')
+      .upload(path, file, { upsert: true, contentType: file.type });
+    if (upErr) throw upErr;
+    const { data } = supabase.storage.from('logos').getPublicUrl(path);
+    return data.publicUrl;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
@@ -283,6 +399,21 @@ export default function AdminSettingsPage() {
     setSuccess('');
     try {
       const supabase = createClient();
+
+      // 로고 파일이 선택된 경우 먼저 업로드
+      if (logoFile) {
+        setLogoUploading(true);
+        try {
+          const url = await uploadLogoImage(logoFile);
+          setSettings((prev) => ({ ...prev, logoUrl: url }));
+          setLogoFile(null);
+          setLogoPreview('');
+          // keyMap 순회 전에 settings를 직접 갱신해야 하므로 임시로 반영
+          (settings as any).logoUrl = url;
+        } finally {
+          setLogoUploading(false);
+        }
+      }
 
       for (const [prop, dbKey] of Object.entries(keyMap)) {
         const rawValue = (settings as any)[prop] || '';
@@ -314,6 +445,9 @@ export default function AdminSettingsPage() {
         { key: 'allow_customer_return',   value: allowCustomerReturn },
         { key: 'allow_customer_exchange', value: allowCustomerExchange },
         { key: 'order_list_columns', value: orderListColumns },
+        { key: 'notice_bar_enabled', value: noticeBarEnabled },
+        { key: 'notice_bar_color', value: noticeBarColor },
+        { key: 'image_banner_enabled', value: imageBannerEnabled },
       ];
       for (const { key, value } of sysUpdates) {
         const { error: sysError } = await supabase
@@ -357,69 +491,75 @@ export default function AdminSettingsPage() {
     }
   }
 
-  async function handleApplyToSupabase() {
+  function getProjectRef() {
+    return import.meta.env.VITE_SUPABASE_URL.replace('https://', '').split('.')[0];
+  }
+
+  async function callSupabaseAuthApi(body: Record<string, unknown>) {
     if (!settings.supabaseAccessToken) {
-      setApplyError('Supabase Personal Access Token을 먼저 입력하고 저장하세요.');
-      return;
+      throw new Error('Supabase Personal Access Token을 먼저 입력하고 저장하세요.');
     }
-    setApplying(true);
+    const res = await fetch(
+      `https://api.supabase.com/v1/projects/${getProjectRef()}/config/auth`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${settings.supabaseAccessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || `응답 오류: ${res.status}`);
+    }
+  }
+
+  // SMTP 설정만 Supabase Auth에 적용 (이메일 인증 여부는 건드리지 않음)
+  async function handleApplySmtp() {
+    setApplyingSmtp(true);
     setApplyError('');
     setApplySuccess('');
     try {
-      const projectRef = import.meta.env.VITE_SUPABASE_URL
-        .replace('https://', '')
-        .split('.')[0];
+      if (!settings.smtpHost.trim()) {
+        throw new Error('SMTP 호스트를 입력해주세요.');
+      }
+      await callSupabaseAuthApi({
+        smtp_host:        settings.smtpHost.trim(),
+        smtp_port:        parseInt(settings.smtpPort) || 587,
+        smtp_user:        settings.smtpUser,
+        smtp_pass:        settings.smtpPass,
+        smtp_sender_name: settings.smtpSenderName,
+        smtp_admin_email: settings.smtpSenderEmail,
+      });
+      setApplySuccess('SMTP 설정이 Supabase에 적용되었습니다. 비밀번호 재설정 등 인증 메일이 이 SMTP를 통해 발송됩니다.');
+    } catch (err) {
+      setApplyError(err instanceof Error ? err.message : 'SMTP 적용 중 오류가 발생했습니다.');
+    } finally {
+      setApplyingSmtp(false);
+    }
+  }
 
-      const isCustomSmtp = !!settings.smtpHost && settings.smtpHost.trim() !== '';
-      const body: Record<string, unknown> = {
+  // 이메일 인증 필수 여부만 Supabase Auth에 적용 (SMTP는 건드리지 않음)
+  async function handleApplyEmailConfirm() {
+    setApplyingEmailConfirm(true);
+    setApplyError('');
+    setApplySuccess('');
+    try {
+      await callSupabaseAuthApi({
         mailer_autoconfirm: settings.emailConfirmRequired !== 'true',
         enable_signup: true,
-      };
-
-      if (isCustomSmtp) {
-        // 커스텀 SMTP: 입력한 SMTP 설정을 Supabase에 적용
-        body.smtp_host = settings.smtpHost.trim();
-        body.smtp_port = parseInt(settings.smtpPort) || 587;
-        body.smtp_user = settings.smtpUser;
-        body.smtp_pass = settings.smtpPass;
-        body.smtp_sender_name = settings.smtpSenderName;
-        body.smtp_admin_email = settings.smtpSenderEmail;
-      } else {
-        // Supabase 기본 메일: 기존에 설정된 커스텀 SMTP 초기화
-        body.smtp_host = '';
-        body.smtp_port = 587;
-        body.smtp_user = '';
-        body.smtp_pass = '';
-        body.smtp_sender_name = '';
-        body.smtp_admin_email = '';
-      }
-
-      const res = await fetch(
-        `https://api.supabase.com/v1/projects/${projectRef}/config/auth`,
-        {
-          method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${settings.supabaseAccessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(body),
-        }
-      );
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || `응답 오류: ${res.status}`);
-      }
-
+      });
       setApplySuccess(
-        settings.smtpHost
-          ? 'Supabase에 SMTP 및 이메일 인증 설정이 적용되었습니다.'
-          : 'Supabase에 이메일 인증 설정이 적용되었습니다.'
+        settings.emailConfirmRequired === 'true'
+          ? '이메일 인증 필수로 설정되었습니다.'
+          : '이메일 인증 없이 즉시 로그인 가능하도록 설정되었습니다.'
       );
     } catch (err) {
-      setApplyError(err instanceof Error ? err.message : 'Supabase 설정 적용 중 오류가 발생했습니다.');
+      setApplyError(err instanceof Error ? err.message : '이메일 인증 설정 적용 중 오류가 발생했습니다.');
     } finally {
-      setApplying(false);
+      setApplyingEmailConfirm(false);
     }
   }
 
@@ -441,6 +581,45 @@ export default function AdminSettingsPage() {
               <label className="mb-1 block text-sm font-medium text-gray-700">사이트 이름</label>
               <input type="text" name="siteName" value={settings.siteName} onChange={handleChange} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Freecart" />
             </div>
+
+            {/* 로고 이미지 업로드 */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">로고 이미지</label>
+              <p className="mb-2 text-xs text-gray-500">권장 크기: 가로 160px × 세로 50px. 미등록 시 사이트 이름이 텍스트로 표시됩니다.</p>
+              {/* 미리보기 영역 (고정 크기 160×50) */}
+              <div className="mb-3 flex items-center gap-4">
+                <div className="flex h-[50px] w-[160px] items-center justify-center overflow-hidden rounded border bg-gray-50">
+                  {logoPreview ? (
+                    <img src={logoPreview} alt="로고 미리보기" className="h-full w-full object-contain" />
+                  ) : (
+                    <span className="text-xs text-gray-400">미리보기</span>
+                  )}
+                </div>
+                {logoPreview && (
+                  <button
+                    type="button"
+                    onClick={handleLogoRemove}
+                    className="rounded-md border border-red-300 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                  >
+                    로고 삭제
+                  </button>
+                )}
+              </div>
+              <label className="inline-block cursor-pointer rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                {logoUploading ? '업로드 중...' : '이미지 선택'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleLogoFileChange}
+                  className="hidden"
+                  disabled={logoUploading}
+                />
+              </label>
+              {logoFile && (
+                <span className="ml-2 text-xs text-gray-500">{logoFile.name}</span>
+              )}
+            </div>
+
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">사이트 설명</label>
               <textarea name="siteDescription" value={settings.siteDescription} onChange={handleChange} rows={2} className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="쇼핑몰 설명" />
@@ -495,6 +674,33 @@ export default function AdminSettingsPage() {
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">무료배송 기준금액 (원)</label>
               <input type="number" name="freeShippingThreshold" value={settings.freeShippingThreshold} onChange={handleChange} min="0" className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="50000" />
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">기본 배송 안내</label>
+              <p className="mb-1 text-xs text-gray-500">상품별 안내가 없을 때 표시됩니다. HTML 태그 사용 가능.</p>
+              <textarea
+                name="defaultShippingNotice"
+                value={settings.defaultShippingNotice}
+                onChange={handleChange}
+                rows={4}
+                className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder={"배송 기간: 결제 후 1~3 영업일 이내 출고됩니다.\n기본 배송비: 3,000원 (50,000원 이상 구매 시 무료)"}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">기본 환불·교환 안내</label>
+              <p className="mb-1 text-xs text-gray-500">상품별 안내가 없을 때 표시됩니다. HTML 태그 사용 가능.</p>
+              <textarea
+                name="defaultReturnNotice"
+                value={settings.defaultReturnNotice}
+                onChange={handleChange}
+                rows={4}
+                className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder={"교환/반품 신청 기간: 상품 수령 후 7일 이내\n상품 불량·오배송 시: 무료 교환 또는 전액 환불"}
+              />
             </div>
           </div>
         </Card>
@@ -797,15 +1003,167 @@ export default function AdminSettingsPage() {
 
         {/* 이메일 인증 설정 */}
         <Card className="p-6">
-          <h2 className="mb-4 text-lg font-bold">이메일 인증 설정</h2>
+          <h2 className="mb-1 text-lg font-bold">SMTP 설정</h2>
+          <p className="mb-4 text-sm text-gray-500">비밀번호 재설정, 주문 알림 등 모든 이메일 발송에 사용됩니다. 이메일 인증 여부와 무관하게 설정할 수 있습니다.</p>
 
           <div className="space-y-4">
-            {/* 이메일 인증 ON/OFF */}
+            {/* 프로바이더 선택 */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">메일 서비스 선택</label>
+              <select
+                value={smtpProvider}
+                onChange={(e) => {
+                  const id = e.target.value as SmtpProviderId;
+                  const p = SMTP_PROVIDERS.find((p) => p.id === id)!;
+                  setSmtpProvider(id);
+                  setSettings((prev) => ({
+                    ...prev,
+                    smtpHost: p.host,
+                    smtpPort: p.port,
+                  }));
+                }}
+                className="w-full rounded-md border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {SMTP_PROVIDERS.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* 선택한 프로바이더 안내 */}
+            {(() => {
+              const p = SMTP_PROVIDERS.find((p) => p.id === smtpProvider);
+              return p?.guide ? (
+                <div className="rounded-md bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-blue-700">
+                  ℹ {p.guide}
+                </div>
+              ) : null;
+            })()}
+
+            {/* 입력 필드 */}
+            <div className="rounded-md border bg-gray-50 p-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">SMTP 호스트</label>
+                  <input
+                    type="text"
+                    name="smtpHost"
+                    value={settings.smtpHost}
+                    onChange={handleChange}
+                    className="w-full rounded-md border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="smtp.example.com"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">포트</label>
+                  <input
+                    type="number"
+                    name="smtpPort"
+                    value={settings.smtpPort}
+                    onChange={handleChange}
+                    className="w-full rounded-md border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="587"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">사용자명</label>
+                  <input
+                    type="text"
+                    name="smtpUser"
+                    value={settings.smtpUser}
+                    onChange={handleChange}
+                    className="w-full rounded-md border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder={SMTP_PROVIDERS.find((p) => p.id === smtpProvider)?.userPlaceholder ?? '사용자명'}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">비밀번호 / API Key</label>
+                  <input
+                    type="password"
+                    name="smtpPass"
+                    value={settings.smtpPass}
+                    onChange={handleChange}
+                    className="w-full rounded-md border bg-white px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder={SMTP_PROVIDERS.find((p) => p.id === smtpProvider)?.passPlaceholder ?? '비밀번호'}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">발신자 이름</label>
+                  <input
+                    type="text"
+                    name="smtpSenderName"
+                    value={settings.smtpSenderName}
+                    onChange={handleChange}
+                    className="w-full rounded-md border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="내 쇼핑몰"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-600">발신자 이메일</label>
+                  <input
+                    type="email"
+                    name="smtpSenderEmail"
+                    value={settings.smtpSenderEmail}
+                    onChange={handleChange}
+                    className="w-full rounded-md border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="noreply@myshop.com"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* PAT */}
+            <div className="rounded-md border border-dashed p-4">
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Supabase Personal Access Token
+              </label>
+              <input
+                type="password"
+                name="supabaseAccessToken"
+                value={settings.supabaseAccessToken}
+                onChange={handleChange}
+                className="w-full rounded-md border bg-white px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="sbp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Supabase Auth 이메일에 SMTP를 적용할 때 필요합니다.{' '}
+                <span className="font-medium text-gray-600">
+                  supabase.com → 우측 상단 아이콘 → Account → Access Tokens
+                </span>
+                에서 발급 후 저장하세요.
+              </p>
+            </div>
+
+            {applyError && (
+              <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{applyError}</div>
+            )}
+            {applySuccess && (
+              <div className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-600">{applySuccess}</div>
+            )}
+
+            <Button
+              type="button"
+              variant="outline"
+              disabled={applyingSmtp}
+              onClick={handleApplySmtp}
+              className="w-full md:w-auto"
+            >
+              {applyingSmtp ? '적용 중...' : 'Supabase에 SMTP 적용'}
+            </Button>
+          </div>
+        </Card>
+
+        {/* 이메일 인증 설정 */}
+        <Card className="p-6">
+          <h2 className="mb-1 text-lg font-bold">이메일 인증 설정</h2>
+          <p className="mb-4 text-sm text-gray-500">회원가입 시 이메일 인증 필수 여부를 설정합니다. SMTP 설정과 독립적으로 동작합니다.</p>
+
+          <div className="space-y-4">
             <div className="flex items-center justify-between rounded-md border p-4">
               <div>
                 <p className="font-medium text-gray-800">이메일 인증 필수</p>
                 <p className="mt-0.5 text-xs text-gray-500">
-                  끄면 회원가입 즉시 로그인 가능 — 이메일 발송 자체가 없어 rate limit 없음
+                  끄면 회원가입 즉시 로그인 가능 — 쇼핑몰은 보통 OFF로 운영
                 </p>
               </div>
               <button
@@ -814,7 +1172,6 @@ export default function AdminSettingsPage() {
                   setSettings((prev) => ({
                     ...prev,
                     emailConfirmRequired: prev.emailConfirmRequired === 'true' ? 'false' : 'true',
-                    smtpHost: prev.emailConfirmRequired === 'true' ? '' : prev.smtpHost,
                   }))
                 }
                 className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none ${
@@ -829,187 +1186,15 @@ export default function AdminSettingsPage() {
               </button>
             </div>
 
-            {/* 이메일 인증 ON일 때만 표시 */}
-            {settings.emailConfirmRequired === 'true' && (
-              <div className="space-y-4 pl-1">
-                {/* 발송 방식 선택 */}
-                <p className="text-sm font-medium text-gray-700">인증 메일 발송 방식</p>
-                <div className="grid gap-3 md:grid-cols-2">
-                  {/* Supabase 기본 */}
-                  <label
-                    className={`flex cursor-pointer flex-col gap-1 rounded-md border-2 p-4 transition-colors ${
-                      !settings.smtpHost ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      className="sr-only"
-                      checked={!settings.smtpHost}
-                      onChange={() =>
-                        setSettings((prev) => ({
-                          ...prev,
-                          smtpHost: '',
-                          smtpPort: '587',
-                          smtpUser: '',
-                          smtpPass: '',
-                          smtpSenderName: '',
-                          smtpSenderEmail: '',
-                        }))
-                      }
-                    />
-                    <span className="font-medium text-gray-800">Supabase 기본 메일</span>
-                    <span className="text-xs text-gray-500">별도 SMTP 설정 불필요</span>
-                    <span className="mt-1 inline-block rounded bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
-                      ⚠ 무료 플랜: 시간당 2~3건 제한
-                    </span>
-                  </label>
-
-                  {/* 커스텀 SMTP */}
-                  <label
-                    className={`flex cursor-pointer flex-col gap-1 rounded-md border-2 p-4 transition-colors ${
-                      settings.smtpHost ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      className="sr-only"
-                      checked={!!settings.smtpHost}
-                      onChange={() =>
-                        setSettings((prev) => ({
-                          ...prev,
-                          smtpHost: prev.smtpHost && prev.smtpHost.trim() ? prev.smtpHost : 'smtp.',
-                        }))
-                      }
-                    />
-                    <span className="font-medium text-gray-800">커스텀 SMTP</span>
-                    <span className="text-xs text-gray-500">외부 메일 서비스 직접 연결</span>
-                    <span className="mt-1 inline-block rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
-                      무료 서비스 사용 시 제한 없음
-                    </span>
-                  </label>
-                </div>
-
-                {/* 커스텀 SMTP 선택 시 입력 필드 */}
-                {!!settings.smtpHost && (
-                  <div className="rounded-md border bg-gray-50 p-4">
-                    <p className="mb-3 text-xs text-gray-500">
-                      무료 SMTP 추천: <strong>Resend</strong> (3,000건/월) · <strong>Brevo</strong> (300건/일) · <strong>SendGrid</strong> (100건/일)
-                    </p>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">SMTP 호스트 *</label>
-                        <input
-                          type="text"
-                          name="smtpHost"
-                          value={settings.smtpHost}
-                          onChange={handleChange}
-                          className="w-full rounded-md border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="smtp.resend.com"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">포트</label>
-                        <input
-                          type="number"
-                          name="smtpPort"
-                          value={settings.smtpPort}
-                          onChange={handleChange}
-                          className="w-full rounded-md border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="587"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">사용자명 *</label>
-                        <input
-                          type="text"
-                          name="smtpUser"
-                          value={settings.smtpUser}
-                          onChange={handleChange}
-                          className="w-full rounded-md border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="resend"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">비밀번호 / API Key *</label>
-                        <input
-                          type="password"
-                          name="smtpPass"
-                          value={settings.smtpPass}
-                          onChange={handleChange}
-                          className="w-full rounded-md border bg-white px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="re_xxxxxxxx"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">발신자 이름</label>
-                        <input
-                          type="text"
-                          name="smtpSenderName"
-                          value={settings.smtpSenderName}
-                          onChange={handleChange}
-                          className="w-full rounded-md border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="내 쇼핑몰"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs font-medium text-gray-600">발신자 이메일</label>
-                        <input
-                          type="email"
-                          name="smtpSenderEmail"
-                          value={settings.smtpSenderEmail}
-                          onChange={handleChange}
-                          className="w-full rounded-md border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          placeholder="noreply@myshop.com"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* PAT + Apply — Supabase 기본 메일 선택 시에만 표시 */}
-                {!settings.smtpHost && (
-                  <>
-                    <div className="rounded-md border border-dashed p-4">
-                      <label className="mb-1 block text-sm font-medium text-gray-700">
-                        Supabase Personal Access Token
-                      </label>
-                      <input
-                        type="password"
-                        name="supabaseAccessToken"
-                        value={settings.supabaseAccessToken}
-                        onChange={handleChange}
-                        className="w-full rounded-md border bg-white px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="sbp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                      />
-                      <p className="mt-1 text-xs text-gray-500">
-                        Service Role Key와 다른 계정 전용 토큰입니다.{' '}
-                        <span className="font-medium text-gray-600">
-                          supabase.com → 우측 상단 아이콘 → Account → Access Tokens
-                        </span>
-                        에서 발급 후 저장하세요.
-                      </p>
-                    </div>
-
-                    {applyError && (
-                      <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{applyError}</div>
-                    )}
-                    {applySuccess && (
-                      <div className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-600">{applySuccess}</div>
-                    )}
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={applying}
-                      onClick={handleApplyToSupabase}
-                      className="w-full md:w-auto"
-                    >
-                      {applying ? '적용 중...' : 'Supabase에 적용'}
-                    </Button>
-                  </>
-                )}
-              </div>
-            )}
+            <Button
+              type="button"
+              variant="outline"
+              disabled={applyingEmailConfirm}
+              onClick={handleApplyEmailConfirm}
+              className="w-full md:w-auto"
+            >
+              {applyingEmailConfirm ? '적용 중...' : '이메일 인증 설정 적용'}
+            </Button>
           </div>
         </Card>
 
@@ -1121,6 +1306,89 @@ export default function AdminSettingsPage() {
           <p className="text-sm text-gray-500 mb-5">사이트에서 사용할 기능을 켜거나 끕니다.</p>
 
           <div className="space-y-6">
+            {/* 공지 배너 */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-sm">공지 배너 표시</p>
+                  <p className="text-xs text-gray-400 mt-0.5">켜면 메인 페이지 상단에 최신 공지 1개를 배너로 표시합니다.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNoticeBarEnabled((prev) => !prev)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                    noticeBarEnabled ? 'bg-blue-600' : 'bg-gray-200'
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    noticeBarEnabled ? 'translate-x-6' : 'translate-x-1'
+                  }`} />
+                </button>
+              </div>
+
+              {/* 배너 색상 */}
+              <div className={`flex items-center gap-3 transition-opacity ${!noticeBarEnabled ? 'opacity-40 pointer-events-none' : ''}`}>
+                <label className="text-xs text-gray-500 shrink-0">배너 색상</label>
+                <div className="flex items-center gap-2 flex-1">
+                  <input
+                    type="color"
+                    value={noticeBarColor}
+                    onChange={(e) => setNoticeBarColor(e.target.value)}
+                    className="h-8 w-10 rounded border border-gray-200 cursor-pointer p-0.5"
+                    title="배너 배경색 선택"
+                  />
+                  <input
+                    type="text"
+                    value={noticeBarColor}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (/^#([0-9a-fA-F]{0,6})$/.test(v)) setNoticeBarColor(v);
+                    }}
+                    maxLength={7}
+                    placeholder="#2563eb"
+                    className="w-28 rounded-md border px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {/* 미리보기 */}
+                  <div
+                    className="flex-1 rounded-md px-3 py-1.5 text-white text-xs font-medium truncate"
+                    style={{ backgroundColor: /^#[0-9a-fA-F]{6}$/.test(noticeBarColor) ? noticeBarColor : '#2563eb' }}
+                  >
+                    공지사항 미리보기
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setNoticeBarColor('#2563eb')}
+                    className="text-xs text-gray-400 hover:text-gray-600 shrink-0"
+                  >
+                    초기화
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t" />
+
+            {/* 이미지 배너 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">이미지 배너 표시</p>
+                <p className="text-xs text-gray-400 mt-0.5">켜면 메인 페이지에 배너 관리에서 등록한 활성 이미지 배너를 표시합니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setImageBannerEnabled((prev) => !prev)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  imageBannerEnabled ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  imageBannerEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            <div className="border-t" />
+
             {/* 담당자 기능 */}
             <div className="flex items-center justify-between">
               <div>

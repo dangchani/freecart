@@ -64,6 +64,8 @@ export interface Product {
   hasOptions: boolean;
   shippingType?: string;
   shippingFee?: number;
+  shippingNotice?: string | null;
+  returnNotice?: string | null;
   tags?: string[];
   videoUrl?: string;
   sku?: string;

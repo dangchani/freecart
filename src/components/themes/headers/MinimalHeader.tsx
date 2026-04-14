@@ -5,9 +5,10 @@
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Menu, X, ShoppingCart, User, Search } from 'lucide-react';
+import { Menu, X, ShoppingCart, User } from 'lucide-react';
 import { useCartStore } from '@/store/cart';
 import { useAuth } from '@/hooks/useAuth';
+import { useMenuItems } from '@/hooks/useMenuItems';
 
 interface Props {
   logo?: string;
@@ -18,6 +19,7 @@ export default function MinimalHeader({ logo, siteName = 'Freecart' }: Props) {
   const itemCount = useCartStore((state) => state.getItemCount());
   const { user } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const { items } = useMenuItems();
 
   return (
     <>
@@ -72,53 +74,19 @@ export default function MinimalHeader({ logo, siteName = 'Freecart' }: Props) {
               </button>
             </div>
 
-            {/* 검색 */}
-            <div className="p-4 border-b">
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="검색"
-                  className="w-full border rounded-lg px-4 py-2 pr-10 text-sm"
-                />
-                <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              </div>
-            </div>
-
-            {/* 메뉴 링크 */}
-            <nav className="py-2">
-              {[
-                { label: '전체상품', href: '/products' },
-                { label: '신상품', href: '/products?sort=newest' },
-                { label: '베스트', href: '/products?sort=best' },
-                { label: '세일', href: '/products?sale=true' },
-              ].map((item) => (
+            {/* 메뉴 링크 (DB 기반) */}
+            <nav className="py-2 overflow-y-auto">
+              {items.map((item) => (
                 <Link
-                  key={item.href}
-                  to={item.href}
-                  className="block px-6 py-3 text-gray-700 hover:bg-gray-50 font-medium"
+                  key={item.id}
+                  to={item.url}
+                  className="block px-6 py-3 text-gray-700 hover:bg-gray-50 font-medium text-sm"
                   onClick={() => setMenuOpen(false)}
                 >
                   {item.label}
                 </Link>
               ))}
             </nav>
-
-            <div className="border-t py-2">
-              {[
-                { label: '게시판', href: '/boards' },
-                { label: '공지사항', href: '/notices' },
-                { label: 'FAQ', href: '/faqs' },
-              ].map((item) => (
-                <Link
-                  key={item.href}
-                  to={item.href}
-                  className="block px-6 py-3 text-gray-600 hover:bg-gray-50 text-sm"
-                  onClick={() => setMenuOpen(false)}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
 
             {/* 하단 */}
             <div className="absolute bottom-0 left-0 right-0 border-t p-4">
@@ -128,7 +96,7 @@ export default function MinimalHeader({ logo, siteName = 'Freecart' }: Props) {
                 onClick={() => setMenuOpen(false)}
               >
                 <User className="h-5 w-5" />
-                <span>{user ? user.name || '마이페이지' : '로그인'}</span>
+                <span>{user ? (user as any).name || '마이페이지' : '로그인'}</span>
               </Link>
             </div>
           </div>

@@ -61,21 +61,22 @@ export default function ContentPageView() {
       }
 
       // 2차: terms 테이블 fallback (약관/개인정보처리방침)
-      // slug 자체 또는 매핑된 type 모두 허용 (예: privacy → privacy_policy or privacy)
       const termType = TERMS_SLUG_MAP[pageSlug];
-      const termTypeValues = termType ? [termType, pageSlug] : [pageSlug];
-
-      if (termTypeValues.length > 0) {
+      if (termType) {
         const { data: termData, error: termError } = await supabase
           .from('terms')
           .select('id, title, content, type, created_at')
-          .in('type', termTypeValues)
+          .eq('type', termType)
           .eq('is_active', true)
           .order('created_at', { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
 
-        if (!termError && termData) {
+        if (termError) {
+          console.error('[ContentPage] terms 조회 오류:', termError.code, termError.message);
+        }
+
+        if (termData) {
           setPage({
             id: termData.id,
             title: termData.title,
@@ -132,17 +133,33 @@ export default function ContentPageView() {
     return <div className="container py-8 text-center text-gray-500">로딩 중...</div>;
   }
 
+  // slug → 약관 페이지 메타 (not found 시 안내 문구용)
+  const POLICY_META: Record<string, { title: string; desc: string }> = {
+    terms: { title: '이용약관', desc: '이용약관이 아직 등록되지 않았습니다.' },
+    'terms-of-service': { title: '이용약관', desc: '이용약관이 아직 등록되지 않았습니다.' },
+    privacy: { title: '개인정보처리방침', desc: '개인정보처리방침이 아직 등록되지 않았습니다.' },
+    'privacy-policy': { title: '개인정보처리방침', desc: '개인정보처리방침이 아직 등록되지 않았습니다.' },
+  };
+
   if (notFound || !page) {
+    const policyMeta = slug ? POLICY_META[slug] : null;
     return (
       <div className="container py-16 text-center">
-        <h1 className="mb-4 text-2xl font-bold text-gray-800">페이지를 찾을 수 없습니다</h1>
-        <p className="mb-6 text-gray-500">요청하신 페이지가 존재하지 않거나 비공개 상태입니다.</p>
+        <h1 className="mb-4 text-2xl font-bold text-gray-800">
+          {policyMeta?.title ?? '페이지를 찾을 수 없습니다'}
+        </h1>
+        <p className="mb-6 text-gray-500">
+          {policyMeta?.desc ?? '요청하신 페이지가 존재하지 않거나 비공개 상태입니다.'}
+        </p>
         <Link to="/" className="text-blue-600 hover:underline">
           홈으로 돌아가기
         </Link>
       </div>
     );
   }
+
+  // 컨텐츠 렌더링: HTML 태그가 있으면 HTML로, 없으면 일반 텍스트로 처리
+  const hasHtmlTags = /<[a-z][\s\S]*>/i.test(page.content);
 
   return (
     <div className="container py-8">
@@ -164,10 +181,16 @@ export default function ContentPageView() {
           </p>
         )}
 
-        <div
-          className="prose prose-gray max-w-none"
-          dangerouslySetInnerHTML={{ __html: page.content }}
-        />
+        {hasHtmlTags ? (
+          <div
+            className="prose prose-gray max-w-none"
+            dangerouslySetInnerHTML={{ __html: page.content }}
+          />
+        ) : (
+          <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+            {page.content}
+          </div>
+        )}
 
         <div className="mt-8 border-t pt-4 text-xs text-gray-400">
           최종 수정일: {new Date(page.updated_at || page.created_at).toLocaleDateString('ko-KR')}

@@ -44,8 +44,8 @@ export function Footer() {
             <h4 className="mb-4 font-semibold">정책</h4>
             <ul className="space-y-2 text-sm text-gray-600">
               <li><Link to="/notices" className="hover:text-primary">공지사항</Link></li>
-              <li><Link to="/pages/terms" className="hover:text-primary">이용약관</Link></li>
-              <li><Link to="/pages/privacy" className="hover:text-primary">개인정보처리방침</Link></li>
+              <li><Link to="/terms" className="hover:text-primary">이용약관</Link></li>
+              <li><Link to="/privacy" className="hover:text-primary">개인정보처리방침</Link></li>
             </ul>
           </div>
 
