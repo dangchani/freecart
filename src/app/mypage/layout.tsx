@@ -24,7 +24,7 @@ const navItems = [
   { href: '/mypage/reviews', label: '리뷰 관리', icon: Star },
   { href: '/mypage/wishlist', label: '찜 목록', icon: Heart },
   { href: '/mypage/points', label: '포인트', icon: Coins, featureFlag: 'use_points' as const },
-  { href: '/mypage/deposits', label: '예치금', icon: Wallet },
+  { href: '/mypage/deposits', label: '예치금', icon: Wallet, featureFlag: 'use_deposit' as const },
   { href: '/mypage/coupons', label: '쿠폰', icon: Tag, featureFlag: 'use_coupons' as const },
   { href: '/mypage/addresses', label: '배송지 관리', icon: MapPin },
   { href: '/mypage/subscriptions', label: '정기배송', icon: RefreshCw, featureFlag: 'use_subscriptions' as const },
@@ -43,6 +43,7 @@ export default function MypageLayout() {
   const [usePointsEnabled, setUsePointsEnabled] = useState(true);
   const [useSubscriptionsEnabled, setUseSubscriptionsEnabled] = useState(true);
   const [useCouponsEnabled, setUseCouponsEnabled] = useState(true);
+  const [useDepositEnabled, setUseDepositEnabled] = useState(true);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -55,10 +56,12 @@ export default function MypageLayout() {
       getSystemSetting<boolean>('use_points'),
       getSystemSetting<boolean>('use_subscriptions'),
       getSystemSetting<boolean>('use_coupons'),
-    ]).then(([points, subscriptions, coupons]) => {
+      getSystemSetting<boolean>('use_deposit'),
+    ]).then(([points, subscriptions, coupons, deposit]) => {
       setUsePointsEnabled(points !== false);
       setUseSubscriptionsEnabled(subscriptions !== false);
       setUseCouponsEnabled(coupons !== false);
+      setUseDepositEnabled(deposit !== false);
     });
   }, []);
 
@@ -91,6 +94,7 @@ export default function MypageLayout() {
               if (item.featureFlag === 'use_points') return usePointsEnabled;
               if (item.featureFlag === 'use_subscriptions') return useSubscriptionsEnabled;
               if (item.featureFlag === 'use_coupons') return useCouponsEnabled;
+              if (item.featureFlag === 'use_deposit') return useDepositEnabled;
               return true;
             }).map(({ href, label, icon: Icon }) => {
               const isActive = pathname === href || pathname.startsWith(href + '/');

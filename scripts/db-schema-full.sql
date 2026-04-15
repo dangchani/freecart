@@ -1819,6 +1819,41 @@ CREATE TRIGGER trg_subscription_deliveries_updated_at
 -- SECTION 14: EXTERNAL CONNECTIONS
 -- =============================================================================
 
+-- 14.0 integration_providers (연동 서비스 카탈로그)
+CREATE TABLE IF NOT EXISTS integration_providers (
+  key          VARCHAR(30)  PRIMARY KEY,
+  name         VARCHAR(100) NOT NULL,
+  category     VARCHAR(50)  NOT NULL,
+  description  TEXT,
+  fields       JSONB        NOT NULL DEFAULT '[]',
+  has_test     BOOLEAN      NOT NULL DEFAULT false,
+  sort_order   INTEGER      NOT NULL DEFAULT 0,
+  created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO integration_providers (key, name, category, description, fields, has_test, sort_order) VALUES
+(
+  'goodsflow', '굿스플로', '물류/배송', '택배 발송 및 운송장 자동 채번 서비스',
+  '[{"key":"api_key","label":"API Key","type":"password","required":true},{"key":"sender_code","label":"발송인 코드","type":"text","required":true}]'::jsonb,
+  true, 1
+),
+(
+  'ecount', '이카운트', 'ERP', '재고·매출 ERP 연동 서비스',
+  '[{"key":"company_code","label":"회사코드","type":"text","required":true},{"key":"user_id","label":"사용자 ID","type":"text","required":true},{"key":"api_key","label":"API Key","type":"password","required":true}]'::jsonb,
+  true, 2
+),
+(
+  'ppurio', '뿌리오', '문자/알림', '문자 메시지(SMS/LMS/MMS) 발송 서비스',
+  '[{"key":"api_key","label":"API Key","type":"password","required":true},{"key":"sender_phone","label":"발신번호","type":"text","required":true,"placeholder":"010-0000-0000"}]'::jsonb,
+  true, 3
+),
+(
+  'popbill', '팝빌', '문자/알림', '세금계산서·문자 통합 서비스',
+  '[{"key":"link_id","label":"링크 ID","type":"text","required":true},{"key":"secret_key","label":"Secret Key","type":"password","required":true},{"key":"business_number","label":"사업자번호","type":"text","required":true,"placeholder":"000-00-00000"}]'::jsonb,
+  true, 4
+)
+ON CONFLICT (key) DO NOTHING;
+
 -- 14.1 external_connections (외부 연동 설정)
 CREATE TABLE IF NOT EXISTS external_connections (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1837,6 +1872,17 @@ DROP TRIGGER IF EXISTS trg_external_connections_updated_at ON external_connectio
 CREATE TRIGGER trg_external_connections_updated_at
   BEFORE UPDATE ON external_connections
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'uq_external_connections_platform'
+  ) THEN
+    ALTER TABLE external_connections
+      ADD CONSTRAINT uq_external_connections_platform UNIQUE (platform);
+  END IF;
+END $$;
 
 -- 14.2 sync_jobs / sync_logs (동기화 로그)
 CREATE TABLE IF NOT EXISTS sync_logs (
@@ -2003,12 +2049,47 @@ CREATE TABLE IF NOT EXISTS webhook_logs (
   status         VARCHAR(20) NOT NULL DEFAULT 'pending',
   response_code  INTEGER,
   response_body  TEXT,
+  duration_ms    INTEGER,
   sent_at        TIMESTAMPTZ,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_webhook_logs_webhook_id ON webhook_logs(webhook_id);
 CREATE INDEX IF NOT EXISTS idx_webhook_logs_status     ON webhook_logs(status);
+
+-- 16.3 inbound_webhooks (수신 웹훅 엔드포인트)
+CREATE TABLE IF NOT EXISTS inbound_webhooks (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  source      VARCHAR(50) NOT NULL UNIQUE,
+  label       VARCHAR(100) NOT NULL,
+  secret_key  VARCHAR(128),
+  is_active   BOOLEAN     NOT NULL DEFAULT true,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+DROP TRIGGER IF EXISTS trg_inbound_webhooks_updated_at ON inbound_webhooks;
+CREATE TRIGGER trg_inbound_webhooks_updated_at
+  BEFORE UPDATE ON inbound_webhooks
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- 16.4 inbound_webhook_logs (수신 웹훅 로그)
+CREATE TABLE IF NOT EXISTS inbound_webhook_logs (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  source      VARCHAR(50) NOT NULL,
+  event_type  VARCHAR(100),
+  payload     JSONB       NOT NULL DEFAULT '{}',
+  is_verified BOOLEAN     NOT NULL DEFAULT false,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_inbound_webhook_logs_source      ON inbound_webhook_logs(source);
+CREATE INDEX IF NOT EXISTS idx_inbound_webhook_logs_received_at ON inbound_webhook_logs(received_at DESC);
+
+-- 기본 수신 웹훅 소스 (토스페이먼츠)
+INSERT INTO inbound_webhooks (source, label, is_active)
+VALUES ('toss', '토스페이먼츠', true)
+ON CONFLICT (source) DO NOTHING;
 
 -- =============================================================================
 -- SECTION 17: SEARCH

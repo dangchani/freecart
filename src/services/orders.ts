@@ -199,6 +199,16 @@ export async function createOrder(
     });
   })().catch(() => {});
 
+  // 웹훅 트리거 (fire-and-forget)
+  import('@/services/webhooks').then(({ triggerWebhook }) =>
+    triggerWebhook('order.created', {
+      order_id:     order.id,
+      order_number: order.order_number,
+      user_id:      userId,
+      total_amount: totalAmount,
+    }),
+  ).catch(() => {});
+
   return mapOrder({ ...order, items: [] });
 }
 
@@ -315,6 +325,25 @@ export async function transitionOrderStatus(
   // 상태별 알림 발송 (fire-and-forget)
   if (order.user_id) {
     _sendOrderNotification(order, toStatus, options).catch(() => {});
+  }
+
+  // 웹훅 트리거 (fire-and-forget) — 주요 상태 전이만 발송
+  const WEBHOOK_STATUS_MAP: Partial<Record<string, string>> = {
+    paid:      'order.paid',
+    shipped:   'order.shipped',
+    delivered: 'order.delivered',
+    cancelled: 'order.cancelled',
+  };
+  const webhookEvent = WEBHOOK_STATUS_MAP[toStatus];
+  if (webhookEvent) {
+    import('@/services/webhooks').then(({ triggerWebhook }) =>
+      triggerWebhook(webhookEvent, {
+        order_id:     orderId,
+        order_number: order.order_number,
+        from_status:  fromStatus,
+        to_status:    toStatus,
+      }),
+    ).catch(() => {});
   }
 }
 
