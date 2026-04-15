@@ -6,6 +6,7 @@
 import { Link } from 'react-router-dom';
 import { Heart, ShoppingCart, Eye } from 'lucide-react';
 import type { ProductCardProps } from './BasicProductCard';
+import { getContrastColor } from '@/lib/utils';
 
 export default function HoverProductCard({
   id,
@@ -14,6 +15,8 @@ export default function HoverProductCard({
   originalPrice,
   image,
   badge,
+  badgeText,
+  badgeColor,
   isNew,
   isBest,
   onAddToCart,
@@ -62,6 +65,16 @@ export default function HoverProductCard({
           >
             <Heart className="h-5 w-5" fill={isWishlisted ? 'currentColor' : 'none'} />
           </button>
+        )}
+
+        {/* 하단 띠지 */}
+        {badgeText && (
+          <div
+            className="absolute bottom-0 left-0 right-0 py-1 text-center text-xs font-bold tracking-wide z-10"
+            style={{ backgroundColor: badgeColor ?? '#ef4444', color: getContrastColor(badgeColor ?? '#ef4444') }}
+          >
+            {badgeText}
+          </div>
         )}
 
         {/* 호버 오버레이 */}

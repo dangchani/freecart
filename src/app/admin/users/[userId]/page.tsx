@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, MapPin, Trash2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { getSystemSetting } from '@/lib/permissions';
 import { logAdminAction, buildDiff } from '@/lib/admin-log';
@@ -36,6 +36,18 @@ interface Order {
   orderNumber: string;
   status: string;
   totalAmount: number;
+  createdAt: string;
+}
+
+interface AddressItem {
+  id: string;
+  name: string;
+  recipientName: string;
+  recipientPhone: string;
+  postalCode: string;
+  address1: string;
+  address2: string | null;
+  isDefault: boolean;
   createdAt: string;
 }
 
@@ -78,6 +90,9 @@ export default function AdminUserDetailPage() {
   const [pointAction, setPointAction] = useState<'add' | 'subtract'>('add');
   const [pointAmount, setPointAmount] = useState('');
   const [pointReason, setPointReason] = useState('');
+
+  const [addresses, setAddresses] = useState<AddressItem[]>([]);
+  const [deletingAddressId, setDeletingAddressId] = useState<string | null>(null);
 
   const [useLevels, setUseLevels] = useState(true);
   const [usePoints, setUsePoints] = useState(true);
@@ -135,6 +150,28 @@ export default function AdminUserDetailPage() {
         .eq('user_id', userId!)
         .eq('is_default', true)
         .maybeSingle();
+
+      // Get all addresses
+      const { data: allAddressesData } = await supabase
+        .from('user_addresses')
+        .select('id, name, recipient_name, recipient_phone, postal_code, address1, address2, is_default, created_at')
+        .eq('user_id', userId!)
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      setAddresses(
+        (allAddressesData || []).map((a: any) => ({
+          id: a.id,
+          name: a.name,
+          recipientName: a.recipient_name,
+          recipientPhone: a.recipient_phone,
+          postalCode: a.postal_code,
+          address1: a.address1,
+          address2: a.address2,
+          isDefault: a.is_default,
+          createdAt: a.created_at,
+        }))
+      );
 
       // Get orders
       const { data: ordersData } = await supabase
@@ -460,6 +497,32 @@ export default function AdminUserDetailPage() {
     }
   }
 
+  async function handleDeleteAddress(id: string) {
+    if (!confirm('배송지를 삭제하시겠습니까?')) return;
+    setDeletingAddressId(id);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.from('user_addresses').delete().eq('id', id);
+      if (error) throw error;
+      setAddresses((prev) => prev.filter((a) => a.id !== id));
+    } catch {
+      alert('삭제 중 오류가 발생했습니다.');
+    } finally {
+      setDeletingAddressId(null);
+    }
+  }
+
+  async function handleSetAddressDefault(id: string) {
+    try {
+      const supabase = createClient();
+      await supabase.from('user_addresses').update({ is_default: false }).eq('user_id', userId!);
+      await supabase.from('user_addresses').update({ is_default: true }).eq('id', id).eq('user_id', userId!);
+      setAddresses((prev) => prev.map((a) => ({ ...a, isDefault: a.id === id })));
+    } catch {
+      alert('기본 배송지 변경 중 오류가 발생했습니다.');
+    }
+  }
+
   if (authLoading || loading) {
     return <div className="container py-8">로딩 중...</div>;
   }
@@ -755,6 +818,60 @@ export default function AdminUserDetailPage() {
           )}
         </Card>
       </div>
+
+      {/* 배송지 목록 */}
+      <Card className="mt-6 p-6">
+        <div className="mb-4 flex items-center gap-2">
+          <MapPin className="h-5 w-5 text-gray-500" />
+          <h2 className="text-lg font-bold">배송지 목록</h2>
+          <span className="ml-1 text-sm text-gray-400">({addresses.length}개)</span>
+        </div>
+        {addresses.length === 0 ? (
+          <p className="text-sm text-gray-500">등록된 배송지가 없습니다.</p>
+        ) : (
+          <div className="divide-y">
+            {addresses.map((addr) => (
+              <div key={addr.id} className="flex items-start justify-between gap-4 py-3">
+                <div className="min-w-0 flex-1 text-sm">
+                  <div className="mb-0.5 flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{addr.name}</span>
+                    {addr.isDefault && (
+                      <Badge variant="default" className="text-xs">기본</Badge>
+                    )}
+                    <span className="text-gray-500">{addr.recipientName} · {addr.recipientPhone}</span>
+                  </div>
+                  <p className="text-gray-600">
+                    [{addr.postalCode}] {addr.address1}{addr.address2 && ` ${addr.address2}`}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {format(new Date(addr.createdAt), 'yyyy.MM.dd HH:mm')}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {!addr.isDefault && (
+                    <button
+                      type="button"
+                      onClick={() => handleSetAddressDefault(addr.id)}
+                      className="text-xs text-gray-400 underline hover:text-blue-600"
+                    >
+                      기본으로 설정
+                    </button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={deletingAddressId === addr.id}
+                    onClick={() => handleDeleteAddress(addr.id)}
+                    className="h-7 w-7 p-0 text-gray-400 hover:text-red-600"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       {/* 주문 내역 */}
       <Card className="mt-6 p-6">

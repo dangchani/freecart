@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MapPin, Plus, Pencil, Trash2, X } from 'lucide-react';
+import { MapPin, Plus, Pencil, Trash2, X, Search } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { openDaumPostcode } from '@/lib/daum-postcode';
 
 interface Address {
   id: string;
@@ -48,6 +49,7 @@ export default function AddressesPage() {
   const [form, setForm] = useState<AddressForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const address2Ref = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!authLoading) {
@@ -110,6 +112,21 @@ export default function AddressesPage() {
     setShowForm(true);
   }
 
+  async function handleAddressSearch() {
+    try {
+      await openDaumPostcode((data) => {
+        setForm((prev) => ({
+          ...prev,
+          postalCode: data.zonecode,
+          address1: data.roadAddress || data.address,
+        }));
+        setTimeout(() => address2Ref.current?.focus(), 100);
+      });
+    } catch (err) {
+      console.error('주소 검색 실패:', err);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -157,6 +174,18 @@ export default function AddressesPage() {
       alert('저장 중 오류가 발생했습니다.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSetDefault(id: string) {
+    try {
+      const supabase = createClient();
+      await supabase.from('user_addresses').update({ is_default: false }).eq('user_id', user!.id);
+      await supabase.from('user_addresses').update({ is_default: true }).eq('id', id).eq('user_id', user!.id);
+      await fetchAddresses();
+    } catch (err) {
+      console.error('기본 배송지 변경 실패:', err);
+      alert('변경 중 오류가 발생했습니다.');
     }
   }
 
@@ -253,30 +282,40 @@ export default function AddressesPage() {
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium">우편번호</label>
-                <input
-                  type="text"
-                  required
-                  value={form.postalCode}
-                  onChange={(e) => setForm({ ...form, postalCode: e.target.value })}
-                  placeholder="12345"
-                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={form.postalCode}
+                    placeholder="주소 검색으로 입력"
+                    className="w-full rounded-md border bg-gray-50 px-3 py-2 text-sm cursor-default focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddressSearch}
+                    className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-md border bg-white px-3 py-2 text-sm font-medium hover:bg-gray-50 whitespace-nowrap"
+                  >
+                    <Search className="h-4 w-4" />
+                    주소 검색
+                  </button>
+                </div>
               </div>
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium">주소</label>
               <input
                 type="text"
+                readOnly
                 required
                 value={form.address1}
-                onChange={(e) => setForm({ ...form, address1: e.target.value })}
-                placeholder="기본 주소"
-                className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="주소 검색 버튼을 눌러 입력해주세요"
+                className="w-full rounded-md border bg-gray-50 px-3 py-2 text-sm cursor-default focus:outline-none"
               />
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium">상세 주소</label>
               <input
+                ref={address2Ref}
                 type="text"
                 value={form.address2}
                 onChange={(e) => setForm({ ...form, address2: e.target.value })}
@@ -333,24 +372,35 @@ export default function AddressesPage() {
                     {address.address2 && `, ${address.address2}`}
                   </p>
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleEdit(address)}
-                    className="text-gray-500 hover:text-blue-600"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDelete(address.id)}
-                    disabled={deletingId === address.id}
-                    className="text-gray-500 hover:text-red-600"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                <div className="flex flex-col items-end gap-1.5">
+                  <div className="flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleEdit(address)}
+                      className="text-gray-500 hover:text-blue-600"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(address.id)}
+                      disabled={deletingId === address.id}
+                      className="text-gray-500 hover:text-red-600"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {!address.isDefault && (
+                    <button
+                      type="button"
+                      onClick={() => handleSetDefault(address.id)}
+                      className="text-xs text-gray-400 underline hover:text-blue-600"
+                    >
+                      기본으로 설정
+                    </button>
+                  )}
                 </div>
               </div>
             </Card>

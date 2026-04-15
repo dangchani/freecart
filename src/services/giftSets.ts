@@ -19,6 +19,7 @@ export interface GiftSetItem {
   giftProductName: string;
   giftProductImageUrl: string | null;
   giftProductSalePrice: number;
+  giftProductStock: number;   // 실효 재고 (옵션상품이면 활성 variant 합계)
   sortOrder: number;
 }
 
@@ -33,6 +34,7 @@ export interface GiftSet {
   sortOrder: number;
   badgeText: string | null;
   badgeColor: string;
+  hideWhenSoldout: boolean;   // 모든 사은품 품절 시 세트 자동 숨김
   tiers: GiftTier[];
   items: GiftSetItem[];
 }
@@ -48,6 +50,7 @@ export interface GiftSetDraft {
   endsAt: string;
   badgeText: string;
   badgeColor: string;
+  hideWhenSoldout: boolean;
   tiers: GiftTierDraft[];
   items: GiftSetItemDraft[];
 }
@@ -85,13 +88,14 @@ export interface AutoGiftResult {
 
 const GIFT_SET_QUERY = `
   id, product_id, name, gift_type, is_active, starts_at, ends_at, sort_order,
-  badge_text, badge_color,
+  badge_text, badge_color, hide_when_soldout,
   product_gift_tiers(id, min_quantity, free_count, sort_order),
   product_gift_set_items(
     id, gift_product_id, sort_order,
     gift_product:products!product_gift_set_items_gift_product_id_fkey(
-      id, name, sale_price,
-      product_images(url, is_primary)
+      id, name, sale_price, stock_quantity, has_options,
+      product_images(url, is_primary),
+      product_variants(stock_quantity, is_active)
     )
   )
 `;
@@ -110,7 +114,15 @@ export async function getGiftSets(productId: string): Promise<GiftSet[]> {
     .or(`ends_at.is.null,ends_at.gte.${now}`)
     .order('sort_order', { ascending: true });
 
-  return (data || []).map(mapGiftSet);
+  return (data || [])
+    .map(mapGiftSet)
+    .filter((set) => {
+      // 모든 사은품 품절이고 hide_when_soldout = true이면 해당 세트 제외
+      if (!set.hideWhenSoldout) return true;
+      if (set.items.length === 0) return true;
+      const allSoldOut = set.items.every((item) => item.giftProductStock === 0);
+      return !allSoldOut;
+    });
 }
 
 /** 관리자용 전체 세트 조회 (비활성 포함) */
@@ -143,12 +155,21 @@ function mapGiftSet(s: any): GiftSet {
       const primaryImg =
         (p?.product_images || []).find((img: any) => img.is_primary) ||
         (p?.product_images || [])[0];
+
+      // 실효 재고 계산: 옵션상품이면 활성 variant 재고 합산, 아니면 stock_quantity
+      const giftProductStock: number = p?.has_options
+        ? ((p.product_variants || []) as any[])
+            .filter((v: any) => v.is_active)
+            .reduce((sum: number, v: any) => sum + (v.stock_quantity || 0), 0)
+        : (p?.stock_quantity ?? 0);
+
       return {
         id: item.id,
         giftProductId: item.gift_product_id,
         giftProductName: p?.name ?? '',
         giftProductImageUrl: primaryImg?.url ?? null,
         giftProductSalePrice: p?.sale_price ?? 0,
+        giftProductStock,
         sortOrder: item.sort_order,
       };
     });
@@ -163,7 +184,8 @@ function mapGiftSet(s: any): GiftSet {
     endsAt: s.ends_at ?? null,
     sortOrder: s.sort_order,
     badgeText: s.badge_text ?? null,
-    badgeColor: s.badge_color ?? 'red',
+    badgeColor: s.badge_color ?? '#ef4444',
+    hideWhenSoldout: s.hide_when_soldout ?? false,
     tiers,
     items,
   };
@@ -202,7 +224,8 @@ export async function saveGiftSets(
         ends_at: draft.endsAt || null,
         sort_order: i,
         badge_text: draft.badgeText.trim() || null,
-        badge_color: draft.badgeColor || 'red',
+        badge_color: draft.badgeColor || '#ef4444',
+        hide_when_soldout: draft.hideWhenSoldout ?? false,
       })
       .select('id')
       .single();

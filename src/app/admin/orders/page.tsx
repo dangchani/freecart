@@ -155,10 +155,14 @@ const FIXED_COLUMNS = [
 
 // 독립 셀로 노출/순서 변경 가능한 선택 컬럼
 const COLUMN_DEFS = [
-  { key: 'product',   label: '상품 요약',   defaultVisible: true  },
-  { key: 'recipient', label: '수령인',      defaultVisible: false },
-  { key: 'address',   label: '배송주소',    defaultVisible: false },
-  { key: 'discount',  label: '할인/배송비', defaultVisible: false },
+  { key: 'product',        label: '상품 요약',  defaultVisible: true  },
+  { key: 'recipient',      label: '수령인',     defaultVisible: false },
+  { key: 'phone',          label: '연락처',     defaultVisible: false },
+  { key: 'address',        label: '배송주소',   defaultVisible: false },
+  { key: 'payment_method', label: '결제수단',   defaultVisible: false },
+  { key: 'subtotal',       label: '상품금액',   defaultVisible: false },
+  { key: 'discount',       label: '할인/배송비',defaultVisible: false },
+  { key: 'tracking',       label: '운송장',     defaultVisible: false },
 ] as const;
 
 // 독립 셀 없이 기존 셀 내부에 표시되는 인디케이터 컬럼
@@ -171,7 +175,7 @@ type ColumnKey    = typeof COLUMN_DEFS[number]['key'];
 type IndicatorKey = typeof INDICATOR_DEFS[number]['key'];
 type AnyColumnKey = ColumnKey | IndicatorKey;
 
-const DEFAULT_COLUMN_ORDER: ColumnKey[] = ['product', 'recipient', 'address', 'discount'];
+const DEFAULT_COLUMN_ORDER: ColumnKey[] = ['product', 'recipient', 'phone', 'address', 'payment_method', 'subtotal', 'discount', 'tracking'];
 
 const COLUMN_PRESETS: Record<string, { label: string; visible: AnyColumnKey[]; order: ColumnKey[] }> = {
   default: {
@@ -186,7 +190,7 @@ const COLUMN_PRESETS: Record<string, { label: string; visible: AnyColumnKey[]; o
   },
   detail: {
     label: '상세',
-    visible: ['product', 'recipient', 'address', 'discount', 'memo', 'deadline'],
+    visible: ['product', 'recipient', 'phone', 'address', 'payment_method', 'subtotal', 'discount', 'tracking', 'memo', 'deadline'],
     order: [...DEFAULT_COLUMN_ORDER],
   },
 };
@@ -1301,11 +1305,11 @@ export default function AdminOrdersPage() {
           <div className="flex items-center gap-4 p-4 border-b bg-gray-50 text-sm font-medium text-gray-600">
             <input type="checkbox"
               checked={selectedIds.size === orders.length && orders.length > 0}
-              onChange={toggleSelectAll} className="h-4 w-4 rounded" />
+              onChange={toggleSelectAll} className="h-4 w-4 rounded flex-shrink-0" />
             {/* 주문번호 — 정렬 가능 */}
-            <div className="w-36">
+            <div className="w-36 text-center flex-shrink-0">
               <button
-                className="flex items-center gap-1 hover:text-gray-900"
+                className="flex items-center gap-1 hover:text-gray-900 mx-auto"
                 onClick={() => {
                   if (sortField === 'order_number') setSortDir((d) => d === 'asc' ? 'desc' : 'asc');
                   else { setSortField('order_number'); setSortDir('desc'); }
@@ -1318,18 +1322,22 @@ export default function AdminOrdersPage() {
                   : <ChevronsUpDown className="h-3 w-3 text-gray-300" />}
               </button>
             </div>
-            <div className="flex-1">고객정보</div>
+            <div className="flex-1 text-center">고객정보</div>
             {columnOrder
               .filter((key) => visibleColumns.has(key))
               .map((key) => {
-                if (key === 'product')   return <div key={key} className="w-48 min-w-0">상품 요약</div>;
-                if (key === 'recipient') return <div key={key} className="w-24">수령인</div>;
-                if (key === 'address')   return <div key={key} className="w-36 min-w-0">배송주소</div>;
-                if (key === 'discount')  return <div key={key} className="w-28 text-right">할인/배송비</div>;
+                if (key === 'product')        return <div key={key} className="w-48 min-w-0 text-center">상품 요약</div>;
+                if (key === 'recipient')      return <div key={key} className="w-24 text-center flex-shrink-0">수령인</div>;
+                if (key === 'phone')          return <div key={key} className="w-28 text-center flex-shrink-0">연락처</div>;
+                if (key === 'address')        return <div key={key} className="w-36 min-w-0 text-center">배송주소</div>;
+                if (key === 'payment_method') return <div key={key} className="w-24 text-center flex-shrink-0">결제수단</div>;
+                if (key === 'subtotal')       return <div key={key} className="w-24 text-center flex-shrink-0">상품금액</div>;
+                if (key === 'discount')       return <div key={key} className="w-28 text-center flex-shrink-0">할인/배송비</div>;
+                if (key === 'tracking')       return <div key={key} className="w-28 text-center flex-shrink-0">운송장</div>;
                 return null;
               })}
             {/* 결제금액 — 정렬 가능 */}
-            <div className="w-24 text-center">
+            <div className="w-24 text-center flex-shrink-0">
               <button
                 className="flex items-center gap-1 hover:text-gray-900 mx-auto"
                 onClick={() => {
@@ -1344,9 +1352,9 @@ export default function AdminOrdersPage() {
                   : <ChevronsUpDown className="h-3 w-3 text-gray-300" />}
               </button>
             </div>
-            <div className="w-28 text-center">상태</div>
+            <div className="w-28 text-center flex-shrink-0">상태</div>
             {/* 주문일시 — 정렬 가능 */}
-            <div className="w-24 text-center">
+            <div className="w-24 text-center flex-shrink-0">
               <button
                 className="flex items-center gap-1 hover:text-gray-900 mx-auto"
                 onClick={() => {
@@ -1361,7 +1369,7 @@ export default function AdminOrdersPage() {
                   : <ChevronsUpDown className="h-3 w-3 text-gray-300" />}
               </button>
             </div>
-            <div className="w-52 flex items-center justify-end gap-1">
+            <div className="w-40 flex items-center justify-center gap-1 flex-shrink-0">
               <span>액션</span>
               <Button size="sm" variant="ghost" className="h-6 w-6 p-0 ml-1"
                 onClick={() => setColumnPickerOpen(true)} title="컬럼 설정">
@@ -1380,12 +1388,18 @@ export default function AdminOrdersPage() {
                 : null;
 
               return (
-                <div key={order.id} className="flex items-center gap-4 p-4 hover:bg-gray-50">
+                <div
+                  key={order.id}
+                  className="flex items-center gap-4 p-4 hover:bg-gray-50 cursor-pointer"
+                  onClick={() => navigate(`/admin/orders/${order.id}`)}
+                >
                   <input type="checkbox" checked={selectedIds.has(order.id)}
-                    onChange={() => toggleSelect(order.id)} className="h-4 w-4 rounded" />
+                    onChange={() => toggleSelect(order.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="h-4 w-4 rounded flex-shrink-0" />
 
                   {/* 주문번호 */}
-                  <div className="w-36 flex-shrink-0">
+                  <div className="w-36 text-center flex-shrink-0">
                     <p className="font-mono text-sm font-medium">{order.orderNumber}</p>
                     {order.isAdminOrder && (
                       <span className="inline-flex items-center rounded px-1 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 mt-0.5">
@@ -1395,14 +1409,9 @@ export default function AdminOrdersPage() {
                   </div>
 
                   {/* 고객정보 */}
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 text-center">
                     <p className="font-medium truncate">{order.customerName}</p>
                     <p className="text-xs text-gray-500">{order.customerPhone}</p>
-                    {order.paymentMethod && (
-                      <p className="text-xs text-gray-400">
-                        {PAYMENT_METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod}
-                      </p>
-                    )}
                   </div>
 
                   {/* 선택 컬럼 — columnOrder 순서로 렌더링 */}
@@ -1410,7 +1419,7 @@ export default function AdminOrdersPage() {
                     .filter((key) => visibleColumns.has(key))
                     .map((key) => {
                       if (key === 'product') return (
-                        <div key={key} className="w-48 min-w-0">
+                        <div key={key} className="w-48 min-w-0 text-center">
                           {order.productSummary ? (
                             <p className="text-xs text-gray-700 truncate" title={order.productSummary}>
                               {order.productSummary}
@@ -1421,28 +1430,62 @@ export default function AdminOrdersPage() {
                         </div>
                       );
                       if (key === 'recipient') return (
-                        <div key={key} className="w-24 flex-shrink-0">
+                        <div key={key} className="w-24 text-center flex-shrink-0">
                           <p className={`text-xs truncate ${order.recipientName !== order.customerName ? 'text-blue-600 font-medium' : 'text-gray-600'}`}>
                             {order.recipientName || '—'}
                           </p>
                         </div>
                       );
+                      if (key === 'phone') return (
+                        <div key={key} className="w-28 text-center flex-shrink-0">
+                          <p className="text-xs text-gray-600">{order.customerPhone || '—'}</p>
+                        </div>
+                      );
                       if (key === 'address') return (
-                        <div key={key} className="w-36 min-w-0">
+                        <div key={key} className="w-36 min-w-0 text-center">
                           <p className="text-xs text-gray-600 truncate" title={order.address}>
                             <MapPin className="inline h-3 w-3 mr-0.5 text-gray-400" />
                             {order.address || '—'}
                           </p>
                         </div>
                       );
+                      if (key === 'payment_method') return (
+                        <div key={key} className="w-24 text-center flex-shrink-0">
+                          <p className="text-xs text-gray-600">
+                            {order.paymentMethod ? (PAYMENT_METHOD_LABELS[order.paymentMethod] ?? order.paymentMethod) : '—'}
+                          </p>
+                        </div>
+                      );
+                      if (key === 'subtotal') return (
+                        <div key={key} className="w-24 text-center flex-shrink-0">
+                          <p className="text-xs text-gray-700">{formatCurrency(order.subtotal)}</p>
+                        </div>
+                      );
                       if (key === 'discount') return (
-                        <div key={key} className="w-28 flex-shrink-0 text-right">
+                        <div key={key} className="w-28 text-center flex-shrink-0">
                           {order.discountTotal > 0 && (
                             <p className="text-xs text-red-500">-{formatCurrency(order.discountTotal)}</p>
                           )}
                           <p className="text-xs text-gray-500">
-                            {order.shippingFee === 0 ? '배송비 무료' : `배송비 ${formatCurrency(order.shippingFee)}`}
+                            {order.shippingFee === 0 ? '배송비 무료' : `+${formatCurrency(order.shippingFee)}`}
                           </p>
+                        </div>
+                      );
+                      if (key === 'tracking') return (
+                        <div key={key} className="w-28 text-center flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          {order.shipment?.trackingNumber ? (
+                            <>
+                              <p className="text-xs text-gray-700 truncate">{order.shipment.trackingNumber}</p>
+                              {trackingUrl && (
+                                <a href={trackingUrl} target="_blank" rel="noopener noreferrer"
+                                  className="text-[10px] text-blue-500 hover:underline">
+                                  배송조회
+                                </a>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-xs text-gray-300">—</span>
+                          )}
                         </div>
                       );
                       return null;
@@ -1463,12 +1506,6 @@ export default function AdminOrdersPage() {
                     <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${statusColor}`}>
                       {ORDER_STATUS_LABELS[order.status as OrderStatus] ?? order.status}
                     </span>
-                    {trackingUrl && (
-                      <a href={trackingUrl} target="_blank" rel="noopener noreferrer"
-                        className="mt-1 block text-xs text-blue-500 hover:underline">
-                        배송조회
-                      </a>
-                    )}
                     {/* 입금마감 */}
                     {visibleColumns.has('deadline') && order.paymentDeadline &&
                       order.status === 'pending' &&
@@ -1491,7 +1528,8 @@ export default function AdminOrdersPage() {
                     <p className="text-xs text-gray-400">{format(new Date(order.createdAt), 'HH:mm')}</p>
                   </div>
 
-                  <div className="flex gap-1 w-52 justify-end">
+                  {/* 액션 */}
+                  <div className="flex gap-1 w-40 justify-center flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                     {order.status === 'pending' && order.paymentMethod !== 'card' && (
                       <Button size="sm" variant="outline" onClick={() => openDepositModal(order)} title="입금 확인">
                         <CreditCard className="h-3.5 w-3.5" />
@@ -1519,10 +1557,6 @@ export default function AdminOrdersPage() {
                     <Button size="sm" variant="ghost" onClick={() => openShipmentModal(order)} title="운송장 등록">
                       <Truck className="h-4 w-4" />
                     </Button>
-
-                    <Link to={`/admin/orders/${order.id}`}>
-                      <Button size="sm" variant="ghost">상세</Button>
-                    </Link>
                   </div>
                 </div>
               );

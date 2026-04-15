@@ -9,6 +9,7 @@ import { getCart, updateCartItem, removeFromCart } from '@/services/cart';
 import { getShippingSettings } from '@/services/settings';
 import { useAuth } from '@/hooks/useAuth';
 import { useCartStore } from '@/store/cart';
+import { Trash2 } from 'lucide-react';
 import type { CartItem } from '@/types';
 
 export default function CartPage() {
@@ -18,6 +19,7 @@ export default function CartPage() {
   const [items, setItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [shippingConfig, setShippingConfig] = useState({ shippingFee: 3000, freeShippingThreshold: 50000 });
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const isGuest = !user;
 
   useEffect(() => {
@@ -66,6 +68,42 @@ export default function CartPage() {
     }
   }
 
+  function toggleSelectAll() {
+    if (selectedIds.size === items.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(items.map((i) => i.id)));
+    }
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleRemoveSelected() {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`선택한 ${selectedIds.size}개 상품을 삭제하시겠습니까?`)) return;
+    try {
+      for (const itemId of selectedIds) {
+        if (isGuest) {
+          const item = items.find((i) => i.id === itemId);
+          if (item) localCart.removeItem(item.productId);
+        } else {
+          await removeFromCart(itemId);
+        }
+      }
+      setSelectedIds(new Set());
+      await loadCart();
+    } catch (error) {
+      console.error('Failed to remove items:', error);
+    }
+  }
+
   async function handleRemove(itemId: string) {
     try {
       if (isGuest) {
@@ -85,12 +123,31 @@ export default function CartPage() {
     return <div className="container py-8">로딩 중...</div>;
   }
 
-  const subtotal = items.reduce(
+  // 선택된 항목이 있으면 선택 기준으로, 없으면 전체 기준으로 요약
+  const summaryItems = selectedIds.size > 0 ? items.filter((i) => selectedIds.has(i.id)) : items;
+  const subtotal = summaryItems.reduce(
     (sum, item) => sum + (item.product?.salePrice || 0) * item.quantity,
     0
   );
   const shippingCost = subtotal >= shippingConfig.freeShippingThreshold ? 0 : shippingConfig.shippingFee;
   const total = subtotal + shippingCost;
+
+  function handleOrderSelected() {
+    if (!user) {
+      navigate('/auth/login');
+      return;
+    }
+    const ids = [...selectedIds].join(',');
+    navigate(`/checkout?itemIds=${ids}`);
+  }
+
+  function handleOrderAll() {
+    if (!user) {
+      navigate('/auth/login');
+      return;
+    }
+    navigate('/checkout');
+  }
 
   return (
     <>
@@ -108,9 +165,40 @@ export default function CartPage() {
       ) : (
         <div className="grid gap-8 lg:grid-cols-3">
           <div className="lg:col-span-2">
+            <div className="mb-3 flex items-center gap-3 px-1">
+              <input
+                type="checkbox"
+                id="select-all"
+                checked={selectedIds.size === items.length}
+                onChange={toggleSelectAll}
+                className="h-4 w-4 cursor-pointer"
+              />
+              <label htmlFor="select-all" className="cursor-pointer text-sm">
+                전체선택 ({selectedIds.size}/{items.length})
+              </label>
+              {selectedIds.size > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleRemoveSelected}
+                  className="ml-auto text-red-500 border-red-200 hover:bg-red-50"
+                >
+                  <Trash2 className="mr-1 h-4 w-4" />
+                  선택 삭제 ({selectedIds.size})
+                </Button>
+              )}
+            </div>
             {items.map((item) => (
-              <Card key={item.id} className="mb-4 p-4">
+              <Card key={item.id} className={`mb-4 p-4 transition-colors ${selectedIds.has(item.id) ? 'border-primary/50 bg-primary/5' : ''}`}>
                 <div className="flex gap-4">
+                  <div className="flex items-start pt-1">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(item.id)}
+                      onChange={() => toggleSelect(item.id)}
+                      className="h-4 w-4 cursor-pointer"
+                    />
+                  </div>
                   <div className="relative h-24 w-24 overflow-hidden rounded-lg bg-gray-100">
                     <img
                       src={item.product?.images?.find((img) => img.isPrimary)?.url || item.product?.images?.[0]?.url || '/placeholder.png'}
@@ -161,6 +249,12 @@ export default function CartPage() {
             <Card className="p-6">
               <h2 className="mb-4 text-lg font-bold">주문 요약</h2>
 
+              {selectedIds.size > 0 && (
+                <p className="mb-3 text-sm text-blue-600">
+                  선택 {selectedIds.size}개 항목 기준
+                </p>
+              )}
+
               <div className="space-y-2 border-b pb-4">
                 <div className="flex justify-between">
                   <span>상품 금액</span>
@@ -177,11 +271,27 @@ export default function CartPage() {
                 <span>{formatCurrency(total)}</span>
               </div>
 
-              <Link to="/checkout" className="block">
-                <Button className="mt-6 w-full" size="lg">
-                  주문하기
-                </Button>
-              </Link>
+              <div className="mt-6 space-y-2">
+                {selectedIds.size > 0 ? (
+                  <>
+                    <Button className="w-full" size="lg" onClick={handleOrderSelected}>
+                      선택 주문하기 ({selectedIds.size}개)
+                    </Button>
+                    <Button
+                      className="w-full"
+                      size="lg"
+                      variant="outline"
+                      onClick={handleOrderAll}
+                    >
+                      전체 주문하기
+                    </Button>
+                  </>
+                ) : (
+                  <Button className="w-full" size="lg" onClick={handleOrderAll}>
+                    주문하기
+                  </Button>
+                )}
+              </div>
             </Card>
           </div>
         </div>

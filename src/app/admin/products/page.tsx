@@ -63,12 +63,20 @@ interface ProductDetailGiftSet {
   giftType: string;
   isActive: boolean;
   tiers: { minQuantity: number; freeCount: number }[];
+  items: ProductDetailGiftSetItem[];
 }
 
 interface ProductDetailBundleItem {
   productName: string;
   imageUrl: string | null;
   quantity: number;
+  stock: number;
+}
+
+interface ProductDetailGiftSetItem {
+  productName: string;
+  imageUrl: string | null;
+  stock: number;
 }
 
 interface ProductDetailTimeSale {
@@ -282,7 +290,7 @@ export default function AdminProductsPage() {
           product_options(name, is_required, sort_order, product_option_values(value, sort_order)),
           product_variants(sku, option_values, stock_quantity, is_active, min_purchase_quantity, max_purchase_quantity),
           product_quantity_discounts(min_quantity, discount_type, discount_value, is_active),
-          product_gift_sets(name, gift_type, is_active, product_gift_tiers(min_quantity, free_count))
+          product_gift_sets(name, gift_type, is_active, product_gift_tiers(min_quantity, free_count), product_gift_set_items(gift_product_id, products!product_gift_set_items_gift_product_id_fkey(name, stock_quantity, product_images(url, is_primary))))
         `)
         .eq('id', productId)
         .single();
@@ -297,8 +305,9 @@ export default function AdminProductsPage() {
           .select(`
             quantity,
             product:products!bundle_items_product_id_fkey(
-              name,
-              product_images(url, is_primary)
+              name, stock_quantity, has_options,
+              product_images(url, is_primary),
+              product_variants(stock_quantity, is_active)
             )
           `)
           .eq('bundle_product_id', productId)
@@ -307,7 +316,17 @@ export default function AdminProductsPage() {
         bundleItems = (items || []).map((item: any) => {
           const prod = item.product;
           const img = (prod?.product_images || []).find((i: any) => i.is_primary) || prod?.product_images?.[0];
-          return { productName: prod?.name ?? '', imageUrl: img?.url ?? null, quantity: item.quantity };
+          const componentStock = prod?.has_options
+            ? ((prod.product_variants || []) as any[])
+                .filter((v: any) => v.is_active)
+                .reduce((sum: number, v: any) => sum + (v.stock_quantity || 0), 0)
+            : (prod?.stock_quantity || 0);
+          return {
+            productName: prod?.name ?? '',
+            imageUrl: img?.url ?? null,
+            quantity: item.quantity,
+            stock: componentStock,
+          };
         });
       }
 
@@ -385,6 +404,15 @@ export default function AdminProductsPage() {
               minQuantity: t.min_quantity,
               freeCount: t.free_count,
             })),
+            items: (s.product_gift_set_items || []).map((gi: any) => {
+              const gp = gi.products;
+              const img = (gp?.product_images || []).find((i: any) => i.is_primary) || gp?.product_images?.[0];
+              return {
+                productName: gp?.name ?? '',
+                imageUrl: img?.url ?? null,
+                stock: gp?.stock_quantity ?? 0,
+              };
+            }),
           })),
           bundleItems,
           activeTimeSale: timeSaleData
@@ -1157,21 +1185,57 @@ export default function AdminProductsPage() {
                         {/* 재고 / 옵션 / 구성상품 */}
                         <div className="space-y-3">
                           {detail.productType === 'bundle' ? (
-                            /* 세트상품: 구성상품 목록 */
-                            detail.bundleItems.length > 0 && (
-                              <div>
-                                <p className="text-sm font-semibold text-gray-700 mb-2">구성 상품</p>
-                                <div className="rounded-lg border divide-y bg-white">
-                                  {detail.bundleItems.map((item, idx) => (
-                                    <div key={idx} className="flex items-center gap-3 px-3 py-2 text-sm">
-                                      {item.imageUrl && <img src={item.imageUrl} className="h-8 w-8 rounded object-cover flex-shrink-0" alt="" />}
-                                      <span className="flex-1 truncate">{item.productName}</span>
-                                      <span className="text-gray-400 text-xs shrink-0">×{item.quantity}</span>
-                                    </div>
-                                  ))}
+                            /* 세트상품: 구성상품 목록 + 재고 */
+                            <div className="space-y-3">
+                              {detail.bundleItems.length > 0 && (
+                                <div>
+                                  <p className="text-sm font-semibold text-gray-700 mb-2">구성 상품</p>
+                                  <div className="rounded-lg border divide-y bg-white">
+                                    {detail.bundleItems.map((item, idx) => {
+                                      const canMake = Math.floor(item.stock / item.quantity);
+                                      return (
+                                        <div key={idx} className="flex items-center gap-3 px-3 py-2 text-sm">
+                                          {item.imageUrl && <img src={item.imageUrl} className="h-8 w-8 rounded object-cover flex-shrink-0" alt="" />}
+                                          <span className="flex-1 truncate">{item.productName}</span>
+                                          <span className="text-gray-400 text-xs shrink-0">×{item.quantity}</span>
+                                          <span className={`text-xs shrink-0 px-1.5 py-0.5 rounded font-medium ${item.stock === 0 ? 'bg-red-100 text-red-600' : canMake < 5 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
+                                            재고 {item.stock}개
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                  {(() => {
+                                    const possible = detail.bundleItems.length > 0
+                                      ? Math.min(...detail.bundleItems.map(i => Math.floor(i.stock / i.quantity)))
+                                      : 0;
+                                    return (
+                                      <p className="mt-1.5 text-xs text-gray-500">
+                                        세트 조합 가능:&nbsp;
+                                        <span className={`font-semibold ${possible === 0 ? 'text-red-500' : 'text-gray-700'}`}>{possible}개</span>
+                                      </p>
+                                    );
+                                  })()}
                                 </div>
-                              </div>
-                            )
+                              )}
+                              {/* 사은품 아이템 */}
+                              {detail.giftSets.filter(s => s.isActive && s.items.length > 0).map((s, si) => (
+                                <div key={si}>
+                                  <p className="text-sm font-semibold text-gray-700 mb-2">사은품 — {s.name}</p>
+                                  <div className="rounded-lg border divide-y bg-white">
+                                    {s.items.map((gi, gi_idx) => (
+                                      <div key={gi_idx} className="flex items-center gap-3 px-3 py-2 text-sm">
+                                        {gi.imageUrl && <img src={gi.imageUrl} className="h-8 w-8 rounded object-cover flex-shrink-0" alt="" />}
+                                        <span className="flex-1 truncate">{gi.productName}</span>
+                                        <span className={`text-xs shrink-0 px-1.5 py-0.5 rounded font-medium ${gi.stock === 0 ? 'bg-red-100 text-red-600' : gi.stock < 10 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
+                                          재고 {gi.stock}개
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           ) : detail.hasOptions && detail.variants.length > 0 ? (
                             /* 옵션상품: variant 테이블 */
                             <div>

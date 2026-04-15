@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { PageSection } from '@/components/theme/PageSection';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -14,7 +14,7 @@ import { createOrder } from '@/services/orders';
 import { getShippingFields, type ShippingFieldDef } from '@/services/shipping-fields';
 import { getUserCoupons, calculateCouponDiscount, registerCouponByCode, useCoupon, type UserCoupon } from '@/services/coupons';
 import { getUserPoints, validatePointsUsage, usePoints } from '@/services/points';
-import { getUserAddresses, type UserAddress } from '@/services/addresses';
+import { getUserAddresses, createAddress, type UserAddress } from '@/services/addresses';
 import { useAuth } from '@/hooks/useAuth';
 import { createClient } from '@/lib/supabase/client';
 import { getShippingSettings, getPointSettings, getBankTransferSettings } from '@/services/settings';
@@ -164,6 +164,7 @@ function loadScript(src: string): Promise<void> {
 
 export default function CheckoutPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, loading: authLoading } = useAuth();
   const [items, setItems] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -188,7 +189,7 @@ export default function CheckoutPage() {
 
   // 배송지 관련 state
   const [savedAddresses, setSavedAddresses] = useState<UserAddress[]>([]);
-  const [showAddressList, setShowAddressList] = useState(false);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | 'new'>('new');
   const [shippingFields, setShippingFields] = useState<ShippingFieldDef[]>([]);
   const [extraFieldValues, setExtraFieldValues] = useState<Record<string, string>>({});
   const [extraFieldErrors, setExtraFieldErrors] = useState<Record<string, string>>({});
@@ -249,7 +250,17 @@ export default function CheckoutPage() {
         navigate('/cart');
         return;
       }
-      setItems(cartItems);
+
+      // 선택 주문: URL에 itemIds 파라미터가 있으면 해당 항목만 표시
+      const params = new URLSearchParams(location.search);
+      const itemIdsParam = params.get('itemIds');
+      if (itemIdsParam) {
+        const idSet = new Set(itemIdsParam.split(','));
+        const filtered = cartItems.filter((i) => idSet.has(i.id));
+        setItems(filtered.length > 0 ? filtered : cartItems);
+      } else {
+        setItems(cartItems);
+      }
     } catch (error) {
       console.error('Failed to load cart:', error);
     } finally {
@@ -283,27 +294,51 @@ export default function CheckoutPage() {
       const addresses = await getUserAddresses(user.id);
       setSavedAddresses(addresses);
 
-      // 기본 배송지가 있으면 자동으로 채우기
-      const defaultAddress = addresses.find((a) => a.isDefault);
+      const defaultAddress = addresses.find((a) => a.isDefault) ?? addresses[0];
       if (defaultAddress) {
+        setSelectedAddressId(defaultAddress.id);
         setValue('recipientName', defaultAddress.recipientName);
         setValue('recipientPhone', defaultAddress.recipientPhone);
         setValue('postalCode', defaultAddress.postalCode);
         setValue('address', defaultAddress.address1);
         setValue('address2', defaultAddress.address2 || '');
+      } else {
+        setSelectedAddressId('new');
       }
     } catch (error) {
       console.error('Failed to load addresses:', error);
     }
   }
 
-  function selectAddress(address: UserAddress) {
-    setValue('recipientName', address.recipientName);
-    setValue('recipientPhone', address.recipientPhone);
-    setValue('postalCode', address.postalCode);
-    setValue('address', address.address1);
-    setValue('address2', address.address2 || '');
-    setShowAddressList(false);
+  function handleSelectSavedAddress(addr: UserAddress) {
+    setSelectedAddressId(addr.id);
+    setValue('recipientName', addr.recipientName);
+    setValue('recipientPhone', addr.recipientPhone);
+    setValue('postalCode', addr.postalCode);
+    setValue('address', addr.address1);
+    setValue('address2', addr.address2 || '');
+  }
+
+  function handleSelectNew() {
+    setSelectedAddressId('new');
+    setValue('recipientName', '');
+    setValue('recipientPhone', '');
+    setValue('postalCode', '');
+    setValue('address', '');
+    setValue('address2', '');
+  }
+
+  async function setAddressAsDefault(id: string) {
+    if (!user) return;
+    try {
+      const supabase = createClient();
+      await supabase.from('user_addresses').update({ is_default: false }).eq('user_id', user.id);
+      await supabase.from('user_addresses').update({ is_default: true }).eq('id', id).eq('user_id', user.id);
+      const addresses = await getUserAddresses(user.id);
+      setSavedAddresses(addresses);
+    } catch (err) {
+      console.error('기본 배송지 변경 실패:', err);
+    }
   }
 
   async function openAddressSearch() {
@@ -440,12 +475,32 @@ export default function CheckoutPage() {
         extraShippingFields: Object.keys(extraFieldValues).length > 0 ? extraFieldValues : undefined,
       };
 
+      // 배송지 없을 때 자동 저장 (실패해도 주문에 영향 없음)
+      async function autoSaveAddressIfEmpty() {
+        try {
+          if (savedAddresses.length === 0 && data.postalCode && data.address) {
+            await createAddress(user!.id, {
+              name: '기본배송지',
+              recipientName: data.recipientName,
+              recipientPhone: data.recipientPhone,
+              postalCode: data.postalCode,
+              address1: data.address,
+              address2: data.address2 || '',
+              isDefault: true,
+            });
+          }
+        } catch {
+          // 배송지 자동 저장 실패는 무시
+        }
+      }
+
       if (paymentMethod === 'bank_transfer') {
         // 무통장: 즉시 주문 생성 → 장바구니 삭제 → 입금 대기 페이지로 이동
         const order = await createOrder(user.id, orderItems, orderInfo, '무통장입금');
         if (selectedCoupon) await useCoupon(selectedCoupon.id);
         if (usePointsAmount > 0) await usePoints(user.id, usePointsAmount, order.id, `주문 ${order.orderNumber} 포인트 사용`);
         await clearCart(user.id);
+        await autoSaveAddressIfEmpty();
         navigate(`/checkout/bank-transfer?orderId=${order.id}&orderNumber=${order.orderNumber}&amount=${total}`);
         return;
       }
@@ -455,6 +510,7 @@ export default function CheckoutPage() {
       if (selectedCoupon) await useCoupon(selectedCoupon.id);
       if (usePointsAmount > 0) await usePoints(user.id, usePointsAmount, order.id, `주문 ${order.orderNumber} 포인트 사용`);
       await clearCart(user.id);
+      await autoSaveAddressIfEmpty();
 
       await requestPayment(activePG!, {
         amount: total,
@@ -500,124 +556,144 @@ export default function CheckoutPage() {
           <div className="lg:col-span-2 space-y-6">
             {/* 배송지 정보 */}
             <Card className="p-6">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="flex items-center gap-2 text-xl font-bold">
-                  <MapPin className="h-5 w-5" />
-                  배송지 정보
-                </h2>
-                {savedAddresses.length > 0 && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowAddressList(!showAddressList)}
-                  >
-                    저장된 배송지
-                    {showAddressList ? <ChevronUp className="ml-1 h-4 w-4" /> : <ChevronDown className="ml-1 h-4 w-4" />}
-                  </Button>
-                )}
-              </div>
+              <h2 className="mb-4 flex items-center gap-2 text-xl font-bold">
+                <MapPin className="h-5 w-5" />
+                배송지 정보
+              </h2>
 
-              {/* 저장된 배송지 목록 */}
-              {showAddressList && savedAddresses.length > 0 && (
-                <div className="mb-4 space-y-2">
+              {/* 저장된 배송지 라디오 선택 */}
+              {savedAddresses.length > 0 && (
+                <div className="mb-5 space-y-2">
                   {savedAddresses.map((addr) => (
-                    <button
+                    <label
                       key={addr.id}
-                      type="button"
-                      onClick={() => selectAddress(addr)}
-                      className="w-full rounded-lg border p-3 text-left transition-colors hover:border-blue-500 hover:bg-blue-50"
+                      className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+                        selectedAddressId === addr.id ? 'border-blue-500 bg-blue-50' : 'hover:bg-gray-50'
+                      }`}
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{addr.name}</span>
-                        {addr.isDefault && (
-                          <span className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700">기본</span>
-                        )}
+                      <input
+                        type="radio"
+                        name="addressSelect"
+                        checked={selectedAddressId === addr.id}
+                        onChange={() => handleSelectSavedAddress(addr)}
+                        className="mt-0.5 h-4 w-4 shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium">{addr.name}</span>
+                          {addr.isDefault ? (
+                            <span className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700">기본</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.preventDefault(); setAddressAsDefault(addr.id); }}
+                              className="text-xs text-gray-400 underline hover:text-blue-600"
+                            >
+                              기본으로 설정
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600">{addr.recipientName} · {addr.recipientPhone}</p>
+                        <p className="text-sm text-gray-500">[{addr.postalCode}] {addr.address1}{addr.address2 && ` ${addr.address2}`}</p>
                       </div>
-                      <p className="text-sm text-gray-600">
-                        {addr.recipientName} · {addr.recipientPhone}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        [{addr.postalCode}] {addr.address1} {addr.address2}
-                      </p>
-                    </button>
+                    </label>
                   ))}
+                  <label
+                    className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors ${
+                      selectedAddressId === 'new' ? 'border-blue-500 bg-blue-50' : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="addressSelect"
+                      checked={selectedAddressId === 'new'}
+                      onChange={handleSelectNew}
+                      className="h-4 w-4 shrink-0"
+                    />
+                    <span className="text-sm font-medium">+ 새 배송지 입력</span>
+                  </label>
                 </div>
               )}
 
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="recipientName">수령인</Label>
-                  <Input
-                    id="recipientName"
-                    {...register('recipientName')}
-                    placeholder="받으시는 분 이름"
-                  />
-                  {errors.recipientName && (
-                    <p className="mt-1 text-sm text-red-500">{errors.recipientName.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <Label htmlFor="recipientPhone">휴대폰 번호</Label>
-                  <Input
-                    id="recipientPhone"
-                    {...register('recipientPhone')}
-                    placeholder="01012345678"
-                  />
-                  {errors.recipientPhone && (
-                    <p className="mt-1 text-sm text-red-500">{errors.recipientPhone.message}</p>
-                  )}
-                </div>
-
-                <div>
-                  <Label>우편번호</Label>
-                  <div className="flex gap-2">
+              {/* 새 배송지 입력 폼 */}
+              {(selectedAddressId === 'new' || savedAddresses.length === 0) && (
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="recipientName">수령인</Label>
                     <Input
-                      id="postalCode"
-                      {...register('postalCode')}
-                      placeholder="12345"
-                      readOnly
-                      className="w-32 bg-gray-50"
+                      id="recipientName"
+                      {...register('recipientName')}
+                      placeholder="받으시는 분 이름"
                     />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={openAddressSearch}
-                      className="shrink-0"
-                    >
-                      <Search className="mr-1.5 h-4 w-4" />
-                      주소 검색
-                    </Button>
+                    {errors.recipientName && (
+                      <p className="mt-1 text-sm text-red-500">{errors.recipientName.message}</p>
+                    )}
                   </div>
-                  {errors.postalCode && (
-                    <p className="mt-1 text-sm text-red-500">{errors.postalCode.message}</p>
-                  )}
-                </div>
 
-                <div>
-                  <Label htmlFor="address">도로명 주소</Label>
-                  <Input
-                    id="address"
-                    {...register('address')}
-                    placeholder="주소 검색 버튼을 눌러주세요"
-                    readOnly
-                    className="bg-gray-50"
-                  />
-                  {errors.address && (
-                    <p className="mt-1 text-sm text-red-500">{errors.address.message}</p>
-                  )}
-                </div>
+                  <div>
+                    <Label htmlFor="recipientPhone">휴대폰 번호</Label>
+                    <Input
+                      id="recipientPhone"
+                      {...register('recipientPhone')}
+                      placeholder="01012345678"
+                    />
+                    {errors.recipientPhone && (
+                      <p className="mt-1 text-sm text-red-500">{errors.recipientPhone.message}</p>
+                    )}
+                  </div>
 
-                <div>
-                  <Label htmlFor="address2">상세주소</Label>
-                  <Input
-                    id="address2"
-                    {...register('address2')}
-                    placeholder="동, 호수 등 상세주소를 입력해주세요"
-                  />
-                </div>
+                  <div>
+                    <Label>우편번호</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="postalCode"
+                        {...register('postalCode')}
+                        placeholder="12345"
+                        readOnly
+                        className="w-32 bg-gray-50"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={openAddressSearch}
+                        className="shrink-0"
+                      >
+                        <Search className="mr-1.5 h-4 w-4" />
+                        주소 검색
+                      </Button>
+                    </div>
+                    {errors.postalCode && (
+                      <p className="mt-1 text-sm text-red-500">{errors.postalCode.message}</p>
+                    )}
+                  </div>
 
+                  <div>
+                    <Label htmlFor="address">도로명 주소</Label>
+                    <Input
+                      id="address"
+                      {...register('address')}
+                      placeholder="주소 검색 버튼을 눌러주세요"
+                      readOnly
+                      className="bg-gray-50"
+                    />
+                    {errors.address && (
+                      <p className="mt-1 text-sm text-red-500">{errors.address.message}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <Label htmlFor="address2">상세주소</Label>
+                    <Input
+                      id="address2"
+                      {...register('address2')}
+                      placeholder="동, 호수 등 상세주소를 입력해주세요"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* 배송 요청사항 + 동적 추가 필드 (항상 표시) */}
+              <div className={`space-y-4 ${selectedAddressId !== 'new' && savedAddresses.length > 0 ? '' : 'mt-4'}`}>
                 <div>
                   <Label htmlFor="deliveryRequest">배송 요청사항 (선택)</Label>
                   <Input
@@ -627,7 +703,6 @@ export default function CheckoutPage() {
                   />
                 </div>
 
-                {/* 동적 배송지 추가 필드 */}
                 {shippingFields.map((field) => (
                   <div key={field.id}>
                     <Label htmlFor={`extra_${field.field_key}`}>

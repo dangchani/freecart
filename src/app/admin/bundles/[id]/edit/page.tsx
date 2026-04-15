@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -17,10 +17,20 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAuth } from '@/hooks/useAuth';
-import { ArrowLeft, Plus, X, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Plus, X, Trash2, ChevronDown, ChevronUp, Image as ImageIcon } from 'lucide-react';
+
+interface UploadedImage {
+  id: string;
+  url: string;
+  file?: File;
+  isPrimary: boolean;
+  sortOrder: number;
+  isExisting?: boolean;
+}
 import { createClient } from '@/lib/supabase/client';
 import { saveBundleItems, getBundleItems, getEffectiveBundleStock, type BundleItemDraft } from '@/services/bundles';
 import { saveGiftSets, getGiftSetsAdmin, type GiftSetDraft, type GiftSetItemDraft, type GiftTierDraft, type GiftType } from '@/services/giftSets';
+import { getContrastColor, isValidHex } from '@/lib/utils';
 import { saveQuantityDiscounts, getQuantityDiscountsAdmin, type QuantityDiscountDraft } from '@/services/discounts';
 
 // =============================================================================
@@ -36,23 +46,23 @@ const bundleSchema = z.object({
   brandId: z.string().uuid().optional().nullable(),
   regularPrice: z.number().min(0, '정가를 입력해주세요'),
   salePrice: z.number().min(0, '판매가를 입력해주세요'),
-  costPrice: z.number().min(0).optional(),
-  pointRate: z.number().min(0).max(100).optional(),
+  costPrice: z.preprocess((v) => (typeof v === 'number' && isNaN(v) ? undefined : v), z.number().min(0).optional()),
+  pointRate: z.preprocess((v) => (typeof v === 'number' && isNaN(v) ? undefined : v), z.number().min(0).max(100).optional()),
   stockAlertQuantity: z.number().int().min(0).default(10),
   minPurchaseQuantity: z.number().int().min(1).default(1),
-  maxPurchaseQuantity: z.number().int().min(1).optional().nullable(),
-  dailyPurchaseLimit: z.number().int().min(1).optional().nullable(),
+  maxPurchaseQuantity: z.preprocess((v) => (typeof v === 'number' && isNaN(v) ? undefined : v), z.number().int().min(1).optional().nullable()),
+  dailyPurchaseLimit: z.preprocess((v) => (typeof v === 'number' && isNaN(v) ? undefined : v), z.number().int().min(1).optional().nullable()),
   sku: z.string().optional(),
   manufacturer: z.string().optional(),
   origin: z.string().optional(),
-  weight: z.number().min(0).optional(),
+  weight: z.preprocess((v) => (typeof v === 'number' && isNaN(v) ? undefined : v), z.number().min(0).optional()),
   status: z.enum(['draft', 'active', 'inactive']).default('active'),
   isFeatured: z.boolean().default(false),
   isNew: z.boolean().default(false),
   isBest: z.boolean().default(false),
   isSale: z.boolean().default(false),
   shippingType: z.enum(['default', 'free', 'custom']).default('default'),
-  shippingFee: z.number().min(0).optional(),
+  shippingFee: z.preprocess((v) => (typeof v === 'number' && isNaN(v) ? undefined : v), z.number().min(0).optional()),
   seoTitle: z.string().max(255).optional(),
   seoDescription: z.string().max(500).optional(),
   seoKeywords: z.string().max(255).optional(),
@@ -76,6 +86,9 @@ export default function EditBundlePage() {
   const [submitting, setSubmitting] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const [effectiveStock, setEffectiveStock] = useState<number | null>(null);
+  const [images, setImages] = useState<UploadedImage[]>([]);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [expandedSections, setExpandedSections] = useState({
     basic: true,
@@ -152,7 +165,8 @@ export default function EditBundlePage() {
           status, is_featured, is_new, is_best, is_sale,
           shipping_type, shipping_fee,
           seo_title, seo_description, seo_keywords,
-          has_options, product_type, tags
+          has_options, product_type, tags,
+          product_images(id, url, is_primary, sort_order)
         `)
         .eq('id', id!)
         .single();
@@ -163,6 +177,18 @@ export default function EditBundlePage() {
         navigate(`/admin/products/${product.slug}/edit`);
         return;
       }
+
+      // 이미지 로드
+      const existingImages = ((product as any).product_images || [])
+        .sort((a: any, b: any) => a.sort_order - b.sort_order)
+        .map((img: any) => ({
+          id: img.id,
+          url: img.url,
+          isPrimary: img.is_primary,
+          sortOrder: img.sort_order,
+          isExisting: true,
+        }));
+      setImages(existingImages);
 
       // 구성상품 로드
       const existingBundleItems = await getBundleItems(product.id);
@@ -203,7 +229,7 @@ export default function EditBundlePage() {
         startsAt: s.startsAt ?? '',
         endsAt: s.endsAt ?? '',
         badgeText: s.badgeText ?? '',
-        badgeColor: s.badgeColor ?? 'red',
+        badgeColor: s.badgeColor ?? '#ef4444',
         tiers: s.tiers.map((t) => ({ localId: crypto.randomUUID(), dbId: t.id, minQuantity: t.minQuantity, freeCount: t.freeCount })),
         items: s.items.map((i) => ({ localId: crypto.randomUUID(), dbId: i.id, giftProductId: i.giftProductId, giftProductName: i.giftProductName, giftProductImageUrl: i.giftProductImageUrl, giftProductSalePrice: i.giftProductSalePrice })),
       })));
@@ -294,7 +320,7 @@ export default function EditBundlePage() {
   // ---------------- Gift Sets ----------------
 
   function newGiftSetDraft(): GiftSetDraft {
-    return { localId: crypto.randomUUID(), dbId: null, name: '', giftType: 'select', isActive: true, startsAt: '', endsAt: '', badgeText: '', badgeColor: 'red', tiers: [], items: [] };
+    return { localId: crypto.randomUUID(), dbId: null, name: '', giftType: 'select', isActive: true, startsAt: '', endsAt: '', badgeText: '', badgeColor: '#ef4444', tiers: [], items: [] };
   }
 
   function updateGiftSet(localId: string, patch: Partial<GiftSetDraft>) {
@@ -334,6 +360,47 @@ export default function EditBundlePage() {
     const supabase = createClient();
     const { data } = await supabase.from('products').select('id, name, sale_price, product_images(url, is_primary)').eq('status', 'active').eq('category_id', categoryId).order('name', { ascending: true });
     setGiftProductResults((prev) => ({ ...prev, [setLocalId]: data || [] }));
+  }
+
+  // ---------------- Images ----------------
+
+  async function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploadingImages(true);
+    try {
+      const supabase = createClient();
+      const newImages: UploadedImage[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const filePath = `products/${fileName}`;
+        const { error: uploadError } = await supabase.storage.from('products').upload(filePath, file);
+        if (uploadError) { console.error('Upload error:', uploadError); continue; }
+        const { data: publicUrlData } = supabase.storage.from('products').getPublicUrl(filePath);
+        newImages.push({ id: `temp-${Date.now()}-${i}`, url: publicUrlData.publicUrl, file, isPrimary: images.length === 0 && i === 0, sortOrder: images.length + i });
+      }
+      setImages((prev) => [...prev, ...newImages]);
+    } catch (error) {
+      console.error('Failed to upload images:', error);
+      alert('이미지 업로드 중 오류가 발생했습니다.');
+    } finally {
+      setUploadingImages(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  function removeImage(imageId: string) {
+    setImages((prev) => {
+      const filtered = prev.filter((img) => img.id !== imageId);
+      if (filtered.length > 0 && !filtered.some((img) => img.isPrimary)) filtered[0].isPrimary = true;
+      return filtered;
+    });
+  }
+
+  function setPrimaryImage(imageId: string) {
+    setImages((prev) => prev.map((img) => ({ ...img, isPrimary: img.id === imageId })));
   }
 
   // ---------------- Tags ----------------
@@ -402,6 +469,19 @@ export default function EditBundlePage() {
 
       if (productError) throw productError;
 
+      // 이미지 동기화: 기존 이미지 삭제 후 재삽입
+      await supabase.from('product_images').delete().eq('product_id', id!);
+      if (images.length > 0) {
+        const imageInserts = images.map((img, idx) => ({
+          product_id: id!,
+          url: img.url,
+          is_primary: img.isPrimary,
+          sort_order: idx,
+        }));
+        const { error: imageError } = await supabase.from('product_images').insert(imageInserts);
+        if (imageError) throw imageError;
+      }
+
       // 태그 테이블 동기화
       await supabase.from('product_tags').delete().eq('product_id', id!);
       if (data.tags && data.tags.length > 0) {
@@ -458,6 +538,50 @@ export default function EditBundlePage() {
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+
+        {/* ============================================= */}
+        {/* 상품 이미지 */}
+        {/* ============================================= */}
+        <Card className="overflow-hidden">
+          <div className="p-4 bg-gray-50 border-b">
+            <span className="font-semibold text-gray-900">상품 이미지</span>
+          </div>
+          <div className="p-4">
+            <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleImageSelect} className="hidden" />
+            <div className="flex flex-wrap gap-4">
+              {images.map((image) => (
+                <div key={image.id} className={`relative group w-32 h-32 rounded-lg overflow-hidden border-2 ${image.isPrimary ? 'border-blue-500' : 'border-gray-200'}`}>
+                  <img src={image.url} alt="상품 이미지" className="w-full h-full object-cover" />
+                  {image.isPrimary && (
+                    <span className="absolute top-1 left-1 px-1.5 py-0.5 bg-blue-500 text-white text-[10px] font-bold rounded">대표</span>
+                  )}
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                    {!image.isPrimary && (
+                      <button type="button" onClick={() => setPrimaryImage(image.id)} className="p-1.5 bg-white rounded-full text-blue-600 hover:bg-blue-50" title="대표 이미지로 설정">
+                        <ImageIcon className="h-4 w-4" />
+                      </button>
+                    )}
+                    <button type="button" onClick={() => removeImage(image.id)} className="p-1.5 bg-white rounded-full text-red-600 hover:bg-red-50" title="삭제">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploadingImages}
+                className="w-32 h-32 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center text-gray-500 hover:border-blue-500 hover:text-blue-500 transition-colors disabled:opacity-50">
+                {uploadingImages ? (
+                  <span className="text-xs">업로드 중...</span>
+                ) : (
+                  <>
+                    <Plus className="h-8 w-8 mb-1" />
+                    <span className="text-xs">이미지 추가</span>
+                  </>
+                )}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-gray-500">첫 번째 이미지가 대표 이미지로 설정됩니다. 이미지를 클릭하여 대표 이미지를 변경할 수 있습니다.</p>
+          </div>
+        </Card>
 
         {/* ============================================= */}
         {/* 기본 정보 */}
@@ -915,6 +1039,55 @@ export default function EditBundlePage() {
                       <Label>종료일시 (선택)</Label>
                       <Input type="datetime-local" value={giftSet.endsAt} onChange={(e) => updateGiftSet(giftSet.localId, { endsAt: e.target.value })} />
                     </div>
+                  </div>
+
+                  {/* 띠지 설정 */}
+                  <div className="flex items-end gap-2 flex-wrap">
+                    <div className="flex-1 min-w-[160px]">
+                      <Label>썸네일 띠지 텍스트 <span className="text-xs font-normal text-gray-400">(최대 20자, 비우면 미표시)</span></Label>
+                      <Input
+                        value={giftSet.badgeText}
+                        onChange={(e) => updateGiftSet(giftSet.localId, { badgeText: e.target.value.slice(0, 20) })}
+                        placeholder="예: 3+1, 기획전, 증정행사"
+                        maxLength={20}
+                      />
+                    </div>
+                    <div className="shrink-0">
+                      <Label>띠지 색상</Label>
+                      <div className="flex items-center gap-1.5 pt-1">
+                        {(['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#000000'] as string[]).map((hex) => (
+                          <button
+                            key={hex}
+                            type="button"
+                            onClick={() => updateGiftSet(giftSet.localId, { badgeColor: hex })}
+                            className={`h-7 w-7 rounded-full border-2 transition-transform ${giftSet.badgeColor === hex ? 'border-gray-700 scale-110' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                            style={{ backgroundColor: hex }}
+                            title={hex}
+                          />
+                        ))}
+                        <Input
+                          value={giftSet.badgeColor}
+                          onChange={(e) => {
+                            const val = e.target.value.startsWith('#') ? e.target.value : '#' + e.target.value;
+                            updateGiftSet(giftSet.localId, { badgeColor: val });
+                          }}
+                          placeholder="#ef4444"
+                          className="w-24 font-mono text-xs"
+                          maxLength={7}
+                        />
+                      </div>
+                    </div>
+                    {giftSet.badgeText && isValidHex(giftSet.badgeColor) && (
+                      <div className="shrink-0 pb-0.5">
+                        <Label className="invisible">미리보기</Label>
+                        <div
+                          className="rounded px-3 py-1 text-xs font-bold"
+                          style={{ backgroundColor: giftSet.badgeColor, color: getContrastColor(giftSet.badgeColor) }}
+                        >
+                          {giftSet.badgeText}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

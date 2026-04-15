@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/hooks/useAuth';
 import { format } from 'date-fns';
-import { Star, Search } from 'lucide-react';
+import { Star, Search, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
 interface Review {
@@ -17,6 +17,8 @@ interface Review {
   createdAt: string;
   isVisible: boolean;
   isBest: boolean;
+  adminReply: string | null;
+  adminRepliedAt: string | null;
 }
 
 interface Category {
@@ -48,6 +50,8 @@ export default function AdminReviewsPage() {
   const [error, setError] = useState('');
   const [replyingId, setReplyingId] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState('');
+  const [replySubmitting, setReplySubmitting] = useState(false);
+  const [expandedReplyId, setExpandedReplyId] = useState<string | null>(null);
 
   // 필터 상태
   const [rootCategories, setRootCategories] = useState<Category[]>([]);
@@ -118,7 +122,7 @@ export default function AdminReviewsPage() {
 
       let query = supabase
         .from('reviews')
-        .select('id, rating, content, is_visible, is_best, created_at, products(id, name), users(name)')
+        .select('id, rating, content, is_visible, is_best, created_at, admin_reply, admin_replied_at, products(id, name), users(name)')
         .order('created_at', { ascending: false });
 
       if (productIds) query = query.in('product_id', productIds);
@@ -138,6 +142,8 @@ export default function AdminReviewsPage() {
         createdAt: r.created_at,
         isVisible: r.is_visible,
         isBest: r.is_best,
+        adminReply: r.admin_reply || null,
+        adminRepliedAt: r.admin_replied_at || null,
       }));
 
       // 상품명 텍스트 검색 (클라이언트 필터)
@@ -168,6 +174,7 @@ export default function AdminReviewsPage() {
   async function handleReplySubmit(reviewId: string) {
     if (!replyContent.trim()) { alert('답변 내용을 입력해주세요.'); return; }
     try {
+      setReplySubmitting(true);
       const supabase = createClient();
       const { error } = await supabase.from('reviews').update({
         admin_reply: replyContent,
@@ -179,6 +186,36 @@ export default function AdminReviewsPage() {
       await loadReviews();
     } catch (err) {
       alert(err instanceof Error ? err.message : '답변 등록 중 오류가 발생했습니다.');
+    } finally {
+      setReplySubmitting(false);
+    }
+  }
+
+  async function handleReplyDelete(reviewId: string) {
+    if (!confirm('답변을 삭제하시겠습니까?')) return;
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.from('reviews').update({
+        admin_reply: null,
+        admin_replied_at: null,
+      }).eq('id', reviewId);
+      if (error) throw error;
+      setExpandedReplyId(null);
+      setReplyingId(null);
+      setReplyContent('');
+      await loadReviews();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '답변 삭제 중 오류가 발생했습니다.');
+    }
+  }
+
+  function openReplyForm(review: Review) {
+    if (replyingId === review.id) {
+      setReplyingId(null);
+      setReplyContent('');
+    } else {
+      setReplyingId(review.id);
+      setReplyContent(review.adminReply || '');
     }
   }
 
@@ -303,12 +340,12 @@ export default function AdminReviewsPage() {
             <table className="w-full text-sm">
               <thead className="border-b bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">상품명</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">작성자</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">별점</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">내용</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">날짜</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">상태</th>
+                  <th className="px-4 py-3 text-center font-medium text-gray-600">상품명</th>
+                  <th className="px-4 py-3 text-center font-medium text-gray-600">작성자</th>
+                  <th className="px-4 py-3 text-center font-medium text-gray-600">별점</th>
+                  <th className="px-4 py-3 text-center font-medium text-gray-600">내용</th>
+                  <th className="px-4 py-3 text-center font-medium text-gray-600">날짜</th>
+                  <th className="px-4 py-3 text-center font-medium text-gray-600">상태</th>
                   <th className="px-4 py-3 text-center font-medium text-gray-600">관리</th>
                 </tr>
               </thead>
@@ -316,22 +353,34 @@ export default function AdminReviewsPage() {
                 {reviews.map((review) => (
                   <>
                     <tr key={review.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium">{review.productName}</td>
-                      <td className="px-4 py-3 text-gray-600">{review.authorName}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1">
+                      <td className="px-4 py-3 text-center font-medium">{review.productName}</td>
+                      <td className="px-4 py-3 text-center text-gray-600">{review.authorName}</td>
+                      <td className="px-4 py-3 text-center">
+                        <div className="flex items-center justify-center gap-1">
                           <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
                           <span>{review.rating}</span>
                         </div>
                       </td>
-                      <td className="max-w-xs px-4 py-3 text-gray-600">
+                      <td className="max-w-xs px-4 py-3 text-center text-gray-600">
                         <span className="line-clamp-2">{review.content}</span>
+                        {/* 기존 답변 미리보기 */}
+                        {review.adminReply && (
+                          <button
+                            type="button"
+                            onClick={() => setExpandedReplyId(expandedReplyId === review.id ? null : review.id)}
+                            className="mt-1 inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                          >
+                            <MessageSquare className="h-3 w-3" />
+                            답변 있음
+                            {expandedReplyId === review.id ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                          </button>
+                        )}
                       </td>
-                      <td className="px-4 py-3 text-gray-600">
+                      <td className="px-4 py-3 text-center text-gray-600">
                         {review.createdAt ? format(new Date(review.createdAt), 'yyyy.MM.dd') : '-'}
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-col gap-1">
+                      <td className="px-4 py-3 text-center">
+                        <div className="flex flex-col items-center gap-1">
                           <Badge variant={review.isVisible ? 'default' : 'secondary'}>
                             {review.isVisible ? '노출' : '숨김'}
                           </Badge>
@@ -340,36 +389,95 @@ export default function AdminReviewsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap justify-center gap-1">
-                          <Button size="sm" variant="outline" onClick={() => handleToggleVisible(review.id, review.isVisible)}>
-                            {review.isVisible ? '숨기기' : '노출'}
-                          </Button>
-                          <Button size="sm" variant={review.isBest ? 'default' : 'outline'} onClick={() => handleToggleBest(review.id, review.isBest)}>
-                            베스트
-                          </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => { setReplyingId(replyingId === review.id ? null : review.id); setReplyContent(''); }}
+                            onClick={() => handleToggleVisible(review.id, review.isVisible)}
                           >
-                            답변
+                            {review.isVisible ? '숨기기' : '노출'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={review.isBest ? 'default' : 'outline'}
+                            onClick={() => handleToggleBest(review.id, review.isBest)}
+                          >
+                            {review.isBest ? '베스트 해제' : '베스트'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={replyingId === review.id ? 'default' : 'outline'}
+                            onClick={() => openReplyForm(review)}
+                          >
+                            {review.adminReply ? '답변 수정' : '답변'}
                           </Button>
                         </div>
                       </td>
                     </tr>
+
+                    {/* 기존 답변 펼침 */}
+                    {expandedReplyId === review.id && review.adminReply && replyingId !== review.id && (
+                      <tr key={`${review.id}-reply-view`}>
+                        <td colSpan={7} className="bg-blue-50 px-6 py-3">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <p className="mb-1 text-xs font-medium text-blue-700">판매자 답변</p>
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{review.adminReply}</p>
+                              {review.adminRepliedAt && (
+                                <p className="mt-1 text-xs text-gray-400">
+                                  {format(new Date(review.adminRepliedAt), 'yyyy.MM.dd HH:mm')}
+                                </p>
+                              )}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-red-500 hover:text-red-700 shrink-0"
+                              onClick={() => handleReplyDelete(review.id)}
+                            >
+                              삭제
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+
+                    {/* 답변 입력 폼 */}
                     {replyingId === review.id && (
-                      <tr key={`${review.id}-reply`}>
+                      <tr key={`${review.id}-reply-form`}>
                         <td colSpan={7} className="bg-blue-50 px-4 py-3">
                           <div className="flex gap-2">
                             <textarea
                               value={replyContent}
                               onChange={(e) => setReplyContent(e.target.value)}
-                              rows={2}
+                              rows={3}
                               placeholder="답변 내용을 입력하세요"
                               className="flex-1 rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                             <div className="flex flex-col gap-1">
-                              <Button size="sm" onClick={() => handleReplySubmit(review.id)}>등록</Button>
-                              <Button size="sm" variant="outline" onClick={() => setReplyingId(null)}>취소</Button>
+                              <Button
+                                size="sm"
+                                disabled={replySubmitting}
+                                onClick={() => handleReplySubmit(review.id)}
+                              >
+                                {replySubmitting ? '저장 중...' : '저장'}
+                              </Button>
+                              {review.adminReply && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-red-500 hover:text-red-700"
+                                  onClick={() => handleReplyDelete(review.id)}
+                                >
+                                  삭제
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => { setReplyingId(null); setReplyContent(''); }}
+                              >
+                                취소
+                              </Button>
                             </div>
                           </div>
                         </td>

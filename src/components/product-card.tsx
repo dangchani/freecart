@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, getContrastColor } from '@/lib/utils';
 import { addToCart } from '@/services/cart';
 import { useAuth } from '@/hooks/useAuth';
 import { useCartStore } from '@/store/cart';
@@ -26,16 +26,8 @@ export function ProductCard({ product }: ProductCardProps) {
     : 0;
   const isSoldOut = product.stockQuantity === 0;
 
-  // 띠지: 사은품 세트 badge_text 우선, 없으면 플래그 기반 자동 생성
   const badgeText  = product.activeBadgeText  || null;
-  const badgeColor = product.activeBadgeColor || 'red';
-  const BADGE_COLORS: Record<string, string> = {
-    red:    'bg-red-500 text-white',
-    yellow: 'bg-yellow-400 text-gray-900',
-    green:  'bg-emerald-500 text-white',
-    blue:   'bg-blue-500 text-white',
-    purple: 'bg-purple-500 text-white',
-  };
+  const badgeColor = product.activeBadgeColor || '#ef4444';
 
   async function handleCartClick(e: React.MouseEvent) {
     e.preventDefault();
@@ -87,7 +79,10 @@ export function ProductCard({ product }: ProductCardProps) {
           )}
           {/* 하단 띠지 */}
           {badgeText && !isSoldOut && (
-            <div className={`absolute bottom-0 left-0 right-0 py-1 text-center text-xs font-bold tracking-wide ${BADGE_COLORS[badgeColor] ?? BADGE_COLORS.red}`}>
+            <div
+              className="absolute bottom-0 left-0 right-0 py-1 text-center text-xs font-bold tracking-wide"
+              style={{ backgroundColor: badgeColor, color: getContrastColor(badgeColor) }}
+            >
               {badgeText}
             </div>
           )}

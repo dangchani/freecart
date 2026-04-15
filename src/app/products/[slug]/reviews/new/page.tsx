@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -21,6 +21,8 @@ type ReviewForm = z.infer<typeof reviewSchema>;
 export default function NewReviewPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const orderItemId = searchParams.get('orderItemId');
   const { user, loading: authLoading } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [rating, setRating] = useState(5);
@@ -65,6 +67,7 @@ export default function NewReviewPage() {
         user_id: user.id,
         rating: data.rating,
         content: data.content,
+        ...(orderItemId ? { order_item_id: orderItemId } : {}),
       }).select('id').single();
 
       if (error) throw error;
@@ -158,8 +161,7 @@ export default function NewReviewPage() {
         <ArrowLeft className="mr-1 h-4 w-4" />상품으로 돌아가기
       </Link>
       <h1 className="mb-8 text-3xl font-bold">리뷰 작성</h1>
-      <div className="max-w-2xl">
-        <Card className="p-6">
+      <Card className="p-6">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             <div>
               <Label>평점</Label>
@@ -226,7 +228,6 @@ export default function NewReviewPage() {
             </div>
           </form>
         </Card>
-      </div>
     </div>
   );
 }

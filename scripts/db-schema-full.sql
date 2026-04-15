@@ -296,6 +296,7 @@ CREATE TABLE IF NOT EXISTS products (
   sku                   VARCHAR(100),
   summary               VARCHAR(500),
   description           TEXT,
+  bundle_description    TEXT,
   manufacturer          VARCHAR(100),
   origin                VARCHAR(100),
   weight                DECIMAL(10,2),
@@ -328,6 +329,8 @@ CREATE TABLE IF NOT EXISTS products (
   video_url             VARCHAR(500),
   has_options           BOOLEAN NOT NULL DEFAULT false,
   product_type          TEXT NOT NULL DEFAULT 'single' CHECK (product_type IN ('single', 'bundle')),
+  show_stock            BOOLEAN NOT NULL DEFAULT true,   -- 사용자 화면에 재고 수량 표시 여부
+  show_gift_stock       BOOLEAN NOT NULL DEFAULT true,   -- 사은품 품절 정보 표시 여부
   shipping_type         VARCHAR(20) NOT NULL DEFAULT 'default',
   shipping_fee          INTEGER,
   shipping_notice       TEXT,
@@ -511,8 +514,9 @@ CREATE TABLE IF NOT EXISTS product_gift_sets (
   starts_at   TIMESTAMPTZ,
   ends_at     TIMESTAMPTZ,
   sort_order  INTEGER      NOT NULL DEFAULT 0,
-  badge_text  VARCHAR(20),                              -- 썸네일 띠지 텍스트 (예: "3+1", "기획전")
-  badge_color VARCHAR(20)  DEFAULT 'red',               -- 띠지 색상 키: red|yellow|green|blue|purple
+  badge_text         VARCHAR(20),                       -- 썸네일 띠지 텍스트 (예: "3+1", "기획전")
+  badge_color        VARCHAR(20)  DEFAULT 'red',        -- 띠지 색상 키: red|yellow|green|blue|purple
+  hide_when_soldout  BOOLEAN      NOT NULL DEFAULT false, -- 모든 사은품 품절 시 세트 자동 숨김
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
@@ -2556,7 +2560,7 @@ CREATE POLICY "product_qna_manage_own" ON product_qna
   FOR ALL USING (auth.uid()::text = user_id::text)
   WITH CHECK (auth.uid()::text = user_id::text);
 
--- reviews: anyone can read visible reviews; users manage their own
+-- reviews: anyone can read visible reviews; users manage their own; admin full access
 DROP POLICY IF EXISTS "reviews_read_public" ON reviews;
 CREATE POLICY "reviews_read_public" ON reviews
   FOR SELECT USING (is_visible = true);
@@ -2564,6 +2568,11 @@ CREATE POLICY "reviews_read_public" ON reviews
 DROP POLICY IF EXISTS "reviews_manage_own" ON reviews;
 CREATE POLICY "reviews_manage_own" ON reviews
   FOR ALL USING (auth.uid()::text = user_id::text);
+
+DROP POLICY IF EXISTS "reviews_admin_all" ON reviews;
+CREATE POLICY "reviews_admin_all" ON reviews
+  FOR ALL USING (is_admin(auth.uid()))
+  WITH CHECK (is_admin(auth.uid()));
 
 -- review_likes: users manage their own likes
 DROP POLICY IF EXISTS "review_likes_own" ON review_likes;
@@ -3445,7 +3454,9 @@ INSERT INTO system_settings (key, value, description) VALUES
   ('notice_bar_color', '"#2563eb"'::jsonb,
    '공지 배너 배경색. HEX 값(예: #2563eb). 비어있으면 기본 파란색 사용'),
   ('image_banner_enabled', 'true'::jsonb,
-   '메인 페이지 이미지 배너 섹션 표시 여부. true이면 banners 테이블의 활성 배너를 메인에 표시')
+   '메인 페이지 이미지 배너 섹션 표시 여부. true이면 banners 테이블의 활성 배너를 메인에 표시'),
+  ('use_deposit', 'false'::jsonb,
+   '예치금 기능 사용 여부. true이면 관리자 사이드바에 예치금 관리 메뉴가 표시됨')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
