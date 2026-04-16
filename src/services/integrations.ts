@@ -7,9 +7,10 @@ import { createClient } from '@/lib/supabase/client';
 export interface IntegrationField {
   key: string;
   label: string;
-  type: 'text' | 'password';
+  type: 'text' | 'password' | 'toggle';
   required?: boolean;
   placeholder?: string;
+  description?: string;
 }
 
 export interface IntegrationProvider {

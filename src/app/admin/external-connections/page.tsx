@@ -18,6 +18,7 @@ import {
   type IntegrationInstance,
   type IntegrationField,
 } from '@/services/integrations';
+import { syncGfData, getGfSellers, getGfCenters, getGfContracts, type GfCenter, type GfContract } from '@/services/goodsflow';
 
 // 기본 제공 서비스 (삭제 불가)
 const BUILT_IN_KEYS = new Set(['goodsflow', 'ecount', 'ppurio', 'popbill']);
@@ -25,7 +26,6 @@ const BUILT_IN_KEYS = new Set(['goodsflow', 'ecount', 'ppurio', 'popbill']);
 // 카테고리 표시 순서 (기타는 맨 뒤)
 const CATEGORY_ORDER = ['물류/배송', 'ERP', '문자/알림'];
 
-type TestStatus = 'idle' | 'testing' | 'success' | 'fail';
 
 interface FieldState {
   value: string;
@@ -61,8 +61,17 @@ export default function AdminExternalConnectionsPage() {
   const [saving, setSaving] = useState<string | null>(null);
   const [disabling, setDisabling] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const [testStatus, setTestStatus] = useState<Record<string, TestStatus>>({});
-  const [testMessage, setTestMessage] = useState<Record<string, string>>({});
+
+  // 굿스플로 전용
+  const [gfProdSyncing, setGfProdSyncing] = useState(false);
+  const [gfTestSyncing, setGfTestSyncing] = useState(false);
+  const [gfProdError, setGfProdError] = useState('');
+  const [gfTestError, setGfTestError] = useState('');
+  const [gfProdData, setGfProdData] = useState<{ centers: GfCenter[]; contracts: GfContract[] } | null>(null);
+  const [gfTestData, setGfTestData] = useState<{ centers: GfCenter[]; contracts: GfContract[] } | null>(null);
+  const [gfSellers, setGfSellers] = useState<{ sellerCode: string; sellerName: string }[] | null>(null);
+  const [gfSellersFor, setGfSellersFor] = useState<string | null>(null);
+  const [gfSellersLoading, setGfSellersLoading] = useState(false);
 
   // 새 서비스 추가 모달
   const [showAddModal, setShowAddModal] = useState(false);
@@ -93,15 +102,23 @@ export default function AdminExternalConnectionsPage() {
   }
 
   // 카드 펼치기
-  function toggleExpand(providerKey: string, fields: IntegrationField[]) {
+  async function toggleExpand(providerKey: string, fields: IntegrationField[]) {
     if (expanded === providerKey) { setExpanded(null); return; }
     setExpanded(providerKey);
     const savedCreds = instances.get(providerKey)?.credentials ?? {};
     const initial: Record<string, FieldState> = {};
     fields.forEach((f) => { initial[f.key] = { value: savedCreds[f.key] ?? '', show: false }; });
     setFormValues((prev) => ({ ...prev, [providerKey]: initial }));
-    setTestStatus((prev) => ({ ...prev, [providerKey]: 'idle' }));
-    setTestMessage((prev) => ({ ...prev, [providerKey]: '' }));
+
+    // 굿스플로: 저장된 출고지/계약 데이터 로드
+    if (providerKey === 'goodsflow') {
+      const [pc, tc, pp, tp] = await Promise.all([
+        getGfCenters('prod'), getGfCenters('test'),
+        getGfContracts('prod'), getGfContracts('test'),
+      ]);
+      if (pc.length > 0 || pp.length > 0) setGfProdData({ centers: pc, contracts: pp });
+      if (tc.length > 0 || tp.length > 0) setGfTestData({ centers: tc, contracts: tp });
+    }
   }
 
   function setField(providerKey: string, fieldKey: string, value: string) {
@@ -121,26 +138,6 @@ export default function AdminExternalConnectionsPage() {
     }));
   }
 
-  async function handleTest(provider: IntegrationProvider) {
-    const fields = formValues[provider.key] ?? {};
-    const credentials: Record<string, string> = {};
-    provider.fields.forEach((f) => { credentials[f.key] = fields[f.key]?.value ?? ''; });
-
-    setTestStatus((prev) => ({ ...prev, [provider.key]: 'testing' }));
-    setTestMessage((prev) => ({ ...prev, [provider.key]: '' }));
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase.functions.invoke('test-integration', {
-        body: { provider_key: provider.key, credentials },
-      });
-      if (error) throw new Error(error.message);
-      setTestStatus((prev) => ({ ...prev, [provider.key]: data.ok ? 'success' : 'fail' }));
-      setTestMessage((prev) => ({ ...prev, [provider.key]: data.message }));
-    } catch (e) {
-      setTestStatus((prev) => ({ ...prev, [provider.key]: 'fail' }));
-      setTestMessage((prev) => ({ ...prev, [provider.key]: String(e) }));
-    }
-  }
 
   async function handleSave(provider: IntegrationProvider) {
     const fields = formValues[provider.key] ?? {};
@@ -190,6 +187,65 @@ export default function AdminExternalConnectionsPage() {
       alert(`삭제 실패: ${String(e)}`);
     } finally {
       setDeleting(null);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // 굿스플로 전용 핸들러
+  // -------------------------------------------------------------------------
+
+  async function handleGfSync(env: 'prod' | 'test') {
+    const fields = formValues['goodsflow'] ?? {};
+    const apiKey  = fields[`api_key_${env}`]?.value ?? '';
+    const apiBase = fields[`api_base_${env}`]?.value ?? '';
+    const label   = env === 'prod' ? '운영' : '테스트';
+
+    if (!apiKey.trim()) {
+      alert(`${label} API Key를 먼저 입력해주세요.`);
+      return;
+    }
+    const baseUrl = apiBase.trim() || (env === 'prod' ? 'https://api.goodsflow.io' : 'https://test-api.goodsflow.io');
+
+    if (env === 'prod') { setGfProdSyncing(true); setGfProdError(''); }
+    else                { setGfTestSyncing(true); setGfTestError(''); }
+
+    try {
+      const result = await syncGfData(env, apiKey, baseUrl);
+      if (env === 'prod') setGfProdData(result);
+      else                setGfTestData(result);
+    } catch (e) {
+      if (env === 'prod') setGfProdError(String(e));
+      else                setGfTestError(String(e));
+    } finally {
+      if (env === 'prod') setGfProdSyncing(false);
+      else                setGfTestSyncing(false);
+    }
+  }
+
+  async function handleGfFetchSellers(fieldKey: string) {
+    const env: 'prod' | 'test' = fieldKey === 'seller_code_prod' ? 'prod' : 'test';
+    const fields = formValues['goodsflow'] ?? {};
+    const apiKey  = fields[`api_key_${env}`]?.value ?? '';
+    const apiBase = fields[`api_base_${env}`]?.value ?? '';
+    const label   = env === 'prod' ? '운영' : '테스트';
+
+    if (!apiKey.trim()) {
+      alert(`${label} API Key를 먼저 입력해주세요.`);
+      return;
+    }
+    const baseUrl = apiBase.trim() || (env === 'prod' ? 'https://api.goodsflow.io' : 'https://test-api.goodsflow.io');
+
+    setGfSellersLoading(true);
+    setGfSellers(null);
+    setGfSellersFor(fieldKey);
+    try {
+      const sellers = await getGfSellers(apiKey, baseUrl);
+      setGfSellers(sellers);
+    } catch (e) {
+      alert(`판매자 조회 실패: ${String(e)}`);
+      setGfSellersFor(null);
+    } finally {
+      setGfSellersLoading(false);
     }
   }
 
@@ -320,8 +376,6 @@ export default function AdminExternalConnectionsPage() {
                 const inst     = instances.get(provider.key);
                 const isActive = inst?.isActive === true;
                 const isOpen   = expanded === provider.key;
-                const tStatus  = testStatus[provider.key] ?? 'idle';
-                const tMessage = testMessage[provider.key] ?? '';
                 const fields   = formValues[provider.key] ?? {};
                 const isBuiltIn = BUILT_IN_KEYS.has(provider.key);
 
@@ -380,52 +434,156 @@ export default function AdminExternalConnectionsPage() {
                         <div className="space-y-3">
                           {provider.fields.map((field) => (
                             <div key={field.key}>
-                              <label className="mb-1 block text-sm font-medium text-gray-700">
-                                {field.label}
-                                {field.required && <span className="ml-0.5 text-red-500">*</span>}
-                              </label>
-                              <div className="relative">
-                                <input
-                                  type={field.type === 'password' && !fields[field.key]?.show ? 'password' : 'text'}
-                                  value={fields[field.key]?.value ?? ''}
-                                  onChange={(e) => setField(provider.key, field.key, e.target.value)}
-                                  placeholder={field.placeholder ?? ''}
-                                  className="w-full rounded-md border px-3 py-2 text-sm pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                />
-                                {field.type === 'password' && (
+                              {field.type === 'toggle' ? (
+                                <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+                                  <div>
+                                    <p className="text-sm font-medium text-gray-700">{field.label}</p>
+                                    {field.description && (
+                                      <p className="text-xs text-gray-400 mt-0.5">{field.description}</p>
+                                    )}
+                                  </div>
                                   <button
                                     type="button"
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                                    onClick={() => toggleShow(provider.key, field.key)}
+                                    onClick={() => setField(provider.key, field.key, fields[field.key]?.value === 'true' ? 'false' : 'true')}
+                                    className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
+                                      fields[field.key]?.value === 'true' ? 'bg-blue-600' : 'bg-gray-200'
+                                    }`}
                                   >
-                                    {fields[field.key]?.show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                                      fields[field.key]?.value === 'true' ? 'translate-x-6' : 'translate-x-1'
+                                    }`} />
                                   </button>
-                                )}
-                              </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <label className="mb-1 block text-sm font-medium text-gray-700">
+                                    {field.label}
+                                    {field.required && <span className="ml-0.5 text-red-500">*</span>}
+                                  </label>
+                                  {field.description && (
+                                    <p className="mb-1 text-xs text-gray-400">{field.description}</p>
+                                  )}
+                                  <div className="relative flex gap-2">
+                                    <div className="relative flex-1">
+                                      <input
+                                        type={field.type === 'password' && !fields[field.key]?.show ? 'password' : 'text'}
+                                        value={fields[field.key]?.value ?? ''}
+                                        onChange={(e) => setField(provider.key, field.key, e.target.value)}
+                                        placeholder={field.placeholder ?? ''}
+                                        className="w-full rounded-md border px-3 py-2 text-sm pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                      />
+                                      {field.type === 'password' && (
+                                        <button
+                                          type="button"
+                                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                          onClick={() => toggleShow(provider.key, field.key)}
+                                        >
+                                          {fields[field.key]?.show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                        </button>
+                                      )}
+                                    </div>
+                                    {/* 굿스플로 판매자 코드 조회 버튼 */}
+                                    {provider.key === 'goodsflow' && (field.key === 'seller_code_prod' || field.key === 'seller_code_test') && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleGfFetchSellers(field.key)}
+                                        disabled={gfSellersLoading && gfSellersFor === field.key}
+                                        className="flex-shrink-0 rounded-md border px-3 py-2 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                                      >
+                                        {gfSellersLoading && gfSellersFor === field.key ? '조회 중...' : '코드 조회'}
+                                      </button>
+                                    )}
+                                  </div>
+                                  {/* 굿스플로 판매자 목록 드롭다운 — 해당 필드에만 표시 */}
+                                  {provider.key === 'goodsflow' && gfSellersFor === field.key && gfSellers && gfSellers.length > 0 && (
+                                    <div className="mt-1 rounded-md border bg-white shadow-sm text-sm overflow-hidden">
+                                      <p className="px-3 py-1.5 text-xs text-gray-400 border-b">판매자 선택 시 코드가 자동 입력됩니다</p>
+                                      {gfSellers.map((s) => (
+                                        <button
+                                          key={s.sellerCode}
+                                          type="button"
+                                          onClick={() => {
+                                            setField(provider.key, field.key, s.sellerCode);
+                                            setGfSellers(null);
+                                            setGfSellersFor(null);
+                                          }}
+                                          className="w-full px-3 py-2 text-left hover:bg-gray-50 flex justify-between"
+                                        >
+                                          <span>{s.sellerName}</span>
+                                          <span className="text-gray-400 font-mono text-xs">{s.sellerCode}</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </>
+                              )}
                             </div>
                           ))}
                         </div>
 
-                        {tStatus !== 'idle' && tMessage && (
-                          <p className={`text-sm rounded-md px-3 py-2 ${
-                            tStatus === 'success' ? 'bg-green-50 text-green-700' :
-                            tStatus === 'fail'    ? 'bg-red-50 text-red-600' :
-                            'bg-gray-50 text-gray-500'
-                          }`}>
-                            {tStatus === 'success' && '✅ '}
-                            {tStatus === 'fail'    && '❌ '}
-                            {tMessage}
-                          </p>
-                        )}
+                        {/* 굿스플로 동기화 결과 */}
+                        {provider.key === 'goodsflow' && (() => {
+                          const envData: Array<{ label: string; env: 'prod' | 'test'; data: typeof gfProdData; error: string }> = [
+                            { label: '운영', env: 'prod', data: gfProdData, error: gfProdError },
+                            { label: '테스트', env: 'test', data: gfTestData, error: gfTestError },
+                          ];
+                          return envData.map(({ label, env, data, error }) => (
+                            (data || error) ? (
+                              <div key={env} className="rounded-md border overflow-hidden">
+                                {error ? (
+                                  <p className="text-sm px-3 py-2 bg-red-50 text-red-600">❌ [{label}] {error}</p>
+                                ) : data && (
+                                  <>
+                                    <div className="px-3 py-2 bg-gray-50 border-b">
+                                      <span className="text-xs font-semibold text-gray-600">[{label}] 출고지 {data.centers.length}개</span>
+                                    </div>
+                                    <div className="divide-y">
+                                      {data.centers.map((c) => {
+                                        const centerContracts = data.contracts.filter(ct => ct.centerCode === c.centerCode);
+                                        return (
+                                          <div key={c.centerCode} className="px-3 py-2 text-xs">
+                                            <div className="flex justify-between items-center">
+                                              <span className="font-medium text-gray-800">{c.centerName}</span>
+                                              <span className="font-mono text-gray-400">{c.centerCode}</span>
+                                            </div>
+                                            <p className="text-gray-400 mt-0.5">{c.fromAddress1} {c.fromAddress2}</p>
+                                            {centerContracts.length > 0 && (
+                                              <div className="mt-1 space-y-0.5">
+                                                {centerContracts.map((ct) => (
+                                                  <p key={ct.contractId} className="text-blue-600">
+                                                    └ {ct.transporter} — {ct.contractRates.map(r => r.boxSizeName).join(' / ')}
+                                                  </p>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            ) : null
+                          ));
+                        })()}
 
-                        <div className="flex items-center gap-2 pt-1">
-                          {provider.hasTest && (
-                            <Button type="button" variant="outline" size="sm"
-                              disabled={tStatus === 'testing'} onClick={() => handleTest(provider)}>
-                              {tStatus === 'testing'
-                                ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />테스트 중...</>
-                                : '연결 테스트'}
-                            </Button>
+                        <div className="flex items-center gap-2 pt-1 flex-wrap">
+                          {/* 굿스플로 전용: 운영/테스트 동기화 */}
+                          {provider.key === 'goodsflow' && (
+                            <>
+                              <Button type="button" variant="outline" size="sm"
+                                disabled={gfProdSyncing} onClick={() => handleGfSync('prod')}>
+                                {gfProdSyncing
+                                  ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />동기화 중...</>
+                                  : '운영 동기화'}
+                              </Button>
+                              <Button type="button" variant="outline" size="sm"
+                                disabled={gfTestSyncing} onClick={() => handleGfSync('test')}>
+                                {gfTestSyncing
+                                  ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />동기화 중...</>
+                                  : '테스트 동기화'}
+                              </Button>
+                            </>
                           )}
                           <Button type="button" size="sm" disabled={saving === provider.key}
                             onClick={() => handleSave(provider)}>

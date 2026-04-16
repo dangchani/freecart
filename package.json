@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "type-check": "tsc --noEmit",
-    "deploy": "npm run build && wrangler pages deploy dist"
+    "deploy": "npm run build && wrangler pages deploy dist",
+    "db:init": "node scripts/db-init.js",
+    "functions:deploy": "node scripts/deploy-functions.js",
+    "functions:deploy:gf": "node scripts/deploy-functions.js gf-shipping-print && node scripts/deploy-functions.js test-integration"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

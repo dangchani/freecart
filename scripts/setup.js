@@ -63,10 +63,12 @@ async function setup() {
 
   console.log('\n✅ .env 파일이 생성되었습니다!');
   console.log('\n📝 다음 단계:');
-  console.log('1. npm install - 의존성 패키지 설치');
-  console.log('2. npm run db:init - 데이터베이스 초기화');
-  console.log('3. npm run db:seed - 샘플 데이터 생성 (선택)');
-  console.log('4. npm run dev - 개발 서버 시작');
+  console.log('1. npm install                  - 의존성 패키지 설치');
+  console.log('2. npm run db:init              - 데이터베이스 초기화 (Drop → Full Schema)');
+  console.log('3. npm run db:seed             - 샘플 데이터 생성 (선택)');
+  console.log('4. npx supabase login           - Supabase CLI 로그인');
+  console.log('5. npm run functions:deploy     - Edge Functions 배포');
+  console.log('6. npm run dev                  - 개발 서버 시작');
 
   rl.close();
 }

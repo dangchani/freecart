@@ -17,10 +17,7 @@ INSERT INTO integration_providers (key, name, category, description, fields, has
   '굿스플로',
   '물류/배송',
   '택배 발송 및 운송장 자동 채번 서비스',
-  '[
-    {"key":"api_key",     "label":"API Key",    "type":"password", "required":true},
-    {"key":"sender_code", "label":"발송인 코드", "type":"text",     "required":true}
-  ]'::jsonb,
+  '[{"key":"api_key_prod","label":"운영 API Key","type":"password","required":true},{"key":"api_base_prod","label":"운영 서버 URL","type":"text","required":false,"placeholder":"https://api.goodsflow.io","description":"비워두면 기본값 사용"},{"key":"seller_code_prod","label":"운영 판매자 코드","type":"text","required":false,"placeholder":"코드 조회 버튼으로 선택"},{"key":"api_key_test","label":"테스트 API Key","type":"password","required":false},{"key":"api_base_test","label":"테스트 서버 URL","type":"text","required":false,"placeholder":"https://test-api.goodsflow.io","description":"비워두면 기본값 사용"},{"key":"seller_code_test","label":"테스트 판매자 코드","type":"text","required":false,"placeholder":"코드 조회 버튼으로 선택"},{"key":"use_test","label":"테스트 모드","type":"toggle","required":false,"description":"송장 발급 시 테스트 API Key/서버 사용"}]'::jsonb,
   true, 1
 ),
 (

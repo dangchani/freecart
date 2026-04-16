@@ -181,6 +181,9 @@ export default function CheckoutPage() {
   const [couponMessage, setCouponMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showCouponList, setShowCouponList] = useState(false);
 
+  // 쿠폰 기능 활성화 여부
+  const [useCouponsEnabled, setUseCouponsEnabled] = useState(true);
+
   // 포인트 관련 state
   const [usePointsEnabled, setUsePointsEnabled] = useState(true);
   const [userPoints, setUserPoints] = useState(0);
@@ -226,7 +229,11 @@ export default function CheckoutPage() {
           }
           if (!pg && !bt.enabled) setPgError(true);
         }),
-        loadCoupons(),
+        getSystemSetting<boolean>('use_coupons').then((val) => {
+          const enabled = val !== false;
+          setUseCouponsEnabled(enabled);
+          if (enabled) loadCoupons();
+        }),
         getSystemSetting<boolean>('use_points').then((val) => {
           const enabled = val !== false;
           setUsePointsEnabled(enabled);
@@ -615,9 +622,8 @@ export default function CheckoutPage() {
                 </div>
               )}
 
-              {/* 새 배송지 입력 폼 */}
-              {(selectedAddressId === 'new' || savedAddresses.length === 0) && (
-                <div className="space-y-4">
+              {/* 배송지 입력 폼 (저장된 배송지 선택 시에도 수정 가능) */}
+              <div className="space-y-4">
                   <div>
                     <Label htmlFor="recipientName">수령인</Label>
                     <Input
@@ -690,10 +696,9 @@ export default function CheckoutPage() {
                     />
                   </div>
                 </div>
-              )}
 
-              {/* 배송 요청사항 + 동적 추가 필드 (항상 표시) */}
-              <div className={`space-y-4 ${selectedAddressId !== 'new' && savedAddresses.length > 0 ? '' : 'mt-4'}`}>
+              {/* 배송 요청사항 + 동적 추가 필드 */}
+              <div className="mt-4 space-y-4">
                 <div>
                   <Label htmlFor="deliveryRequest">배송 요청사항 (선택)</Label>
                   <Input
@@ -785,7 +790,7 @@ export default function CheckoutPage() {
             </Card>
 
             {/* 쿠폰 */}
-            <Card className="p-6">
+            {useCouponsEnabled && <Card className="p-6">
               <h2 className="mb-4 flex items-center gap-2 text-xl font-bold">
                 <Ticket className="h-5 w-5" />
                 쿠폰
@@ -897,7 +902,7 @@ export default function CheckoutPage() {
                   )}
                 </div>
               )}
-            </Card>
+            </Card>}
 
             {/* 포인트 */}
             {usePointsEnabled && <Card className="p-6">

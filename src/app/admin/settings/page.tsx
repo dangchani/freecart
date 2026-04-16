@@ -243,6 +243,7 @@ export default function AdminSettingsPage() {
   const [useDeposit, setUseDeposit] = useState(false);
   const [allowCustomerReturn,   setAllowCustomerReturn]   = useState(true);
   const [allowCustomerExchange, setAllowCustomerExchange] = useState(true);
+
   const [useSubscriptions, setUseSubscriptions] = useState(false);
   const [useCoupons, setUseCoupons] = useState(true);
   const [noticeBarEnabled, setNoticeBarEnabled] = useState(true);

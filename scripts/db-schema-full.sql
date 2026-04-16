@@ -294,6 +294,7 @@ CREATE TABLE IF NOT EXISTS products (
   name                  VARCHAR(255) NOT NULL,
   slug                  VARCHAR(255) NOT NULL UNIQUE,
   sku                   VARCHAR(100),
+  product_code          VARCHAR(30) UNIQUE,
   summary               VARCHAR(500),
   description           TEXT,
   bundle_description    TEXT,
@@ -355,6 +356,35 @@ DROP TRIGGER IF EXISTS trg_products_updated_at ON products;
 CREATE TRIGGER trg_products_updated_at
   BEFORE UPDATE ON products
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- product_code 자동 생성 트리거 (P + YYMMDD + 5자리 순번)
+CREATE OR REPLACE FUNCTION generate_product_code()
+RETURNS TRIGGER AS $$
+DECLARE
+  date_part TEXT;
+  next_seq  INTEGER;
+  new_code  TEXT;
+BEGIN
+  IF NEW.product_code IS NULL OR NEW.product_code = '' THEN
+    date_part := TO_CHAR(NOW(), 'YYMMDD');
+    SELECT COALESCE(MAX(
+      NULLIF(SPLIT_PART(product_code, '-', 2), '')::integer
+    ), 0) + 1
+    INTO next_seq
+    FROM products
+    WHERE product_code LIKE 'P' || date_part || '-%';
+
+    new_code := 'P' || date_part || '-' || LPAD(next_seq::text, 5, '0');
+    NEW.product_code := new_code;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_products_generate_code ON products;
+CREATE TRIGGER trg_products_generate_code
+  BEFORE INSERT ON products
+  FOR EACH ROW EXECUTE FUNCTION generate_product_code();
 
 -- 2.4 product_options (상품 옵션 그룹)
 CREATE TABLE IF NOT EXISTS product_options (
@@ -973,6 +1003,8 @@ CREATE TABLE IF NOT EXISTS shipments (
   order_id             UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   shipping_company_id  UUID REFERENCES shipping_companies(id) ON DELETE SET NULL,
   tracking_number      VARCHAR(50),
+  gf_service_id        VARCHAR(30),
+  gf_invoice_url       TEXT,
   status               VARCHAR(20) NOT NULL DEFAULT 'pending',
   shipped_at           TIMESTAMPTZ,
   delivered_at         TIMESTAMPTZ,
@@ -1834,7 +1866,7 @@ CREATE TABLE IF NOT EXISTS integration_providers (
 INSERT INTO integration_providers (key, name, category, description, fields, has_test, sort_order) VALUES
 (
   'goodsflow', '굿스플로', '물류/배송', '택배 발송 및 운송장 자동 채번 서비스',
-  '[{"key":"api_key","label":"API Key","type":"password","required":true},{"key":"sender_code","label":"발송인 코드","type":"text","required":true}]'::jsonb,
+  '[{"key":"api_key_prod","label":"운영 API Key","type":"password","required":true},{"key":"api_base_prod","label":"운영 서버 URL","type":"text","required":false,"placeholder":"https://api.goodsflow.io","description":"비워두면 기본값 사용"},{"key":"seller_code_prod","label":"운영 판매자 코드","type":"text","required":false,"placeholder":"코드 조회 버튼으로 선택"},{"key":"api_key_test","label":"테스트 API Key","type":"password","required":false},{"key":"api_base_test","label":"테스트 서버 URL","type":"text","required":false,"placeholder":"https://test-api.goodsflow.io","description":"비워두면 기본값 사용"},{"key":"seller_code_test","label":"테스트 판매자 코드","type":"text","required":false,"placeholder":"코드 조회 버튼으로 선택"},{"key":"use_test","label":"테스트 모드","type":"toggle","required":false,"description":"송장 발급 시 테스트 API Key/서버 사용"}]'::jsonb,
   true, 1
 ),
 (
@@ -2090,6 +2122,29 @@ CREATE INDEX IF NOT EXISTS idx_inbound_webhook_logs_received_at ON inbound_webho
 INSERT INTO inbound_webhooks (source, label, is_active)
 VALUES ('toss', '토스페이먼츠', true)
 ON CONFLICT (source) DO NOTHING;
+
+-- 16.5 gf_delivery_logs (굿스플로 배송 이벤트 로그)
+CREATE TABLE IF NOT EXISTS gf_delivery_logs (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id         UUID REFERENCES orders(id) ON DELETE SET NULL,
+  gf_service_id    VARCHAR(30),
+  delivery_status  VARCHAR(20),
+  raw_payload      JSONB,
+  received_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_gf_delivery_logs_order_id      ON gf_delivery_logs(order_id);
+CREATE INDEX IF NOT EXISTS idx_gf_delivery_logs_gf_service_id ON gf_delivery_logs(gf_service_id);
+CREATE INDEX IF NOT EXISTS idx_gf_delivery_logs_received_at   ON gf_delivery_logs(received_at DESC);
+
+-- 굿스플로 기본값 system_settings
+INSERT INTO system_settings (key, value) VALUES
+  ('gf_centers_prod',         '[]'),
+  ('gf_centers_test',         '[]'),
+  ('gf_contracts_prod',       '[]'),
+  ('gf_contracts_test',       '[]'),
+  ('gf_last_sync_at',         '""')
+ON CONFLICT (key) DO NOTHING;
 
 -- =============================================================================
 -- SECTION 17: SEARCH

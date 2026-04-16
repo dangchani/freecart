@@ -18,18 +18,29 @@ interface TestResult {
 // ---------------------------------------------------------------------------
 
 async function testGoodsflow(creds: Record<string, string>): Promise<TestResult> {
-  const { api_key, sender_code } = creds;
-  if (!api_key || !sender_code) return { ok: false, message: 'API Key와 발송인 코드를 입력해주세요.' };
+  const { api_key_prod, api_key_test, api_base_prod, api_base_test, use_test } = creds;
+
+  const isTest = use_test === 'true';
+  const apiKey = isTest
+    ? (api_key_test || api_key_prod || '')
+    : (api_key_prod || '');
+  if (!apiKey) return { ok: false, message: isTest ? '테스트 API Key를 입력해주세요.' : '운영 API Key를 입력해주세요.' };
+
+  const base = isTest
+    ? (api_base_test ?? '').trim().replace(/\/$/, '') || 'https://test-api.goodsflow.io'
+    : (api_base_prod ?? '').trim().replace(/\/$/, '') || 'https://api.goodsflow.io';
 
   try {
-    const res = await fetch('https://api.goodsflow.com/api/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey: api_key, senderCode: sender_code }),
+    const res = await fetch(`${base}/api/centers`, {
+      headers: { Authorization: apiKey },
     });
-    if (res.ok) return { ok: true, message: '연결 성공' };
-    const body = await res.text();
-    return { ok: false, message: `인증 실패 (${res.status}): ${body}` };
+    if (res.ok) {
+      const data = await res.json();
+      const count = data?.data?.length ?? 0;
+      const env = isTest ? ' [테스트 서버]' : ' [운영 서버]';
+      return { ok: true, message: `연결 성공 (출고지 ${count}개)${env}` };
+    }
+    return { ok: false, message: `인증 실패 (${res.status}) — ${isTest ? '테스트' : '운영'} 서버` };
   } catch (e) {
     return { ok: false, message: `요청 오류: ${String(e)}` };
   }

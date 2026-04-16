@@ -72,6 +72,7 @@ DROP TABLE IF EXISTS
   notifications,
   user_search_history,
   search_keywords,
+  gf_delivery_logs,
   inbound_webhook_logs,
   inbound_webhooks,
   webhook_logs,
