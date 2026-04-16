@@ -7,10 +7,10 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { useAuth } from '@/hooks/useAuth';
-import { formatCurrency } from '@/lib/utils';
-import { ArrowLeft, Search, Plus, Minus, Trash2, User, Package, CreditCard } from 'lucide-react';
+import { ArrowLeft, Search, Plus, Minus, Trash2, User, Package, CreditCard, MapPin } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { createAdminOrder } from '@/services/orders';
+import { getUserAddresses, type UserAddress } from '@/services/addresses';
 
 interface FoundUser {
   id: string;
@@ -68,6 +68,8 @@ export default function AdminNewOrderPage() {
   const [variantResults, setVariantResults]   = useState<VariantResult[]>([]);
 
   // ─── Step 2: 배송 · 결제 ─────────────────────────────────────────
+  const [savedAddresses, setSavedAddresses] = useState<UserAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | 'new'>('new');
   const [sameAsOrderer, setSameAsOrderer] = useState(true);
   const [recipientName, setRecipientName] = useState('');
   const [recipientPhone, setRecipientPhone] = useState('');
@@ -124,18 +126,59 @@ export default function AdminNewOrderPage() {
     })));
   }
 
-  function selectUser(u: FoundUser) {
+  async function selectUser(u: FoundUser) {
     setFoundUser(u);
     setOrdererName(u.name);
     setOrdererPhone(u.phone);
     setUserSearchResults([]);
     setUserSearchQ('');
+    // 저장된 배송지 로드
+    try {
+      const addrs = await getUserAddresses(u.id);
+      setSavedAddresses(addrs);
+      if (addrs.length > 0) {
+        const def = addrs.find((a) => a.isDefault) ?? addrs[0];
+        setSelectedAddressId(def.id);
+        applyAddress(def);
+      } else {
+        setSelectedAddressId('new');
+      }
+    } catch {
+      setSavedAddresses([]);
+      setSelectedAddressId('new');
+    }
+  }
+
+  function applyAddress(addr: UserAddress) {
+    setSameAsOrderer(false);
+    setRecipientName(addr.recipientName);
+    setRecipientPhone(addr.recipientPhone);
+    setPostalCode(addr.postalCode);
+    setAddress1(addr.address1);
+    setAddress2(addr.address2 ?? '');
+  }
+
+  function handleSavedAddressSelect(id: string) {
+    setSelectedAddressId(id);
+    if (id === 'new') {
+      setRecipientName('');
+      setRecipientPhone('');
+      setPostalCode('');
+      setAddress1('');
+      setAddress2('');
+      setSameAsOrderer(true);
+    } else {
+      const addr = savedAddresses.find((a) => a.id === id);
+      if (addr) applyAddress(addr);
+    }
   }
 
   function clearUser() {
     setFoundUser(null);
     setOrdererName('');
     setOrdererPhone('');
+    setSavedAddresses([]);
+    setSelectedAddressId('new');
   }
 
   // ── 상품 검색 ─────────────────────────────────────────────────
@@ -144,12 +187,12 @@ export default function AdminNewOrderPage() {
     const supabase = createClient();
     const { data } = await supabase
       .from('products')
-      .select('id, name, price, stock_quantity')
+      .select('id, name, sale_price, stock_quantity')
       .ilike('name', `%${productQ.trim()}%`)
-      .eq('is_active', true)
+      .eq('status', 'active')
       .limit(10);
     setProductResults((data ?? []).map((p: any) => ({
-      id: p.id, name: p.name, price: p.price, stock: p.stock_quantity ?? 0,
+      id: p.id, name: p.name, price: p.sale_price, stock: p.stock_quantity ?? 0,
     })));
     setSelectedProduct(null);
     setVariantResults([]);
@@ -158,21 +201,47 @@ export default function AdminNewOrderPage() {
   async function selectProduct(p: ProductResult) {
     setSelectedProduct(p);
     const supabase = createClient();
-    const { data } = await supabase
-      .from('product_variants')
-      .select('id, option_text, price, additional_price, stock_quantity')
-      .eq('product_id', p.id)
-      .eq('is_active', true);
-    if (!data || data.length === 0) {
+
+    const [{ data: variants }, { data: optRows }, { data: valRows }] = await Promise.all([
+      supabase
+        .from('product_variants')
+        .select('id, option_values, additional_price, stock_quantity')
+        .eq('product_id', p.id)
+        .eq('is_active', true),
+      supabase
+        .from('product_options')
+        .select('id, name')
+        .eq('product_id', p.id),
+      supabase
+        .from('product_option_values')
+        .select('id, option_id, value'),
+    ]);
+
+    if (!variants || variants.length === 0) {
       addItem({ productId: p.id, variantId: null, productName: p.name, optionText: '', unitPrice: p.price, quantity: 1, itemType: 'purchase' });
       setSelectedProduct(null);
       setProductResults([]);
       setProductQ('');
     } else {
-      setVariantResults(data.map((v: any) => ({
-        id: v.id, optionText: v.option_text, price: v.price,
-        additionalPrice: v.additional_price ?? 0, stock: v.stock_quantity ?? 0,
-      })));
+      // option_values: [{ optionId, valueId }, ...]  →  "색상: 빨강 / 사이즈: M"
+      const optMap = new Map((optRows ?? []).map((o: any) => [o.id, o.name]));
+      const valMap = new Map((valRows ?? []).map((v: any) => [v.id, { optionId: v.option_id, value: v.value }]));
+
+      setVariantResults(variants.map((v: any) => {
+        const raw: { optionId: string; valueId: string }[] = v.option_values ?? [];
+        const parts = raw.map((ov) => {
+          const optName = optMap.get(ov.optionId) ?? '';
+          const val     = valMap.get(ov.valueId);
+          return val ? `${optName}: ${val.value}` : '';
+        }).filter(Boolean);
+        return {
+          id:              v.id,
+          optionText:      parts.join(' / ') || v.id,
+          price:           p.price + (v.additional_price ?? 0),
+          additionalPrice: v.additional_price ?? 0,
+          stock:           v.stock_quantity ?? 0,
+        };
+      }));
     }
   }
 
@@ -183,7 +252,7 @@ export default function AdminNewOrderPage() {
       variantId:   v.id,
       productName: selectedProduct.name,
       optionText:  v.optionText,
-      unitPrice:   v.price || (selectedProduct.price + v.additionalPrice),
+      unitPrice:   v.price,
       quantity:    1,
       itemType:    'purchase',
     });
@@ -215,9 +284,23 @@ export default function AdminNewOrderPage() {
     if (!ordererName || !ordererPhone) { alert('주문자 정보를 입력해주세요.'); return; }
     if (items.filter((i) => i.itemType === 'purchase').length === 0) { alert('구매 상품을 1개 이상 추가해주세요.'); return; }
 
-    const rName  = sameAsOrderer ? ordererName  : recipientName;
-    const rPhone = sameAsOrderer ? ordererPhone : recipientPhone;
-    if (!rName || !rPhone || !postalCode || !address1) { alert('배송지 정보를 입력해주세요.'); return; }
+    // 저장된 배송지 선택 시 해당 주소 사용
+    let rName: string, rPhone: string, rPostalCode: string, rAddress1: string, rAddress2: string | undefined;
+    const selectedSaved = savedAddresses.find((a) => a.id === selectedAddressId);
+    if (selectedSaved) {
+      rName = selectedSaved.recipientName;
+      rPhone = selectedSaved.recipientPhone;
+      rPostalCode = selectedSaved.postalCode;
+      rAddress1 = selectedSaved.address1;
+      rAddress2 = selectedSaved.address2 ?? undefined;
+    } else {
+      rName  = sameAsOrderer ? ordererName  : recipientName;
+      rPhone = sameAsOrderer ? ordererPhone : recipientPhone;
+      rPostalCode = postalCode;
+      rAddress1 = address1;
+      rAddress2 = address2 || undefined;
+    }
+    if (!rName || !rPhone || !rPostalCode || !rAddress1) { alert('배송지 정보를 입력해주세요.'); return; }
 
     setSaving(true);
     try {
@@ -227,9 +310,9 @@ export default function AdminNewOrderPage() {
         ordererPhone,
         recipientName:     rName,
         recipientPhone:    rPhone,
-        postalCode,
-        address1,
-        address2:          address2 || undefined,
+        postalCode:        rPostalCode,
+        address1:          rAddress1,
+        address2:          rAddress2,
         shippingMessage:   shippingMessage || undefined,
         items,
         paymentMethod,
@@ -250,7 +333,7 @@ export default function AdminNewOrderPage() {
   if (authLoading) return <div className="container py-8">로딩 중...</div>;
 
   return (
-    <div className="container py-8 max-w-3xl">
+    <div className="container py-8">
       <Link to="/admin/orders" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
         <ArrowLeft className="mr-1 h-4 w-4" />주문 목록
       </Link>
@@ -447,12 +530,59 @@ export default function AdminNewOrderPage() {
         <div className="space-y-5">
           {/* 배송지 */}
           <Card className="p-6 space-y-4">
-            <h2 className="font-semibold text-gray-800">배송지</h2>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={sameAsOrderer} onChange={(e) => setSameAsOrderer(e.target.checked)} className="rounded" />
-              주문자 정보와 동일 <span className="text-gray-400">({ordererName} / {ordererPhone})</span>
-            </label>
-            {!sameAsOrderer && (
+            <h2 className="flex items-center gap-2 font-semibold text-gray-800"><MapPin className="h-4 w-4" />배송지</h2>
+
+            {/* 저장된 배송지 선택 (회원 선택 시에만) */}
+            {savedAddresses.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-2">저장된 배송지</label>
+                <div className="space-y-2">
+                  {savedAddresses.map((addr) => (
+                    <label key={addr.id}
+                      className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${selectedAddressId === addr.id ? 'border-blue-500 bg-blue-50' : 'hover:bg-gray-50'}`}>
+                      <input
+                        type="radio"
+                        name="savedAddress"
+                        value={addr.id}
+                        checked={selectedAddressId === addr.id}
+                        onChange={() => handleSavedAddressSelect(addr.id)}
+                        className="mt-0.5"
+                      />
+                      <div className="text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{addr.name}</span>
+                          {addr.isDefault && <span className="text-xs bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">기본</span>}
+                        </div>
+                        <p className="text-gray-600 mt-0.5">{addr.recipientName} · {addr.recipientPhone}</p>
+                        <p className="text-gray-500 text-xs mt-0.5">[{addr.postalCode}] {addr.address1} {addr.address2}</p>
+                      </div>
+                    </label>
+                  ))}
+                  <label
+                    className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${selectedAddressId === 'new' ? 'border-blue-500 bg-blue-50' : 'hover:bg-gray-50'}`}>
+                    <input
+                      type="radio"
+                      name="savedAddress"
+                      value="new"
+                      checked={selectedAddressId === 'new'}
+                      onChange={() => handleSavedAddressSelect('new')}
+                    />
+                    <span className="text-sm font-medium text-gray-700">+ 새 배송지 직접 입력</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* 주문자와 동일 체크박스 (저장 배송지 없거나 새 배송지 선택 시) */}
+            {(savedAddresses.length === 0 || selectedAddressId === 'new') && (
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={sameAsOrderer} onChange={(e) => setSameAsOrderer(e.target.checked)} className="rounded" />
+                주문자 정보와 동일 <span className="text-gray-400">({ordererName} / {ordererPhone})</span>
+              </label>
+            )}
+
+            {/* 수령인 필드 (직접 입력 시 or 주문자와 다를 때) */}
+            {(savedAddresses.length === 0 || selectedAddressId === 'new') && !sameAsOrderer && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">수령인 <span className="text-red-500">*</span></label>
@@ -464,18 +594,25 @@ export default function AdminNewOrderPage() {
                 </div>
               </div>
             )}
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">우편번호 <span className="text-red-500">*</span></label>
-              <Input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="12345" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">주소 <span className="text-red-500">*</span></label>
-              <Input value={address1} onChange={(e) => setAddress1(e.target.value)} placeholder="도로명 주소" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">상세주소</label>
-              <Input value={address2} onChange={(e) => setAddress2(e.target.value)} placeholder="동/호수 등" />
-            </div>
+
+            {/* 주소 필드 (저장 배송지 선택 시 읽기전용, 새 입력 시 편집 가능) */}
+            {(savedAddresses.length === 0 || selectedAddressId === 'new') && (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">우편번호 <span className="text-red-500">*</span></label>
+                  <Input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="12345" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">주소 <span className="text-red-500">*</span></label>
+                  <Input value={address1} onChange={(e) => setAddress1(e.target.value)} placeholder="도로명 주소" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">상세주소</label>
+                  <Input value={address2} onChange={(e) => setAddress2(e.target.value)} placeholder="동/호수 등" />
+                </div>
+              </>
+            )}
+
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">배송 메시지</label>
               <Input value={shippingMessage} onChange={(e) => setShippingMessage(e.target.value)} placeholder="문 앞에 놓아주세요" />

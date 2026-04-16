@@ -39,6 +39,7 @@ import {
   ORDER_STATUS_LABELS,
   ORDER_STATUS_COLORS,
   ORDER_STATUS_TRANSITIONS,
+  GF_AUTO_STATUSES,
   ORDER_ITEM_STATUS_LABELS,
   ORDER_ITEM_STATUS_COLORS,
   ORDER_RETURNABLE_STATUSES,
@@ -48,8 +49,8 @@ import {
 } from '@/constants/orderStatus';
 import { transitionOrderStatus, getOrderTimeline, updateOrderShipping, updateOrderItems } from '@/services/orders';
 import { createAdminReturn, RETURN_REASONS } from '@/services/returns';
-import { getGfCenters, getGfContracts, getGfEnv, printGfShippingLabels, getGfPrintUri, cancelGfShipping, type GfCenter, type GfContract, type GfPrintResult } from '@/services/goodsflow';
-import { GF_CANCEL_REASONS } from '@/constants/goodsflow';
+import { getGfCenters, getGfContracts, getGfEnv, printGfShippingLabels, getGfPrintUri, cancelGfShipping, testGfChangeStatus, syncGfWebhookEventById, type GfCenter, type GfContract, type GfPrintResult } from '@/services/goodsflow';
+import { GF_CANCEL_REASONS, GF_DELIVERY_STATUS } from '@/constants/goodsflow';
 import type { ReturnItem } from '@/services/returns';
 import { createAdminExchange, calculatePriceDiff, EXCHANGE_REASONS } from '@/services/exchanges';
 import type { ExchangeItem } from '@/services/exchanges';
@@ -240,6 +241,11 @@ export default function AdminOrderDetailPage() {
   const [gfCancelReason, setGfCancelReason] = useState('NOT_SEND');
   const [gfCancelContents, setGfCancelContents] = useState('');
   const [gfCancelling, setGfCancelling] = useState(false);
+  const [gfTestMode, setGfTestMode] = useState(false);
+  const [gfTestStatus, setGfTestStatus] = useState('PICKUP');
+  const [gfTestSending, setGfTestSending] = useState(false);
+  const [gfSyncing, setGfSyncing] = useState(false);
+  const [gfIsTestEnv, setGfIsTestEnv] = useState(false);
   const [shipmentHighlight, setShipmentHighlight] = useState(false);
   const shipmentRef = useRef<HTMLDivElement>(null);
 
@@ -444,6 +450,9 @@ export default function AdminOrderDetailPage() {
       setCashReceipts((cashData ?? []).map((c: any) => ({ id: c.id, receiptType: c.receipt_type, identifier: c.identifier, amount: c.amount, status: c.status, issuedAt: c.issued_at })));
       setTaxInvoices((taxData ?? []).map((t: any) => ({ id: t.id, businessName: t.business_name, businessNumber: t.business_number, totalAmount: t.total_amount, status: t.status })));
       setShippingCompanies((companies ?? []).map((c: any) => ({ id: c.id, name: c.name, trackingUrl: c.tracking_url })));
+
+      // 굿스플로 테스트 환경 여부 확인
+      try { const env = await getGfEnv(); setGfIsTestEnv(env === 'test'); } catch { /* ignore */ }
     } catch (err) {
       console.error('Failed to load order detail:', err);
     } finally {
@@ -991,7 +1000,9 @@ export default function AdminOrderDetailPage() {
   if (!order) return <div className="container py-8 text-center text-gray-500">주문을 찾을 수 없습니다.</div>;
 
   const statusColor = ORDER_STATUS_COLORS[order.status as OrderStatus] ?? 'bg-gray-100 text-gray-700';
-  const nextStatuses = ORDER_STATUS_TRANSITIONS[order.status as OrderStatus] ?? [];
+  // GF 자동 전이 전용 상태는 관리자가 수동으로 전이할 수 없음
+  const nextStatuses = (ORDER_STATUS_TRANSITIONS[order.status as OrderStatus] ?? [])
+    .filter((s) => !GF_AUTO_STATUSES.includes(s as OrderStatus));
   const trackingUrl = shipment?.company?.trackingUrl && shipment.trackingNumber
     ? shipment.company.trackingUrl.replace('{tracking_number}', shipment.trackingNumber)
     : null;
@@ -1490,6 +1501,82 @@ export default function AdminOrderDetailPage() {
                         <X className="mr-1 h-3.5 w-3.5" />송장 취소
                       </Button>
                     </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full text-xs text-blue-600 hover:text-blue-700 hover:border-blue-300"
+                      disabled={gfSyncing}
+                      onClick={async () => {
+                        setGfSyncing(true);
+                        try {
+                          const res = await syncGfWebhookEventById(shipment.gfServiceId!);
+                          if (res.processed === 0) {
+                            alert('조회된 미수신 이벤트가 없습니다.\n(이미 수신됐거나 아직 이벤트가 없는 상태입니다.)');
+                          } else {
+                            alert(`배송 상태 동기화 완료\n최신 상태: ${res.latestStatus} (${res.processed}건 처리)`);
+                            await loadAll(id!);
+                          }
+                        } catch (e: any) {
+                          alert(`동기화 실패: ${e.message}`);
+                        } finally {
+                          setGfSyncing(false);
+                        }
+                      }}
+                    >
+                      {gfSyncing ? '동기화 중...' : '↻ 배송 상태 재동기화'}
+                    </Button>
+                    {/* 굿스플로 테스트 모드 — use_test일 때만 표시 */}
+                    {gfIsTestEnv && (
+                      <div className="border-t border-blue-100 pt-2 space-y-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={gfTestMode}
+                            onChange={(e) => setGfTestMode(e.target.checked)}
+                            className="rounded border-gray-300"
+                          />
+                          <span className="text-xs font-medium text-orange-600">테스트 모드</span>
+                        </label>
+                        {gfTestMode && (
+                          <div className="flex gap-1.5">
+                            <Select value={gfTestStatus} onValueChange={setGfTestStatus}>
+                              <SelectTrigger className="flex-1 h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {Object.entries(GF_DELIVERY_STATUS).map(([code, label]) => (
+                                  <SelectItem key={code} value={code} className="text-xs">{code} — {label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="shrink-0 text-xs text-orange-600 border-orange-300 hover:bg-orange-50"
+                              disabled={gfTestSending}
+                              onClick={async () => {
+                                setGfTestSending(true);
+                                try {
+                                  const res = await testGfChangeStatus(shipment.gfServiceId!, gfTestStatus);
+                                  if (res.ok) {
+                                    alert(`테스트 전송 완료: ${gfTestStatus}`);
+                                    await loadAll(id!);
+                                  } else {
+                                    alert(res.message ?? '테스트 전송 실패');
+                                  }
+                                } catch (e: any) {
+                                  alert(e.message ?? '오류 발생');
+                                } finally {
+                                  setGfTestSending(false);
+                                }
+                              }}
+                            >
+                              {gfTestSending ? '전송 중...' : '테스트 전송'}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : shipment?.gfServiceId && shipment.status === 'cancelled' ? (
                   <div className="rounded-lg border border-red-100 bg-red-50 p-3 space-y-2">
@@ -1520,15 +1607,17 @@ export default function AdminOrderDetailPage() {
                   )
                 )}
 
-                {/* 운송장 등록 (직접 입력) */}
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => setShowTrackingForm((v) => !v)}
-                >
-                  <Truck className="mr-2 h-4 w-4" />
-                  {shipment?.trackingNumber ? '운송장 수정' : '운송장 등록'}
-                </Button>
+                {/* 운송장 등록 (직접 입력) — 굿스플로 송장이 활성인 경��� 숨김 */}
+                {!(shipment?.gfServiceId && shipment.status !== 'cancelled') && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setShowTrackingForm((v) => !v)}
+                  >
+                    <Truck className="mr-2 h-4 w-4" />
+                    {shipment?.trackingNumber ? '운송장 수정' : '운송장 등록'}
+                  </Button>
+                )}
 
                 {/* 현재 운송장 정보 */}
                 {shipment?.trackingNumber && !showTrackingForm && (

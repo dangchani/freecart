@@ -246,6 +246,8 @@ export default function AdminSettingsPage() {
 
   const [useSubscriptions, setUseSubscriptions] = useState(false);
   const [useCoupons, setUseCoupons] = useState(true);
+  const [useBulkShipment, setUseBulkShipment] = useState(true);
+  const [notifyOutForDelivery, setNotifyOutForDelivery] = useState(true);
   const [noticeBarEnabled, setNoticeBarEnabled] = useState(true);
   const [noticeBarColor, setNoticeBarColor] = useState('#2563eb');
   const [imageBannerEnabled, setImageBannerEnabled] = useState(true);
@@ -344,7 +346,7 @@ export default function AdminSettingsPage() {
       const { data: sysRows } = await supabase
         .from('system_settings')
         .select('key, value')
-        .in('key', ['require_signup_approval', 'enable_user_assignment', 'enable_user_tags', 'use_user_levels', 'use_points', 'point_label', 'allow_customer_return', 'allow_customer_exchange', 'order_list_columns', 'notice_bar_enabled', 'notice_bar_color', 'image_banner_enabled', 'use_subscriptions', 'use_coupons', 'use_deposit']);
+        .in('key', ['require_signup_approval', 'enable_user_assignment', 'enable_user_tags', 'use_user_levels', 'use_points', 'point_label', 'allow_customer_return', 'allow_customer_exchange', 'order_list_columns', 'notice_bar_enabled', 'notice_bar_color', 'image_banner_enabled', 'use_subscriptions', 'use_coupons', 'use_deposit', 'use_bulk_shipment', 'notify_out_for_delivery']);
       for (const row of sysRows ?? []) {
         if (row.key === 'require_signup_approval') setRequireSignupApproval(row.value === true);
         if (row.key === 'enable_user_assignment') setEnableUserAssignment(row.value === true);
@@ -361,6 +363,8 @@ export default function AdminSettingsPage() {
         if (row.key === 'image_banner_enabled') setImageBannerEnabled(row.value !== false);
         if (row.key === 'use_subscriptions') setUseSubscriptions(row.value === true);
         if (row.key === 'use_coupons') setUseCoupons(row.value !== false);
+        if (row.key === 'use_bulk_shipment') setUseBulkShipment(row.value !== false);
+        if (row.key === 'notify_out_for_delivery') setNotifyOutForDelivery(row.value !== false);
       }
     } catch {
       setError('설정을 불러오는 중 오류가 발생했습니다.');
@@ -458,6 +462,8 @@ export default function AdminSettingsPage() {
         { key: 'image_banner_enabled', value: imageBannerEnabled },
         { key: 'use_subscriptions', value: useSubscriptions },
         { key: 'use_coupons', value: useCoupons },
+        { key: 'use_bulk_shipment', value: useBulkShipment },
+        { key: 'notify_out_for_delivery', value: notifyOutForDelivery },
       ];
       for (const { key, value } of sysUpdates) {
         const { error: sysError } = await supabase
@@ -1626,6 +1632,45 @@ export default function AdminSettingsPage() {
               >
                 <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
                   useCoupons ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            <div className="border-t" />
+
+            {/* 일괄배송 기능 사용 설정 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">일괄배송 기능 사용</p>
+                <p className="text-xs text-gray-400 mt-0.5">끄면 관리자 주문 관리 메뉴에서 일괄 발송 메뉴가 숨겨집니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUseBulkShipment((prev) => !prev)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  useBulkShipment ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  useBulkShipment ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">배송 출발 시 고객 알림 발송</p>
+                <p className="text-xs text-gray-400 mt-0.5">굿스플로 '배송 출발(DLV_START)' 이벤트 수신 시 고객에게 알림을 발송합니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNotifyOutForDelivery((prev) => !prev)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  notifyOutForDelivery ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  notifyOutForDelivery ? 'translate-x-6' : 'translate-x-1'
                 }`} />
               </button>
             </div>

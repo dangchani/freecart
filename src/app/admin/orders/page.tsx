@@ -117,8 +117,9 @@ interface OrderStats {
 }
 
 const ALL_STATUSES: OrderStatus[] = [
-  'pending', 'paid', 'processing', 'shipped', 'delivered',
-  'confirmed', 'cancelled', 'return_requested', 'returned',
+  'pending', 'paid', 'processing', 'shipped',
+  'transferred', 'picked_up', 'out_for_delivery',
+  'delivered', 'confirmed', 'cancelled', 'return_requested', 'returned',
 ];
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {

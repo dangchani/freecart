@@ -252,6 +252,22 @@ export async function cancelGfShipping(
 }
 
 // ---------------------------------------------------------------------------
+// 테스트 상태 변경 (개발 테스트용 — use_test 환경에서만 동작)
+// ---------------------------------------------------------------------------
+
+export async function testGfChangeStatus(
+  serviceId: string,
+  deliveryStatus: string,
+): Promise<{ ok: boolean; data?: unknown; message?: string }> {
+  const supabase = createClient();
+  const { data, error } = await supabase.functions.invoke('gf-shipping-print', {
+    body: { action: 'testChangeStatus', serviceId, deliveryStatus },
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+// ---------------------------------------------------------------------------
 // Pull 동기화
 // ---------------------------------------------------------------------------
 
@@ -281,6 +297,22 @@ export async function syncGfWebhookEvents(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// 특정 serviceId Pull 동기화 (수동 재동기화용)
+// ---------------------------------------------------------------------------
+
+export async function syncGfWebhookEventById(
+  gfServiceId: string,
+): Promise<{ processed: number; latestStatus: string | null }> {
+  const supabase = createClient();
+  const { data, error } = await supabase.functions.invoke('gf-shipping-print', {
+    body: { action: 'pullWebhookById', gfServiceId },
+  });
+  if (error) throw new Error(error.message);
+  if (!data?.ok) throw new Error(data?.message ?? '조회 실패');
+  return { processed: data.processed ?? 0, latestStatus: data.latestStatus ?? null };
+}
+
+// ---------------------------------------------------------------------------
 // Pull 이벤트 DB 반영
 // ---------------------------------------------------------------------------
 
@@ -293,11 +325,25 @@ export async function applyGfDeliveryStatus(
 
   const { data: shipment } = await supabase
     .from('shipments')
-    .select('order_id')
+    .select('id, order_id')
     .eq('gf_service_id', gfServiceId)
     .maybeSingle();
 
   if (!shipment?.order_id) return;
+
+  // shipments 업데이트: invoiceNo + 배송 상태
+  const invoiceNo = rawPayload.invoiceNo as string | undefined;
+  const shipmentUpdate: Record<string, unknown> = {};
+  if (invoiceNo) shipmentUpdate.tracking_number = invoiceNo;
+  if (deliveryStatus === 'COMPLETED') {
+    shipmentUpdate.status = 'delivered';
+    shipmentUpdate.delivered_at = new Date().toISOString();
+  } else if (deliveryStatus === 'CANCELED' || deliveryStatus === 'RETURNED') {
+    shipmentUpdate.status = 'cancelled';
+  }
+  if (Object.keys(shipmentUpdate).length > 0) {
+    await supabase.from('shipments').update(shipmentUpdate).eq('id', shipment.id);
+  }
 
   await supabase.from('gf_delivery_logs').insert({
     order_id:       shipment.order_id,
@@ -310,7 +356,7 @@ export async function applyGfDeliveryStatus(
   if (toStatus) {
     const { transitionOrderStatus } = await import('@/services/orders');
     await transitionOrderStatus(shipment.order_id, toStatus as any, {
-      note: `굿스플로 배송 상태: ${deliveryStatus}`,
+      note: `굿스플로 배송 상태: ${deliveryStatus}${invoiceNo ? ` (송장: ${invoiceNo})` : ''}`,
     });
   }
 }

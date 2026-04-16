@@ -2120,9 +2120,11 @@ CREATE TABLE IF NOT EXISTS inbound_webhook_logs (
 CREATE INDEX IF NOT EXISTS idx_inbound_webhook_logs_source      ON inbound_webhook_logs(source);
 CREATE INDEX IF NOT EXISTS idx_inbound_webhook_logs_received_at ON inbound_webhook_logs(received_at DESC);
 
--- 기본 수신 웹훅 소스 (토스페이먼츠)
+-- 기본 수신 웹훅 소스
 INSERT INTO inbound_webhooks (source, label, is_active)
-VALUES ('toss', '토스페이먼츠', true)
+VALUES
+  ('toss', '토스페이먼츠', true),
+  ('goodsflow', '굿스플로', true)
 ON CONFLICT (source) DO NOTHING;
 
 -- 16.5 gf_delivery_logs (굿스플로 배송 이벤트 로그)
@@ -2130,6 +2132,7 @@ CREATE TABLE IF NOT EXISTS gf_delivery_logs (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   order_id         UUID REFERENCES orders(id) ON DELETE SET NULL,
   gf_service_id    VARCHAR(30),
+  seq              INTEGER,
   delivery_status  VARCHAR(20),
   raw_payload      JSONB,
   received_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -2138,6 +2141,8 @@ CREATE TABLE IF NOT EXISTS gf_delivery_logs (
 CREATE INDEX IF NOT EXISTS idx_gf_delivery_logs_order_id      ON gf_delivery_logs(order_id);
 CREATE INDEX IF NOT EXISTS idx_gf_delivery_logs_gf_service_id ON gf_delivery_logs(gf_service_id);
 CREATE INDEX IF NOT EXISTS idx_gf_delivery_logs_received_at   ON gf_delivery_logs(received_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS gf_delivery_logs_service_seq_unique
+  ON gf_delivery_logs (gf_service_id, seq) WHERE seq IS NOT NULL;
 
 -- 굿스플로 기본값 system_settings
 INSERT INTO system_settings (key, value) VALUES
@@ -2619,6 +2624,12 @@ CREATE POLICY "orders_read_own" ON orders
 DROP POLICY IF EXISTS "orders_insert_own" ON orders;
 CREATE POLICY "orders_insert_own" ON orders
   FOR INSERT WITH CHECK (auth.uid()::text = user_id::text);
+
+DROP POLICY IF EXISTS "orders_insert_admin" ON orders;
+CREATE POLICY "orders_insert_admin" ON orders
+  FOR INSERT WITH CHECK (
+    EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'super_admin'))
+  );
 
 DROP POLICY IF EXISTS "orders_update_admin" ON orders;
 CREATE POLICY "orders_update_admin" ON orders
@@ -3594,7 +3605,11 @@ INSERT INTO system_settings (key, value, description) VALUES
   ('image_banner_enabled', 'true'::jsonb,
    '메인 페이지 이미지 배너 섹션 표시 여부. true이면 banners 테이블의 활성 배너를 메인에 표시'),
   ('use_deposit', 'false'::jsonb,
-   '예치금 기능 사용 여부. true이면 관리자 사이드바에 예치금 관리 메뉴가 표시됨')
+   '예치금 기능 사용 여부. true이면 관리자 사이드바에 예치금 관리 메뉴가 표시됨'),
+  ('use_bulk_shipment', 'true'::jsonb,
+   '일괄배송 기능 사용 여부. true이면 관리자 주문 메뉴에 일괄 발송 메뉴가 표시됨'),
+  ('notify_out_for_delivery', 'true'::jsonb,
+   '배송 출발(out_for_delivery) 시 고객 알림 발송 여부')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------------------------------------------------------------------

@@ -38,7 +38,7 @@ const ALL_FUNCTIONS = [
   'send-webhook',
   'test-integration',
   'gf-shipping-print',
-  'gf-webhook-receiver',
+  'webhook-receiver',
 ];
 
 function deploy(funcName, projectRef) {

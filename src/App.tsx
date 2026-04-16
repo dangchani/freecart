@@ -120,6 +120,7 @@ import AdminNewBundlePage from './app/admin/bundles/new/page';
 import AdminEditBundlePage from './app/admin/bundles/[id]/edit/page';
 import AdminOrdersBulkShipmentPage from './app/admin/orders/bulk-shipment/page';
 import AdminOrderInvoicePage from './app/admin/orders/[id]/invoice/page';
+import AdminNewOrderPage from './app/admin/orders/new/page';
 import AdminLogsPage from './app/admin/logs/page';
 import AdminIpBlocksPage from './app/admin/ip-blocks/page';
 import AdminVisitorsPage from './app/admin/visitors/page';
@@ -299,6 +300,7 @@ export default function App() {
               <Route path="/admin/bundles/:id/edit" element={<AdminEditBundlePage />} />
               <Route path="/admin/categories" element={<AdminCategoriesPage />} />
               <Route path="/admin/orders" element={<AdminOrdersPage />} />
+              <Route path="/admin/orders/new" element={<AdminNewOrderPage />} />
               <Route path="/admin/orders/bulk-shipment" element={<AdminOrdersBulkShipmentPage />} />
               <Route path="/admin/orders/:id" element={<AdminOrderDetailPage />} />
               <Route path="/admin/users" element={<AdminUsersPage />} />
