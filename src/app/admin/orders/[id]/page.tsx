@@ -121,6 +121,8 @@ interface Shipment {
   trackingNumber: string | null;
   shippingCompanyId: string | null;
   gfServiceId: string | null;
+  gfPrinted: boolean;
+  gfPrintedAt: string | null;
   status: string;
   shippedAt: string | null;
   deliveredAt: string | null;
@@ -410,6 +412,8 @@ export default function AdminOrderDetailPage() {
           trackingNumber: shipmentData.tracking_number,
           shippingCompanyId: shipmentData.shipping_company_id,
           gfServiceId: shipmentData.gf_service_id ?? null,
+          gfPrinted: shipmentData.gf_printed ?? false,
+          gfPrintedAt: shipmentData.gf_printed_at ?? null,
           status: shipmentData.status,
           shippedAt: shipmentData.shipped_at,
           deliveredAt: shipmentData.delivered_at,
@@ -608,6 +612,7 @@ export default function AdminOrderDetailPage() {
       console.log('[GF 송장발급] 응답 results:', JSON.stringify(results, null, 2));
 
       setGfResult(results[0]);
+
       await loadAll(id);
     } catch (e: any) {
       console.error('[GF 송장발급] 오류:', e);
@@ -621,8 +626,8 @@ export default function AdminOrderDetailPage() {
     if (!gfResult?.gfServiceId) return;
     setGfPrintLoading(true);
     try {
-      const uri = await getGfPrintUri([gfResult.gfServiceId]);
-      window.open(uri, '_blank');
+      const printResult = await getGfPrintUri([gfResult.gfServiceId]);
+      window.open(printResult.uri, '_blank');
     } catch (e: any) {
       alert(e.message ?? '출력 URI 생성 실패');
     } finally {
@@ -652,8 +657,8 @@ export default function AdminOrderDetailPage() {
     if (!shipment?.gfServiceId) return;
     setGfPrintLoading(true);
     try {
-      const uri = await getGfPrintUri([shipment.gfServiceId]);
-      window.open(uri, '_blank');
+      const printResult = await getGfPrintUri([shipment.gfServiceId]);
+      window.open(printResult.uri, '_blank');
     } catch (e: any) {
       alert(e.message ?? '출력 URI 생성 실패');
     } finally {
@@ -1465,12 +1470,21 @@ export default function AdminOrderDetailPage() {
                 {shipment?.gfServiceId && shipment.status !== 'cancelled' ? (
                   <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 space-y-2">
                     <p className="text-xs font-medium text-blue-700">굿스플로 송장</p>
-                    <p className="text-xs text-gray-500 font-mono bg-white px-2 py-1 rounded border">
-                      서비스 ID: {shipment.gfServiceId}
-                    </p>
+                    <div className="text-xs text-gray-600 bg-white px-2 py-1.5 rounded border space-y-1">
+                      {shipment.trackingNumber && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">송장번호</span>
+                          <span className="font-mono font-medium text-gray-800">{shipment.trackingNumber}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span className="text-gray-400">서비스 ID</span>
+                        <span className="font-mono text-gray-500">{shipment.gfServiceId}</span>
+                      </div>
+                    </div>
                     <div className="flex gap-2">
                       <Button size="sm" variant="outline" className="flex-1" onClick={handleGfReprint} disabled={gfPrintLoading}>
-                        <Printer className="mr-1 h-3.5 w-3.5" />{gfPrintLoading ? '생성 중...' : '송장 출력'}
+                        <Printer className="mr-1 h-3.5 w-3.5" />{gfPrintLoading ? '생성 중...' : shipment.gfPrinted ? '송장 재출력' : '송장 출력'}
                       </Button>
                       <Button size="sm" variant="outline" className="flex-1 text-red-600 hover:text-red-700 hover:border-red-300" onClick={() => setGfCancelModal(true)}>
                         <X className="mr-1 h-3.5 w-3.5" />송장 취소
@@ -1480,9 +1494,18 @@ export default function AdminOrderDetailPage() {
                 ) : shipment?.gfServiceId && shipment.status === 'cancelled' ? (
                   <div className="rounded-lg border border-red-100 bg-red-50 p-3 space-y-2">
                     <p className="text-xs font-medium text-red-600">송장 취소됨</p>
-                    <p className="text-xs text-gray-400 font-mono line-through">
-                      서비스 ID: {shipment.gfServiceId}
-                    </p>
+                    <div className="text-xs text-gray-400 bg-white/50 px-2 py-1.5 rounded border border-red-100 space-y-1 line-through">
+                      {shipment.trackingNumber && (
+                        <div className="flex justify-between">
+                          <span>송장번호</span>
+                          <span className="font-mono">{shipment.trackingNumber}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span>서비스 ID</span>
+                        <span className="font-mono">{shipment.gfServiceId}</span>
+                      </div>
+                    </div>
                     {order.status === 'processing' && (
                       <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white" size="sm" onClick={openGfModal}>
                         <Truck className="mr-1.5 h-3.5 w-3.5" />송장 재발급
@@ -1726,7 +1749,7 @@ export default function AdminOrderDetailPage() {
                   <Button variant="outline" onClick={() => setGfModal(false)}>닫기</Button>
                   {gfResult.success && (
                     <Button onClick={handleGfPrint} disabled={gfPrintLoading}>
-                      <Printer className="mr-1.5 h-4 w-4" />{gfPrintLoading ? '생성 중...' : '송장 출력'}
+                      <Printer className="mr-1.5 h-4 w-4" />{gfPrintLoading ? '생성 중...' : '송장 출력하기'}
                     </Button>
                   )}
                 </div>

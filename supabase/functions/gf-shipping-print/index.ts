@@ -169,7 +169,7 @@ async function printLabels(
 
   const gfItems = items.map((item: any) => ({
     centerCode:            options.centerCode,
-    uniqueId:              item.orderNumber,
+    uniqueId:              `${item.orderNumber}-${Date.now()}`,
     boxSize:               options.boxSize,
     transporter:           options.transporter,
     fromName:              center?.fromName ?? '',
@@ -234,6 +234,7 @@ async function printLabels(
 
     if (success) {
       const gfServiceId = gfResult.data?.serviceId;
+      const invoiceNo   = gfResult.data?.invoiceNo ?? null;
       // shipments 테이블 upsert
       const { data: existing } = await supabase
         .from('shipments')
@@ -241,19 +242,17 @@ async function printLabels(
         .eq('order_id', item.orderId)
         .maybeSingle();
 
+      const shipmentFields: Record<string, any> = {
+        gf_service_id: gfServiceId,
+        status: 'shipped',
+        shipped_at: new Date().toISOString(),
+      };
+      if (invoiceNo) shipmentFields.tracking_number = invoiceNo;
+
       if (existing) {
-        await supabase.from('shipments').update({
-          gf_service_id: gfServiceId,
-          status: 'shipped',
-          shipped_at: new Date().toISOString(),
-        }).eq('id', existing.id);
+        await supabase.from('shipments').update(shipmentFields).eq('id', existing.id);
       } else {
-        await supabase.from('shipments').insert({
-          order_id:      item.orderId,
-          gf_service_id: gfServiceId,
-          status:        'shipped',
-          shipped_at:    new Date().toISOString(),
-        });
+        await supabase.from('shipments').insert({ order_id: item.orderId, ...shipmentFields });
       }
 
       // 주문 상태 전이 (processing → shipped)
@@ -275,7 +274,7 @@ async function printLabels(
         });
       }
 
-      results.push({ orderId: item.orderId, orderNumber: item.orderNumber, success: true, gfServiceId });
+      results.push({ orderId: item.orderId, orderNumber: item.orderNumber, success: true, gfServiceId, trackingNumber: invoiceNo });
     } else {
       results.push({
         orderId:     item.orderId,
@@ -293,15 +292,36 @@ async function printLabels(
 // 송장 출력 URI 생성
 // ---------------------------------------------------------------------------
 
-async function getPrintUri({ apiKey, apiBase }: GfConfig, gfServiceIds: string[]) {
-  const res = await fetch(`${apiBase}/api/deliveries/shipping/print-uri?idType=serviceId`, {
+async function getPrintUri(
+  { apiKey, apiBase }: GfConfig,
+  supabase: ReturnType<typeof createClient>,
+  gfServiceIds: string[],
+) {
+  const url = `${apiBase}/api/deliveries/shipping/print-uri?idType=serviceId&includePrinted=true`;
+  console.log(`[getPrintUri] PUT ${url}, ids=${gfServiceIds.join(',')}`);
+
+  const res = await fetch(url, {
     method:  'PUT',
     headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
     body:    JSON.stringify(gfServiceIds),
   });
   const body = await res.json();
-  if (!res.ok || !body.success) throw new Error(body.error?.message ?? '출력 URI 생성 실패');
-  return body.data?.uri as string;
+  console.log(`[getPrintUri] 응답 status=${res.status}, body:`, JSON.stringify(body, null, 2));
+  if (!res.ok || !body.success) throw new Error(body.error?.message ?? body.message ?? '출력 URI 생성 실패');
+
+  // 출력 상태 DB 업데이트
+  for (const sid of gfServiceIds) {
+    await supabase.from('shipments')
+      .update({ gf_printed: true, gf_printed_at: new Date().toISOString() })
+      .eq('gf_service_id', sid);
+  }
+
+  return {
+    uri:            body.data?.uri as string,
+    requestCount:   body.data?.requestCount ?? 0,
+    printCount:     body.data?.printCount ?? 0,
+    expireDateTime: body.data?.expireDateTime ?? '',
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -459,8 +479,8 @@ serve(async (req) => {
         break;
 
       case 'printUri': {
-        const uri = await getPrintUri(config, params.gfServiceIds);
-        result = { ok: true, uri };
+        const printUriResult = await getPrintUri(config, supabase, params.gfServiceIds);
+        result = { ok: true, ...printUriResult };
         break;
       }
 

@@ -208,14 +208,28 @@ export async function printGfShippingLabels(
 // 송장 출력 URI 생성
 // ---------------------------------------------------------------------------
 
-export async function getGfPrintUri(gfServiceIds: string[]): Promise<string> {
+export interface GfPrintUriResult {
+  uri: string;
+  requestCount: number;
+  printCount: number;
+  expireDateTime: string;
+}
+
+export async function getGfPrintUri(gfServiceIds: string[]): Promise<GfPrintUriResult> {
   const supabase = createClient();
+  console.log('[GF getGfPrintUri] 요청:', gfServiceIds);
   const { data, error } = await supabase.functions.invoke('gf-shipping-print', {
     body: { action: 'printUri', gfServiceIds },
   });
+  console.log('[GF getGfPrintUri] 응답:', { data, error });
   if (error) throw new Error(error.message);
   if (!data.ok) throw new Error(data.message ?? '출력 URI 생성 실패');
-  return data.uri as string;
+  return {
+    uri:            data.uri as string,
+    requestCount:   data.requestCount ?? 0,
+    printCount:     data.printCount ?? 0,
+    expireDateTime: data.expireDateTime ?? '',
+  };
 }
 
 // ---------------------------------------------------------------------------

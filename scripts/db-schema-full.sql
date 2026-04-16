@@ -1005,6 +1005,8 @@ CREATE TABLE IF NOT EXISTS shipments (
   tracking_number      VARCHAR(50),
   gf_service_id        VARCHAR(30),
   gf_invoice_url       TEXT,
+  gf_printed           BOOLEAN NOT NULL DEFAULT false,
+  gf_printed_at        TIMESTAMPTZ,
   status               VARCHAR(20) NOT NULL DEFAULT 'pending',
   shipped_at           TIMESTAMPTZ,
   delivered_at         TIMESTAMPTZ,
