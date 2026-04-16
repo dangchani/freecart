@@ -6,6 +6,7 @@
 import { Link } from 'react-router-dom';
 import { Heart, Plus } from 'lucide-react';
 import type { ProductCardProps } from './BasicProductCard';
+import { getContrastColor } from '@/lib/utils';
 
 export default function MagazineProductCard({
   id,
@@ -14,6 +15,8 @@ export default function MagazineProductCard({
   originalPrice,
   image,
   badge,
+  badgeText,
+  badgeColor,
   isNew,
   isBest,
   onAddToCart,
@@ -69,9 +72,19 @@ export default function MagazineProductCard({
           </button>
         )}
 
+        {/* 하단 띠지 */}
+        {badgeText && (
+          <div
+            className="absolute bottom-0 left-0 right-0 py-1 text-center text-xs font-bold tracking-wide z-10"
+            style={{ backgroundColor: badgeColor ?? '#ef4444', color: getContrastColor(badgeColor ?? '#ef4444') }}
+          >
+            {badgeText}
+          </div>
+        )}
+
         {/* 퀵 추가 버튼 */}
         {onAddToCart && (
-          <div className="absolute bottom-4 left-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className={`absolute left-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity ${badgeText ? 'bottom-8' : 'bottom-4'}`}>
             <button
               onClick={onAddToCart}
               className="w-full py-3 bg-white text-gray-900 text-sm font-medium flex items-center justify-center gap-2 hover:bg-gray-100 transition-colors"

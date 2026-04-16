@@ -7,9 +7,9 @@ import { Input } from '@/components/ui/input';
 import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
-import { ArrowLeft, RotateCcw, RefreshCw, Truck, ExternalLink, Package, CheckCircle2, Clock, Edit2, X, Check } from 'lucide-react';
+import { ArrowLeft, RotateCcw, RefreshCw, Truck, ExternalLink, Package, CheckCircle2, Clock, Edit2, X, Check, ShieldCheck } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { updateOrderShipping } from '@/services/orders';
+import { updateOrderShipping, transitionOrderStatus } from '@/services/orders';
 import { getCustomerRequestSettings } from '@/services/settings';
 
 interface ShipmentInfo {
@@ -39,6 +39,7 @@ interface OrderDetail {
   recipientPhone: string;
   deliveryRequest?: string;
   createdAt: string;
+  autoConfirmAt?: string | null;
   items: Array<{
     id: string;
     productName: string;
@@ -53,8 +54,13 @@ const statusLabels: Record<string, { label: string; variant: 'default' | 'second
   paid: { label: '결제 완료', variant: 'default' },
   preparing: { label: '배송 준비중', variant: 'default' },
   shipping: { label: '배송중', variant: 'default' },
+  shipped: { label: '배송 완료', variant: 'outline' },
   delivered: { label: '배송 완료', variant: 'outline' },
+  confirmed: { label: '구매확정', variant: 'outline' },
   cancelled: { label: '취소됨', variant: 'destructive' },
+  refunded: { label: '환불완료', variant: 'destructive' },
+  exchange_requested: { label: '교환 신청', variant: 'secondary' },
+  return_requested: { label: '반품 신청', variant: 'secondary' },
 };
 
 export default function OrderDetailPage() {
@@ -65,6 +71,7 @@ export default function OrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [allowCustomerReturn,   setAllowCustomerReturn]   = useState(true);
   const [allowCustomerExchange, setAllowCustomerExchange] = useState(true);
+  const [confirming, setConfirming] = useState(false);
   const [shippingModal, setShippingModal] = useState(false);
   const [shippingEdit, setShippingEdit] = useState({ recipientName: '', recipientPhone: '', postalCode: '', address1: '', address2: '', shippingMessage: '' });
   const [savingShipping, setSavingShipping] = useState(false);
@@ -91,7 +98,7 @@ export default function OrderDetailPage() {
         .select(`
           id, order_number, status, total_amount, shipping_fee,
           address1, address2, postal_code, recipient_name, recipient_phone,
-          shipping_message, created_at,
+          shipping_message, created_at, auto_confirm_at,
           order_items(id, product_name, quantity, unit_price)
         `)
         .eq('order_number', orderNumber)
@@ -147,6 +154,7 @@ export default function OrderDetailPage() {
         recipientPhone: data.recipient_phone,
         deliveryRequest: data.shipping_message,
         createdAt: data.created_at,
+        autoConfirmAt: data.auto_confirm_at ?? null,
         items: (data.order_items || []).map((i: any) => ({
           id: i.id,
           productName: i.product_name,
@@ -192,6 +200,21 @@ export default function OrderDetailPage() {
     }
   }
 
+  async function handleConfirmOrder() {
+    if (!order) return;
+    if (!confirm('구매확정 하시겠습니까?\n확정 후에는 반품/교환 신청이 어려울 수 있습니다.')) return;
+    setConfirming(true);
+    try {
+      await transitionOrderStatus(order.id, 'confirmed', { note: '고객 구매확정', changedBy: user?.id });
+      await loadOrderDetail();
+      alert('구매확정이 완료되었습니다.');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '구매확정 중 오류가 발생했습니다.');
+    } finally {
+      setConfirming(false);
+    }
+  }
+
   async function handleCancelOrder() {
     if (!confirm('주문을 취소하시겠습니까?')) {
       return;
@@ -227,8 +250,9 @@ export default function OrderDetailPage() {
   const statusInfo = statusLabels[order.status] || { label: order.status, variant: 'default' as const };
   const canCancel = order.status === 'pending' || order.status === 'paid';
   const canEditShipping = order.status === 'pending';
-  const canReturn   = order.status === 'delivered' && allowCustomerReturn;
-  const canExchange = order.status === 'delivered' && allowCustomerExchange;
+  const canConfirm  = order.status === 'delivered';
+  const canReturn   = order.status === 'delivered';
+  const canExchange = order.status === 'delivered';
   const subtotal = order.totalAmount - order.shippingCost;
 
   return (
@@ -245,6 +269,11 @@ export default function OrderDetailPage() {
             <p className="text-gray-600">주문번호: {order.orderNumber}</p>
             <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
           </div>
+          {order.status === 'delivered' && order.autoConfirmAt && (
+            <p className="mt-1 text-xs text-gray-400">
+              자동 구매확정: {format(new Date(order.autoConfirmAt), 'yyyy-MM-dd')}
+            </p>
+          )}
         </div>
         <div className="flex gap-2">
           {canEditShipping && (
@@ -259,25 +288,41 @@ export default function OrderDetailPage() {
           )}
           {order.status === 'delivered' && (
             <>
-              {canReturn ? (
-                <Button variant="outline" asChild>
-                  <Link to={`/mypage/orders/${order.orderNumber}/return`}>
+              {canReturn && (
+                allowCustomerReturn ? (
+                  <Button variant="outline" asChild>
+                    <Link to={`/mypage/orders/${order.orderNumber}/return`}>
+                      <RotateCcw className="mr-1.5 h-4 w-4" />
+                      반품 신청
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button variant="outline" onClick={() => alert('현재 온라인 반품 신청이 제한되어 있습니다.\n고객센터로 문의해 주세요.')}>
                     <RotateCcw className="mr-1.5 h-4 w-4" />
                     반품 신청
-                  </Link>
-                </Button>
-              ) : (
-                <span className="text-xs text-gray-400 self-center">반품은 고객센터 문의</span>
+                  </Button>
+                )
               )}
-              {canExchange ? (
-                <Button variant="outline" asChild>
-                  <Link to={`/mypage/orders/${order.orderNumber}/exchange`}>
+              {canExchange && (
+                allowCustomerExchange ? (
+                  <Button variant="outline" asChild>
+                    <Link to={`/mypage/orders/${order.orderNumber}/exchange`}>
+                      <RefreshCw className="mr-1.5 h-4 w-4" />
+                      교환 신청
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button variant="outline" onClick={() => alert('현재 온라인 교환 신청이 제한되어 있습니다.\n고객센터로 문의해 주세요.')}>
                     <RefreshCw className="mr-1.5 h-4 w-4" />
                     교환 신청
-                  </Link>
+                  </Button>
+                )
+              )}
+              {canConfirm && (
+                <Button onClick={handleConfirmOrder} disabled={confirming}>
+                  <ShieldCheck className="mr-1.5 h-4 w-4" />
+                  {confirming ? '처리 중...' : '구매확정'}
                 </Button>
-              ) : (
-                <span className="text-xs text-gray-400 self-center">교환은 고객센터 문의</span>
               )}
             </>
           )}

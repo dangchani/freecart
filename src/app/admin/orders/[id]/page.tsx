@@ -48,6 +48,8 @@ import {
 } from '@/constants/orderStatus';
 import { transitionOrderStatus, getOrderTimeline, updateOrderShipping, updateOrderItems } from '@/services/orders';
 import { createAdminReturn, RETURN_REASONS } from '@/services/returns';
+import { getGfCenters, getGfContracts, getGfEnv, printGfShippingLabels, getGfPrintUri, cancelGfShipping, type GfCenter, type GfContract, type GfPrintResult } from '@/services/goodsflow';
+import { GF_CANCEL_REASONS } from '@/constants/goodsflow';
 import type { ReturnItem } from '@/services/returns';
 import { createAdminExchange, calculatePriceDiff, EXCHANGE_REASONS } from '@/services/exchanges';
 import type { ExchangeItem } from '@/services/exchanges';
@@ -111,12 +113,14 @@ interface OrderItem {
   itemType: string;
   returnedQuantity: number;
   exchangedQuantity: number;
+  sku: string | null;
 }
 
 interface Shipment {
   id: string;
   trackingNumber: string | null;
   shippingCompanyId: string | null;
+  gfServiceId: string | null;
   status: string;
   shippedAt: string | null;
   deliveredAt: string | null;
@@ -215,6 +219,25 @@ export default function AdminOrderDetailPage() {
   // 송장 입력
   const [trackingNumber, setTrackingNumber] = useState('');
   const [shippingCompanyId, setShippingCompanyId] = useState('');
+  const [showTrackingForm, setShowTrackingForm] = useState(false);
+
+  // 굿스플로 단건 발급
+  const [gfModal, setGfModal] = useState(false);
+  const [gfCenters, setGfCenters] = useState<GfCenter[]>([]);
+  const [gfContracts, setGfContracts] = useState<GfContract[]>([]);
+  const [gfCentersLoading, setGfCentersLoading] = useState(false);
+  const [gfCenterCode, setGfCenterCode] = useState('');
+  const [gfAvailableTransporters, setGfAvailableTransporters] = useState<{ code: string; contractId: string }[]>([]);
+  const [gfTransporter, setGfTransporter] = useState('');
+  const [gfAvailableBoxSizes, setGfAvailableBoxSizes] = useState<{ boxSize: string; boxSizeName: string }[]>([]);
+  const [gfBoxSize, setGfBoxSize] = useState('');
+  const [gfIssuing, setGfIssuing] = useState(false);
+  const [gfResult, setGfResult] = useState<GfPrintResult | null>(null);
+  const [gfPrintLoading, setGfPrintLoading] = useState(false);
+  const [gfCancelModal, setGfCancelModal] = useState(false);
+  const [gfCancelReason, setGfCancelReason] = useState('NOT_SEND');
+  const [gfCancelContents, setGfCancelContents] = useState('');
+  const [gfCancelling, setGfCancelling] = useState(false);
   const [shipmentHighlight, setShipmentHighlight] = useState(false);
   const shipmentRef = useRef<HTMLDivElement>(null);
 
@@ -299,13 +322,13 @@ export default function AdminOrderDetailPage() {
         { data: companies },
       ] = await Promise.all([
         supabase.from('orders').select(`
-          *, items:order_items(*),
+          *, items:order_items(*, product:products(sku, product_code), variant:product_variants(sku)),
           coupon:coupons(id, name)
         `).eq('id', orderId).single(),
 
         supabase.from('shipments').select(`
           *, company:shipping_companies(id, name, tracking_url)
-        `).eq('order_id', orderId).maybeSingle(),
+        `).eq('order_id', orderId).maybeSingle() as any,
 
         supabase.from('payments').select('*').eq('order_id', orderId).order('created_at', { ascending: false }),
 
@@ -376,6 +399,7 @@ export default function AdminOrderDetailPage() {
             itemType: item.item_type ?? 'purchase',
             returnedQuantity:  item.returned_quantity  ?? 0,
             exchangedQuantity: item.exchanged_quantity ?? 0,
+            sku: item.variant?.sku ?? item.product?.sku ?? item.product?.product_code ?? null,
           })),
         });
       }
@@ -385,6 +409,7 @@ export default function AdminOrderDetailPage() {
           id: shipmentData.id,
           trackingNumber: shipmentData.tracking_number,
           shippingCompanyId: shipmentData.shipping_company_id,
+          gfServiceId: shipmentData.gf_service_id ?? null,
           status: shipmentData.status,
           shippedAt: shipmentData.shipped_at,
           deliveredAt: shipmentData.delivered_at,
@@ -494,6 +519,145 @@ export default function AdminOrderDetailPage() {
       alert(err.message ?? '운송장 저장 중 오류가 발생했습니다.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  // 출고지 선택 시 택배사 목록 갱신
+  function handleGfCenterChange(centerCode: string, contracts: GfContract[]) {
+    setGfCenterCode(centerCode);
+    const centerContracts = contracts.filter((c) => c.centerCode === centerCode);
+    const transporters = centerContracts.map((c) => ({ code: c.transporter, contractId: c.contractId }));
+    setGfAvailableTransporters(transporters);
+    if (transporters.length > 0) {
+      handleGfTransporterChange(transporters[0].code, centerCode, contracts);
+    } else {
+      setGfTransporter('');
+      setGfAvailableBoxSizes([]);
+      setGfBoxSize('');
+    }
+  }
+
+  // 택배사 선택 시 박스 사이즈 목록 갱신
+  function handleGfTransporterChange(transporter: string, centerCode: string, contracts: GfContract[]) {
+    setGfTransporter(transporter);
+    const contract = contracts.find((c) => c.centerCode === centerCode && c.transporter === transporter);
+    const rates = contract?.contractRates ?? [];
+    setGfAvailableBoxSizes(rates.map((r) => ({ boxSize: r.boxSize, boxSizeName: r.boxSizeName })));
+    setGfBoxSize(rates[0]?.boxSize ?? '');
+  }
+
+  // 굿스플로 단건 발급 모달 열기
+  async function openGfModal() {
+    setGfResult(null);
+    setGfModal(true);
+    setGfCentersLoading(true);
+    try {
+      const env = await getGfEnv();
+      const [centers, contracts] = await Promise.all([getGfCenters(env), getGfContracts(env)]);
+      setGfCenters(centers);
+      setGfContracts(contracts);
+      if (centers.length > 0) {
+        handleGfCenterChange(centers[0].centerCode, contracts);
+      }
+    } catch {
+      setGfCenters([]);
+      setGfContracts([]);
+    } finally {
+      setGfCentersLoading(false);
+    }
+  }
+
+  async function handleGfIssue() {
+    if (!order || !id) return;
+    if (!gfCenterCode)  { alert('출고지를 선택해주세요.'); return; }
+    if (!gfTransporter) { alert('택배사를 선택해주세요.'); return; }
+
+    setGfIssuing(true);
+    try {
+      const deliveryItems = order.items
+        .filter((i) => i.itemType !== 'gift')
+        .map((i) => ({
+          orderNo:  order.orderNumber,
+          orderDate: format(new Date(order.createdAt), 'yyyy-MM-dd HH:mm'),
+          name:     i.productName,
+          quantity: i.quantity,
+          price:    i.unitPrice,
+          ...(i.sku ? { code: i.sku } : {}),
+          ...(i.optionText ? { option: i.optionText } : {}),
+        }));
+
+      const printPayload = [{
+        orderId:         id,
+        orderNumber:     order.orderNumber,
+        orderDate:       format(new Date(order.createdAt), 'yyyy-MM-dd HH:mm'),
+        toName:          order.recipientName,
+        toPhoneNo:       order.recipientPhone,
+        toAddress1:      order.address1,
+        toAddress2:      order.address2 ?? '',
+        toZipcode:       order.postalCode ?? '',
+        deliveryMessage: order.shippingMessage ?? '',
+        consumerName:    order.ordererName,
+        consumerPhoneNo: order.ordererPhone,
+        deliveryItems,
+      }];
+      const printOptions = { centerCode: gfCenterCode, transporter: gfTransporter, boxSize: gfBoxSize };
+      console.log('[GF 송장발급] 요청 items:', JSON.stringify(printPayload, null, 2));
+      console.log('[GF 송장발급] 요청 options:', printOptions);
+
+      const results = await printGfShippingLabels(printPayload, printOptions);
+      console.log('[GF 송장발급] 응답 results:', JSON.stringify(results, null, 2));
+
+      setGfResult(results[0]);
+      await loadAll(id);
+    } catch (e: any) {
+      console.error('[GF 송장발급] 오류:', e);
+      alert(e.message ?? '송장 발급 중 오류가 발생했습니다.');
+    } finally {
+      setGfIssuing(false);
+    }
+  }
+
+  async function handleGfPrint() {
+    if (!gfResult?.gfServiceId) return;
+    setGfPrintLoading(true);
+    try {
+      const uri = await getGfPrintUri([gfResult.gfServiceId]);
+      window.open(uri, '_blank');
+    } catch (e: any) {
+      alert(e.message ?? '출력 URI 생성 실패');
+    } finally {
+      setGfPrintLoading(false);
+    }
+  }
+
+  async function handleGfCancel() {
+    if (!shipment?.gfServiceId) return;
+    setGfCancelling(true);
+    try {
+      await cancelGfShipping(shipment.gfServiceId, gfCancelReason, gfCancelContents || undefined);
+      setGfCancelModal(false);
+      setGfCancelContents('');
+      await loadAll(id!);
+      alert('송장이 취소되었습니다.');
+    } catch (e: any) {
+      console.error('[GF 송장취소] 오류:', e);
+      alert(e.message ?? '취소 중 오류가 발생했습니다.');
+    } finally {
+      setGfCancelling(false);
+    }
+  }
+
+  // 기존 굿스플로 서비스ID로 출력 URI 재발급
+  async function handleGfReprint() {
+    if (!shipment?.gfServiceId) return;
+    setGfPrintLoading(true);
+    try {
+      const uri = await getGfPrintUri([shipment.gfServiceId]);
+      window.open(uri, '_blank');
+    } catch (e: any) {
+      alert(e.message ?? '출력 URI 생성 실패');
+    } finally {
+      setGfPrintLoading(false);
     }
   }
 
@@ -1127,12 +1291,12 @@ export default function AdminOrderDetailPage() {
               )}
 
               {/* 영수증 링크 */}
-              {payments.map((p) => p.receiptUrl && (
+              {payments.map((p) => p.receiptUrl ? (
                 <a key={p.id} href={p.receiptUrl} target="_blank" rel="noopener noreferrer"
                   className="mt-2 inline-flex items-center text-xs text-blue-600 hover:underline no-print">
                   결제 영수증 보기 <ExternalLink className="ml-1 h-3 w-3" />
                 </a>
-              ))}
+              ) : null)}
             </Card>
 
             {/* 현금영수증 / 세금계산서 */}
@@ -1295,38 +1459,103 @@ export default function AdminOrderDetailPage() {
               <h2 className="mb-3 flex items-center gap-2 font-semibold text-gray-800">
                 <Truck className="h-4 w-4" />송장 정보
               </h2>
-              <div className="space-y-3">
-                <div>
-                  <label className="text-xs font-medium text-gray-600">배송사</label>
-                  <Select value={shippingCompanyId} onValueChange={setShippingCompanyId}>
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="배송사 선택" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {shippingCompanies.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-gray-600">운송장 번호</label>
-                  <Input value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)}
-                    placeholder="운송장 번호 입력" className="mt-1" />
-                </div>
-                <Button className="w-full" onClick={handleSaveShipment} disabled={saving}>
-                  {saving ? '저장 중...' : '운송장 저장'}
+
+              <div className="space-y-2">
+                {/* 굿스플로 송장 */}
+                {shipment?.gfServiceId && shipment.status !== 'cancelled' ? (
+                  <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 space-y-2">
+                    <p className="text-xs font-medium text-blue-700">굿스플로 송장</p>
+                    <p className="text-xs text-gray-500 font-mono bg-white px-2 py-1 rounded border">
+                      서비스 ID: {shipment.gfServiceId}
+                    </p>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" className="flex-1" onClick={handleGfReprint} disabled={gfPrintLoading}>
+                        <Printer className="mr-1 h-3.5 w-3.5" />{gfPrintLoading ? '생성 중...' : '송장 출력'}
+                      </Button>
+                      <Button size="sm" variant="outline" className="flex-1 text-red-600 hover:text-red-700 hover:border-red-300" onClick={() => setGfCancelModal(true)}>
+                        <X className="mr-1 h-3.5 w-3.5" />송장 취소
+                      </Button>
+                    </div>
+                  </div>
+                ) : shipment?.gfServiceId && shipment.status === 'cancelled' ? (
+                  <div className="rounded-lg border border-red-100 bg-red-50 p-3 space-y-2">
+                    <p className="text-xs font-medium text-red-600">송장 취소됨</p>
+                    <p className="text-xs text-gray-400 font-mono line-through">
+                      서비스 ID: {shipment.gfServiceId}
+                    </p>
+                    {order.status === 'processing' && (
+                      <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white" size="sm" onClick={openGfModal}>
+                        <Truck className="mr-1.5 h-3.5 w-3.5" />송장 재발급
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  order.status === 'processing' && (
+                    <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white" onClick={openGfModal}>
+                      <Truck className="mr-2 h-4 w-4" />굿스플로 송장 발급
+                    </Button>
+                  )
+                )}
+
+                {/* 운송장 등록 (직접 입력) */}
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setShowTrackingForm((v) => !v)}
+                >
+                  <Truck className="mr-2 h-4 w-4" />
+                  {shipment?.trackingNumber ? '운송장 수정' : '운송장 등록'}
                 </Button>
+
+                {/* 현재 운송장 정보 */}
+                {shipment?.trackingNumber && !showTrackingForm && (
+                  <div className="rounded-md bg-gray-50 px-3 py-2 text-sm space-y-0.5">
+                    <div className="flex justify-between text-xs text-gray-500">
+                      <span>배송사</span><span className="font-medium text-gray-700">{shipment.company?.name ?? '-'}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-500">
+                      <span>운송장</span><span className="font-mono font-medium text-gray-700">{shipment.trackingNumber}</span>
+                    </div>
+                    {trackingUrl && (
+                      <a href={trackingUrl} target="_blank" rel="noopener noreferrer"
+                        className="mt-1 inline-flex items-center text-xs text-blue-600 hover:underline">
+                        배송 조회 <ExternalLink className="ml-1 h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {/* 운송장 입력 폼 (토글) */}
+                {showTrackingForm && (
+                  <div className="space-y-3 rounded-md border p-3">
+                    <div>
+                      <label className="text-xs font-medium text-gray-600">배송사</label>
+                      <Select value={shippingCompanyId} onValueChange={setShippingCompanyId}>
+                        <SelectTrigger className="mt-1">
+                          <SelectValue placeholder="배송사 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {shippingCompanies.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-gray-600">운송장 번호</label>
+                      <Input value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)}
+                        placeholder="운송장 번호 입력" className="mt-1" />
+                    </div>
+                    <Button className="w-full" onClick={handleSaveShipment} disabled={saving}>
+                      {saving ? '저장 중...' : '운송장 저장'}
+                    </Button>
+                  </div>
+                )}
+
+                {shipment?.shippedAt && (
+                  <p className="text-xs text-gray-400">발송: {format(new Date(shipment.shippedAt), 'yyyy-MM-dd HH:mm')}</p>
+                )}
               </div>
-              {trackingUrl && (
-                <a href={trackingUrl} target="_blank" rel="noopener noreferrer"
-                  className="mt-3 inline-flex items-center text-sm text-blue-600 hover:underline">
-                  <Truck className="mr-1 h-3.5 w-3.5" />배송 조회 <ExternalLink className="ml-1 h-3 w-3" />
-                </a>
-              )}
-              {shipment?.shippedAt && (
-                <p className="mt-1 text-xs text-gray-400">발송: {format(new Date(shipment.shippedAt), 'yyyy-MM-dd HH:mm')}</p>
-              )}
             </Card>
 
             {/* 금액 내역 */}
@@ -1398,6 +1627,157 @@ export default function AdminOrderDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* 굿스플로 송장 발급 모달 */}
+      {gfModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="w-full max-w-md p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold">굿스플로 송장 발급</h2>
+              <button onClick={() => setGfModal(false)}><X className="h-5 w-5 text-gray-400" /></button>
+            </div>
+
+            {!gfResult ? (
+              <div className="space-y-4 text-sm">
+                {gfCentersLoading ? (
+                  <p className="text-center text-gray-400 py-4">출고지 불러오는 중...</p>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">출고지 <span className="text-red-500">*</span></label>
+                      {gfCenters.length === 0 ? (
+                        <p className="text-xs text-red-500 py-1">출고지 없음 — 외부 연동에서 동기화 후 사용해주세요</p>
+                      ) : (
+                        <Select value={gfCenterCode} onValueChange={(v) => handleGfCenterChange(v, gfContracts)}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="출고지 선택" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {gfCenters.map((c) => (
+                              <SelectItem key={c.centerCode} value={c.centerCode}>
+                                {c.centerName}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">택배사 <span className="text-red-500">*</span></label>
+                      {gfAvailableTransporters.length === 0 ? (
+                        <p className="text-xs text-gray-400 py-1">출고지를 먼저 선택해주세요</p>
+                      ) : (
+                        <Select value={gfTransporter} onValueChange={(v) => handleGfTransporterChange(v, gfCenterCode, gfContracts)}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="택배사 선택" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {gfAvailableTransporters.map((t) => (
+                              <SelectItem key={t.contractId} value={t.code}>{t.code}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">박스 사이즈 <span className="text-red-500">*</span></label>
+                      {gfAvailableBoxSizes.length === 0 ? (
+                        <p className="text-xs text-gray-400 py-1">택배사를 먼저 선택해주세요</p>
+                      ) : (
+                        <Select value={gfBoxSize} onValueChange={setGfBoxSize}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {gfAvailableBoxSizes.map((b) => (
+                              <SelectItem key={b.boxSize} value={b.boxSize}>{b.boxSizeName} ({b.boxSize})</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                    <div className="rounded-md bg-gray-50 p-3 text-xs text-gray-600 space-y-1">
+                      <p><span className="font-medium">수령인:</span> {order?.recipientName} / {order?.recipientPhone}</p>
+                      <p><span className="font-medium">주소:</span> {order?.address1} {order?.address2}</p>
+                    </div>
+                  </>
+                )}
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" onClick={() => setGfModal(false)}>취소</Button>
+                  <Button onClick={handleGfIssue} disabled={gfIssuing || gfCentersLoading || !gfCenterCode || !gfTransporter || !gfBoxSize}>
+                    {gfIssuing ? '발급 중...' : '송장 발급'}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {gfResult.success ? (
+                  <div className="rounded-md bg-green-50 p-4 text-sm text-green-800 space-y-1">
+                    <p className="font-semibold">송장 발급 완료</p>
+                    <p className="font-mono text-xs">서비스 ID: {gfResult.gfServiceId}</p>
+                  </div>
+                ) : (
+                  <div className="rounded-md bg-red-50 p-4 text-sm text-red-700">
+                    <p className="font-semibold">발급 실패</p>
+                    <p className="text-xs">{gfResult.error}</p>
+                  </div>
+                )}
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setGfModal(false)}>닫기</Button>
+                  {gfResult.success && (
+                    <Button onClick={handleGfPrint} disabled={gfPrintLoading}>
+                      <Printer className="mr-1.5 h-4 w-4" />{gfPrintLoading ? '생성 중...' : '송장 출력'}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* 굿스플로 송장 취소 모달 */}
+      {gfCancelModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="w-full max-w-sm p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold">송장 취소</h2>
+              <button onClick={() => setGfCancelModal(false)}><X className="h-5 w-5 text-gray-400" /></button>
+            </div>
+            <div className="space-y-3 text-sm">
+              <p className="text-gray-600">굿스플로에 등록된 송장을 취소합니다. 배송사 픽업 이전 상태만 취소 가능합니다.</p>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">취소 사유</label>
+                <Select value={gfCancelReason} onValueChange={setGfCancelReason}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GF_CANCEL_REASONS.map((r) => (
+                      <SelectItem key={r.code} value={r.code}>{r.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">상세 사유 (선택)</label>
+                <Input
+                  value={gfCancelContents}
+                  onChange={(e) => setGfCancelContents(e.target.value)}
+                  placeholder="직접 입력하는 취소 사유"
+                />
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setGfCancelModal(false)}>닫기</Button>
+              <Button onClick={handleGfCancel} disabled={gfCancelling}
+                className="bg-red-600 hover:bg-red-700 text-white">
+                {gfCancelling ? '취소 중...' : '취소 확정'}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* 부분 취소 모달 */}
       {partialCancelModal && (

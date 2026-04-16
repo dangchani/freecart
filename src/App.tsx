@@ -98,6 +98,7 @@ import AdminPopupsPage from './app/admin/popups/page';
 import AdminProductQnAPage from './app/admin/product-qna/page';
 import AdminInquiriesPage from './app/admin/inquiries/page';
 import AdminSubscriptionsPage from './app/admin/subscriptions/page';
+import AdminDepositsPage from './app/admin/deposits/page';
 import AdminRefundsPage from './app/admin/refunds/page';
 import AdminSettingsPage from './app/admin/settings/page';
 import AdminStatisticsPage from './app/admin/statistics/page';
@@ -123,6 +124,7 @@ import AdminLogsPage from './app/admin/logs/page';
 import AdminIpBlocksPage from './app/admin/ip-blocks/page';
 import AdminVisitorsPage from './app/admin/visitors/page';
 import AdminWebhooksPage from './app/admin/webhooks/page';
+import AdminAddressesPage from './app/admin/addresses/page';
 import AdminPagesPage from './app/admin/pages/page';
 import ContentPage from './app/pages/[slug]/page';
 import OAuthCallbackPage from './app/admin/oauth/callback/page';
@@ -315,6 +317,7 @@ export default function App() {
               <Route path="/admin/product-qna" element={<AdminProductQnAPage />} />
               <Route path="/admin/inquiries" element={<AdminInquiriesPage />} />
               <Route path="/admin/subscriptions" element={<AdminSubscriptionsPage />} />
+              <Route path="/admin/deposits" element={<AdminDepositsPage />} />
               <Route path="/admin/refunds" element={<AdminRefundsPage />} />
               <Route path="/admin/settings" element={<AdminSettingsPage />} />
               <Route path="/admin/settings/shipping" element={<AdminShippingSettingsPage />} />
@@ -333,6 +336,7 @@ export default function App() {
               <Route path="/admin/ip-blocks" element={<AdminIpBlocksPage />} />
               <Route path="/admin/visitors" element={<AdminVisitorsPage />} />
               <Route path="/admin/webhooks" element={<AdminWebhooksPage />} />
+              <Route path="/admin/addresses" element={<AdminAddressesPage />} />
               <Route path="/admin/pages" element={<AdminPagesPage />} />
             </Route>
           </Route>

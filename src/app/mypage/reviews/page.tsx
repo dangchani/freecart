@@ -84,27 +84,48 @@ export default function ReviewsPage() {
       setLoading(true);
       const supabase = createClient();
 
-      // 구매확정된 주문 아이템 조회
-      const { data: orderItems, error } = await supabase
-        .from('order_items')
+      // orders 기준으로 쿼리 — user_id를 최상위 컬럼으로 직접 필터링
+      const { data: orders, error } = await supabase
+        .from('orders')
         .select(`
-          id, product_id, order_id,
-          products(name, slug, thumbnail_url),
-          orders!inner(status, confirmed_at)
+          id, status, confirmed_at,
+          order_items(
+            id, product_id, product_image,
+            products(name, slug)
+          )
         `)
-        .eq('orders.user_id', user!.id)
-        .eq('orders.status', 'delivered')
-        .order('id', { ascending: false });
+        .eq('user_id', user!.id)
+        .in('status', ['delivered', 'confirmed']);
 
       if (error) throw error;
 
-      if (!orderItems || orderItems.length === 0) {
+      if (!orders || orders.length === 0) {
+        setWritableReviews([]);
+        return;
+      }
+
+      // order_items 평탄화
+      const allItems: { orderItemId: string; productId: string; productSlug: string; productName: string; productImage: string; orderedAt: string }[] = [];
+      for (const order of orders) {
+        for (const item of (order.order_items as any[]) || []) {
+          allItems.push({
+            orderItemId: item.id,
+            productId: item.product_id,
+            productSlug: item.products?.slug || '',
+            productName: item.products?.name || '',
+            productImage: item.product_image || '',
+            orderedAt: order.confirmed_at || '',
+          });
+        }
+      }
+
+      if (allItems.length === 0) {
         setWritableReviews([]);
         return;
       }
 
       // 이미 작성한 리뷰의 order_item_id 목록 조회
-      const orderItemIds = orderItems.map((i: any) => i.id);
+      const orderItemIds = allItems.map((i) => i.orderItemId);
       const { data: existingReviews } = await supabase
         .from('reviews')
         .select('order_item_id')
@@ -114,18 +135,7 @@ export default function ReviewsPage() {
       const reviewedItemIds = new Set((existingReviews || []).map((r: any) => r.order_item_id));
 
       // 리뷰 미작성 아이템만 필터
-      const writable = (orderItems || [])
-        .filter((item: any) => !reviewedItemIds.has(item.id))
-        .map((item: any) => ({
-          orderItemId: item.id,
-          productId: item.product_id,
-          productSlug: item.products?.slug || '',
-          productName: item.products?.name || '',
-          productImage: item.products?.thumbnail_url || '',
-          orderedAt: item.orders?.confirmed_at || '',
-        }));
-
-      setWritableReviews(writable);
+      setWritableReviews(allItems.filter((item) => !reviewedItemIds.has(item.orderItemId)));
     } catch (err) {
       console.error('Failed to load writable reviews:', err);
     } finally {

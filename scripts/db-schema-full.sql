@@ -294,8 +294,10 @@ CREATE TABLE IF NOT EXISTS products (
   name                  VARCHAR(255) NOT NULL,
   slug                  VARCHAR(255) NOT NULL UNIQUE,
   sku                   VARCHAR(100),
+  product_code          VARCHAR(30) UNIQUE,
   summary               VARCHAR(500),
   description           TEXT,
+  bundle_description    TEXT,
   manufacturer          VARCHAR(100),
   origin                VARCHAR(100),
   weight                DECIMAL(10,2),
@@ -328,6 +330,8 @@ CREATE TABLE IF NOT EXISTS products (
   video_url             VARCHAR(500),
   has_options           BOOLEAN NOT NULL DEFAULT false,
   product_type          TEXT NOT NULL DEFAULT 'single' CHECK (product_type IN ('single', 'bundle')),
+  show_stock            BOOLEAN NOT NULL DEFAULT true,   -- 사용자 화면에 재고 수량 표시 여부
+  show_gift_stock       BOOLEAN NOT NULL DEFAULT true,   -- 사은품 품절 정보 표시 여부
   shipping_type         VARCHAR(20) NOT NULL DEFAULT 'default',
   shipping_fee          INTEGER,
   shipping_notice       TEXT,
@@ -352,6 +356,35 @@ DROP TRIGGER IF EXISTS trg_products_updated_at ON products;
 CREATE TRIGGER trg_products_updated_at
   BEFORE UPDATE ON products
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- product_code 자동 생성 트리거 (P + YYMMDD + 5자리 순번)
+CREATE OR REPLACE FUNCTION generate_product_code()
+RETURNS TRIGGER AS $$
+DECLARE
+  date_part TEXT;
+  next_seq  INTEGER;
+  new_code  TEXT;
+BEGIN
+  IF NEW.product_code IS NULL OR NEW.product_code = '' THEN
+    date_part := TO_CHAR(NOW(), 'YYMMDD');
+    SELECT COALESCE(MAX(
+      NULLIF(SPLIT_PART(product_code, '-', 2), '')::integer
+    ), 0) + 1
+    INTO next_seq
+    FROM products
+    WHERE product_code LIKE 'P' || date_part || '-%';
+
+    new_code := 'P' || date_part || '-' || LPAD(next_seq::text, 5, '0');
+    NEW.product_code := new_code;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_products_generate_code ON products;
+CREATE TRIGGER trg_products_generate_code
+  BEFORE INSERT ON products
+  FOR EACH ROW EXECUTE FUNCTION generate_product_code();
 
 -- 2.4 product_options (상품 옵션 그룹)
 CREATE TABLE IF NOT EXISTS product_options (
@@ -511,8 +544,9 @@ CREATE TABLE IF NOT EXISTS product_gift_sets (
   starts_at   TIMESTAMPTZ,
   ends_at     TIMESTAMPTZ,
   sort_order  INTEGER      NOT NULL DEFAULT 0,
-  badge_text  VARCHAR(20),                              -- 썸네일 띠지 텍스트 (예: "3+1", "기획전")
-  badge_color VARCHAR(20)  DEFAULT 'red',               -- 띠지 색상 키: red|yellow|green|blue|purple
+  badge_text         VARCHAR(20),                       -- 썸네일 띠지 텍스트 (예: "3+1", "기획전")
+  badge_color        VARCHAR(20)  DEFAULT 'red',        -- 띠지 색상 키: red|yellow|green|blue|purple
+  hide_when_soldout  BOOLEAN      NOT NULL DEFAULT false, -- 모든 사은품 품절 시 세트 자동 숨김
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
@@ -969,6 +1003,8 @@ CREATE TABLE IF NOT EXISTS shipments (
   order_id             UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   shipping_company_id  UUID REFERENCES shipping_companies(id) ON DELETE SET NULL,
   tracking_number      VARCHAR(50),
+  gf_service_id        VARCHAR(30),
+  gf_invoice_url       TEXT,
   status               VARCHAR(20) NOT NULL DEFAULT 'pending',
   shipped_at           TIMESTAMPTZ,
   delivered_at         TIMESTAMPTZ,
@@ -1815,6 +1851,41 @@ CREATE TRIGGER trg_subscription_deliveries_updated_at
 -- SECTION 14: EXTERNAL CONNECTIONS
 -- =============================================================================
 
+-- 14.0 integration_providers (연동 서비스 카탈로그)
+CREATE TABLE IF NOT EXISTS integration_providers (
+  key          VARCHAR(30)  PRIMARY KEY,
+  name         VARCHAR(100) NOT NULL,
+  category     VARCHAR(50)  NOT NULL,
+  description  TEXT,
+  fields       JSONB        NOT NULL DEFAULT '[]',
+  has_test     BOOLEAN      NOT NULL DEFAULT false,
+  sort_order   INTEGER      NOT NULL DEFAULT 0,
+  created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO integration_providers (key, name, category, description, fields, has_test, sort_order) VALUES
+(
+  'goodsflow', '굿스플로', '물류/배송', '택배 발송 및 운송장 자동 채번 서비스',
+  '[{"key":"api_key_prod","label":"운영 API Key","type":"password","required":true},{"key":"api_base_prod","label":"운영 서버 URL","type":"text","required":false,"placeholder":"https://api.goodsflow.io","description":"비워두면 기본값 사용"},{"key":"seller_code_prod","label":"운영 판매자 코드","type":"text","required":false,"placeholder":"코드 조회 버튼으로 선택"},{"key":"api_key_test","label":"테스트 API Key","type":"password","required":false},{"key":"api_base_test","label":"테스트 서버 URL","type":"text","required":false,"placeholder":"https://test-api.goodsflow.io","description":"비워두면 기본값 사용"},{"key":"seller_code_test","label":"테스트 판매자 코드","type":"text","required":false,"placeholder":"코드 조회 버튼으로 선택"},{"key":"use_test","label":"테스트 모드","type":"toggle","required":false,"description":"송장 발급 시 테스트 API Key/서버 사용"}]'::jsonb,
+  true, 1
+),
+(
+  'ecount', '이카운트', 'ERP', '재고·매출 ERP 연동 서비스',
+  '[{"key":"company_code","label":"회사코드","type":"text","required":true},{"key":"user_id","label":"사용자 ID","type":"text","required":true},{"key":"api_key","label":"API Key","type":"password","required":true}]'::jsonb,
+  true, 2
+),
+(
+  'ppurio', '뿌리오', '문자/알림', '문자 메시지(SMS/LMS/MMS) 발송 서비스',
+  '[{"key":"api_key","label":"API Key","type":"password","required":true},{"key":"sender_phone","label":"발신번호","type":"text","required":true,"placeholder":"010-0000-0000"}]'::jsonb,
+  true, 3
+),
+(
+  'popbill', '팝빌', '문자/알림', '세금계산서·문자 통합 서비스',
+  '[{"key":"link_id","label":"링크 ID","type":"text","required":true},{"key":"secret_key","label":"Secret Key","type":"password","required":true},{"key":"business_number","label":"사업자번호","type":"text","required":true,"placeholder":"000-00-00000"}]'::jsonb,
+  true, 4
+)
+ON CONFLICT (key) DO NOTHING;
+
 -- 14.1 external_connections (외부 연동 설정)
 CREATE TABLE IF NOT EXISTS external_connections (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1833,6 +1904,17 @@ DROP TRIGGER IF EXISTS trg_external_connections_updated_at ON external_connectio
 CREATE TRIGGER trg_external_connections_updated_at
   BEFORE UPDATE ON external_connections
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'uq_external_connections_platform'
+  ) THEN
+    ALTER TABLE external_connections
+      ADD CONSTRAINT uq_external_connections_platform UNIQUE (platform);
+  END IF;
+END $$;
 
 -- 14.2 sync_jobs / sync_logs (동기화 로그)
 CREATE TABLE IF NOT EXISTS sync_logs (
@@ -1999,12 +2081,70 @@ CREATE TABLE IF NOT EXISTS webhook_logs (
   status         VARCHAR(20) NOT NULL DEFAULT 'pending',
   response_code  INTEGER,
   response_body  TEXT,
+  duration_ms    INTEGER,
   sent_at        TIMESTAMPTZ,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_webhook_logs_webhook_id ON webhook_logs(webhook_id);
 CREATE INDEX IF NOT EXISTS idx_webhook_logs_status     ON webhook_logs(status);
+
+-- 16.3 inbound_webhooks (수신 웹훅 엔드포인트)
+CREATE TABLE IF NOT EXISTS inbound_webhooks (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  source      VARCHAR(50) NOT NULL UNIQUE,
+  label       VARCHAR(100) NOT NULL,
+  secret_key  VARCHAR(128),
+  is_active   BOOLEAN     NOT NULL DEFAULT true,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+DROP TRIGGER IF EXISTS trg_inbound_webhooks_updated_at ON inbound_webhooks;
+CREATE TRIGGER trg_inbound_webhooks_updated_at
+  BEFORE UPDATE ON inbound_webhooks
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- 16.4 inbound_webhook_logs (수신 웹훅 로그)
+CREATE TABLE IF NOT EXISTS inbound_webhook_logs (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  source      VARCHAR(50) NOT NULL,
+  event_type  VARCHAR(100),
+  payload     JSONB       NOT NULL DEFAULT '{}',
+  is_verified BOOLEAN     NOT NULL DEFAULT false,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_inbound_webhook_logs_source      ON inbound_webhook_logs(source);
+CREATE INDEX IF NOT EXISTS idx_inbound_webhook_logs_received_at ON inbound_webhook_logs(received_at DESC);
+
+-- 기본 수신 웹훅 소스 (토스페이먼츠)
+INSERT INTO inbound_webhooks (source, label, is_active)
+VALUES ('toss', '토스페이먼츠', true)
+ON CONFLICT (source) DO NOTHING;
+
+-- 16.5 gf_delivery_logs (굿스플로 배송 이벤트 로그)
+CREATE TABLE IF NOT EXISTS gf_delivery_logs (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id         UUID REFERENCES orders(id) ON DELETE SET NULL,
+  gf_service_id    VARCHAR(30),
+  delivery_status  VARCHAR(20),
+  raw_payload      JSONB,
+  received_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_gf_delivery_logs_order_id      ON gf_delivery_logs(order_id);
+CREATE INDEX IF NOT EXISTS idx_gf_delivery_logs_gf_service_id ON gf_delivery_logs(gf_service_id);
+CREATE INDEX IF NOT EXISTS idx_gf_delivery_logs_received_at   ON gf_delivery_logs(received_at DESC);
+
+-- 굿스플로 기본값 system_settings
+INSERT INTO system_settings (key, value) VALUES
+  ('gf_centers_prod',         '[]'),
+  ('gf_centers_test',         '[]'),
+  ('gf_contracts_prod',       '[]'),
+  ('gf_contracts_test',       '[]'),
+  ('gf_last_sync_at',         '""')
+ON CONFLICT (key) DO NOTHING;
 
 -- =============================================================================
 -- SECTION 17: SEARCH
@@ -2556,7 +2696,7 @@ CREATE POLICY "product_qna_manage_own" ON product_qna
   FOR ALL USING (auth.uid()::text = user_id::text)
   WITH CHECK (auth.uid()::text = user_id::text);
 
--- reviews: anyone can read visible reviews; users manage their own
+-- reviews: anyone can read visible reviews; users manage their own; admin full access
 DROP POLICY IF EXISTS "reviews_read_public" ON reviews;
 CREATE POLICY "reviews_read_public" ON reviews
   FOR SELECT USING (is_visible = true);
@@ -2564,6 +2704,11 @@ CREATE POLICY "reviews_read_public" ON reviews
 DROP POLICY IF EXISTS "reviews_manage_own" ON reviews;
 CREATE POLICY "reviews_manage_own" ON reviews
   FOR ALL USING (auth.uid()::text = user_id::text);
+
+DROP POLICY IF EXISTS "reviews_admin_all" ON reviews;
+CREATE POLICY "reviews_admin_all" ON reviews
+  FOR ALL USING (is_admin(auth.uid()))
+  WITH CHECK (is_admin(auth.uid()));
 
 -- review_likes: users manage their own likes
 DROP POLICY IF EXISTS "review_likes_own" ON review_likes;
@@ -3445,7 +3590,9 @@ INSERT INTO system_settings (key, value, description) VALUES
   ('notice_bar_color', '"#2563eb"'::jsonb,
    '공지 배너 배경색. HEX 값(예: #2563eb). 비어있으면 기본 파란색 사용'),
   ('image_banner_enabled', 'true'::jsonb,
-   '메인 페이지 이미지 배너 섹션 표시 여부. true이면 banners 테이블의 활성 배너를 메인에 표시')
+   '메인 페이지 이미지 배너 섹션 표시 여부. true이면 banners 테이블의 활성 배너를 메인에 표시'),
+  ('use_deposit', 'false'::jsonb,
+   '예치금 기능 사용 여부. true이면 관리자 사이드바에 예치금 관리 메뉴가 표시됨')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------------------------------------------------------------------

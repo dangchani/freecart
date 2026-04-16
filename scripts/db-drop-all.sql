@@ -4,6 +4,11 @@
 -- 사용법: 이 파일 실행 후 db-schema-full.sql 실행
 -- =============================================================================
 
+-- RLS 정책 삭제
+DROP POLICY IF EXISTS "reviews_admin_all" ON reviews;
+DROP POLICY IF EXISTS "reviews_manage_own" ON reviews;
+DROP POLICY IF EXISTS "reviews_read_public" ON reviews;
+
 -- Storage 정책 삭제
 DROP POLICY IF EXISTS "products_storage_select" ON storage.objects;
 DROP POLICY IF EXISTS "products_storage_insert" ON storage.objects;
@@ -67,6 +72,9 @@ DROP TABLE IF EXISTS
   notifications,
   user_search_history,
   search_keywords,
+  gf_delivery_logs,
+  inbound_webhook_logs,
+  inbound_webhooks,
   webhook_logs,
   webhook_configs,
   installed_skins,
@@ -75,6 +83,7 @@ DROP TABLE IF EXISTS
   price_history,
   sync_logs,
   external_connections,
+  integration_providers,
   tax_invoices,
   cash_receipts,
   subscription_deliveries,

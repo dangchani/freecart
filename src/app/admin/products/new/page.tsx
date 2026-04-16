@@ -31,7 +31,8 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { generateVariantCombinations, type VariantRow } from '@/utils/variants';
 import { saveGiftSets, type GiftSetDraft, type GiftSetItemDraft, type GiftTierDraft, type GiftType } from '@/services/giftSets';
-import { saveBundleItems, type BundleItemDraft } from '@/services/bundles';
+import { getContrastColor, isValidHex } from '@/lib/utils';
+import { saveBundleItems, syncBundleStock, type BundleItemDraft } from '@/services/bundles';
 import { saveQuantityDiscounts, type QuantityDiscountDraft } from '@/services/discounts';
 
 // =============================================================================
@@ -55,14 +56,15 @@ const productSchema = z.object({
   slug: z.string().min(1, 'URL 슬러그를 입력해주세요').regex(/^[a-z0-9-]+$/, '영문 소문자, 숫자, 하이픈만 가능합니다'),
   summary: z.string().max(500).optional(),
   description: z.string().optional(),
+  bundleDescription: z.string().optional(),
   categoryId: z.string().uuid('카테고리를 선택해주세요'),
   brandId: z.string().uuid().optional().nullable(),
 
   // 가격
   regularPrice: z.number().min(0, '정가를 입력해주세요'),
   salePrice: z.number().min(0, '판매가를 입력해주세요'),
-  costPrice: z.number().min(0).optional(),
-  pointRate: z.number().min(0).max(100).optional(),
+  costPrice: z.preprocess((v) => (v === '' || v === null || v === undefined || (typeof v === 'number' && isNaN(v)) ? undefined : Number(v)), z.number().min(0).optional()),
+  pointRate: z.preprocess((v) => (v === '' || v === null || v === undefined || (typeof v === 'number' && isNaN(v)) ? undefined : Number(v)), z.number().min(0).max(100).optional()),
 
   // 재고 (옵션 없는 상품만 필수, 옵션 있으면 variant에서 관리)
   stockQuantity: z.number().int().min(0).default(0),
@@ -77,7 +79,7 @@ const productSchema = z.object({
   sku: z.string().optional(),
   manufacturer: z.string().optional(),
   origin: z.string().optional(),
-  weight: z.number().min(0).optional(),
+  weight: z.preprocess((v) => (v === '' || v === null || v === undefined || (typeof v === 'number' && isNaN(v)) ? undefined : Number(v)), z.number().min(0).optional()),
 
   // 표시 설정
   status: z.enum(['draft', 'active', 'inactive']).default('active'),
@@ -103,6 +105,10 @@ const productSchema = z.object({
 
   // 태그
   tags: z.array(z.string()).optional(),
+
+  // 재고 표시 설정
+  showStock: z.boolean().default(true),
+  showGiftStock: z.boolean().default(true),
 });
 
 type ProductForm = z.infer<typeof productSchema>;
@@ -128,6 +134,7 @@ export default function NewProductPage() {
 
   // States
   const [categories, setCategories] = useState<any[]>([]);
+  const [selectedRootCat, setSelectedRootCat] = useState('');
   const [brands, setBrands] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [images, setImages] = useState<UploadedImage[]>([]);
@@ -233,7 +240,8 @@ export default function NewProductPage() {
       startsAt: '',
       endsAt: '',
       badgeText: '',
-      badgeColor: 'red',
+      badgeColor: '#ef4444',
+      hideWhenSoldout: false,
       tiers: [],
       items: [],
     };
@@ -377,6 +385,13 @@ export default function NewProductPage() {
       loadBrands();
     }
   }, [user, authLoading, navigate]);
+
+  // 옵션 항목이 모두 삭제되면 hasOptions 자동 해제
+  useEffect(() => {
+    if (optionFields.length === 0 && hasOptions) {
+      setValue('hasOptions', false);
+    }
+  }, [optionFields.length]);
 
   // 옵션 변경 시 variant 조합 자동 재생성
   useEffect(() => {
@@ -584,6 +599,7 @@ export default function NewProductPage() {
           slug: data.slug,
           summary: data.summary || null,
           description: data.description || null,
+          bundle_description: isBundle ? (data.bundleDescription || null) : null,
           category_id: data.categoryId,
           brand_id: data.brandId || null,
           regular_price: data.regularPrice,
@@ -613,6 +629,8 @@ export default function NewProductPage() {
           seo_keywords: data.seoKeywords || null,
           has_options: isBundle ? false : data.hasOptions,
           product_type: isBundle ? 'bundle' : 'single',
+          show_stock: data.showStock,
+          show_gift_stock: data.showGiftStock,
           tags: data.tags || [],
         })
         .select('id')
@@ -720,9 +738,10 @@ export default function NewProductPage() {
         await saveGiftSets(productId, giftSetDrafts);
       }
 
-      // 7. 묶음상품 구성 저장
+      // 7. 묶음상품 구성 저장 + 실효 재고 동기화
       if (isBundle && bundleItemDrafts.length > 0) {
         await saveBundleItems(productId, bundleItemDrafts);
+        await syncBundleStock(productId);
       }
 
       alert('상품이 등록되었습니다.');
@@ -914,21 +933,43 @@ export default function NewProductPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="categoryId">
-                    카테고리 <span className="text-red-500">*</span>
-                  </Label>
-                  <Select value={watch('categoryId') || ''} onValueChange={(value) => setValue('categoryId', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="카테고리 선택" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((category) => (
-                        <SelectItem key={category.id} value={category.id}>
-                          {'─'.repeat(category.depth || 0)} {category.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>카테고리 <span className="text-red-500">*</span></Label>
+                  <div className="flex gap-2 mt-1">
+                    {/* 상위 카테고리 */}
+                    <Select
+                      value={selectedRootCat}
+                      onValueChange={(rootId) => {
+                        setSelectedRootCat(rootId);
+                        const hasSub = categories.some(c => c.parent_id === rootId);
+                        setValue('categoryId', hasSub ? '' : rootId, { shouldValidate: true });
+                      }}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="상위 카테고리" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.filter(c => !c.parent_id).map(c => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {/* 하위 카테고리 (상위 선택 후 하위가 있을 때만) */}
+                    {selectedRootCat && categories.some(c => c.parent_id === selectedRootCat) && (
+                      <Select
+                        value={watch('categoryId') || ''}
+                        onValueChange={(subId) => setValue('categoryId', subId, { shouldValidate: true })}
+                      >
+                        <SelectTrigger className="flex-1">
+                          <SelectValue placeholder="하위 카테고리" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.filter(c => c.parent_id === selectedRootCat).map(c => (
+                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
                   {errors.categoryId && (
                     <p className="mt-1 text-sm text-red-500">{errors.categoryId.message}</p>
                   )}
@@ -1159,6 +1200,29 @@ export default function NewProductPage() {
                 </div>
               </div>
 
+              {/* 재고 표시 설정 */}
+              <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <p className="text-sm font-medium text-gray-700">재고 표시 설정</p>
+                <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    {...register('showStock')}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  상품 재고 수량 사용자에게 표시
+                  <span className="text-xs text-gray-400">(해제 시 수량 숨김, 품절 여부만 표시)</span>
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    {...register('showGiftStock')}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+                  사은품 품절 정보 표시
+                  <span className="text-xs text-gray-400">(해제 시 품절 사은품도 선택 가능한 것처럼 표시)</span>
+                </label>
+              </div>
+
             </div>
           )}
         </Card>
@@ -1171,7 +1235,18 @@ export default function NewProductPage() {
             <SectionHeader title="구성 상품 설정" section="bundleItems" />
             {expandedSections.bundleItems && (
               <div className="p-4 space-y-4">
-                <p className="text-sm text-gray-500">세트에 포함할 상품을 검색하여 추가하세요. 옵션은 구성 상품에서 이미 결정됩니다.</p>
+                {/* 세트 구성 설명 */}
+              <div>
+                <Label htmlFor="bundleDescription">세트 구성 설명 (선택)</Label>
+                <Textarea
+                  id="bundleDescription"
+                  {...register('bundleDescription')}
+                  placeholder="세트 구성에 대한 설명을 입력해주세요 (예: A상품 1개 + B상품 2개로 구성된 세트입니다)"
+                  rows={3}
+                  className="mt-1"
+                />
+              </div>
+              <p className="text-sm text-gray-500">세트에 포함할 상품을 검색하여 추가하세요. 옵션은 구성 상품에서 이미 결정됩니다.</p>
 
                 {/* 상품 검색 */}
                 <div className="flex gap-2">
@@ -1493,8 +1568,8 @@ export default function NewProductPage() {
                   </div>
 
                   {/* 띠지 설정 */}
-                  <div className="flex items-end gap-2">
-                    <div className="flex-1">
+                  <div className="flex items-end gap-2 flex-wrap">
+                    <div className="flex-1 min-w-[160px]">
                       <Label>썸네일 띠지 텍스트 <span className="text-xs font-normal text-gray-400">(최대 20자, 비우면 미표시)</span></Label>
                       <Input
                         value={giftSet.badgeText}
@@ -1503,34 +1578,59 @@ export default function NewProductPage() {
                         maxLength={20}
                       />
                     </div>
-                    <div className="w-36 shrink-0">
+                    <div className="shrink-0">
                       <Label>띠지 색상</Label>
-                      <div className="flex gap-1.5 pt-1">
-                        {([ ['red', 'bg-red-500'], ['yellow', 'bg-yellow-400'], ['green', 'bg-emerald-500'], ['blue', 'bg-blue-500'], ['purple', 'bg-purple-500'] ] as [string, string][]).map(([key, cls]) => (
+                      <div className="flex items-center gap-1.5 pt-1">
+                        {(['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#000000'] as string[]).map((hex) => (
                           <button
-                            key={key}
+                            key={hex}
                             type="button"
-                            onClick={() => updateGiftSet(giftSet.localId, { badgeColor: key })}
-                            className={`h-7 w-7 rounded-full ${cls} transition-transform ${giftSet.badgeColor === key ? 'ring-2 ring-offset-1 ring-gray-600 scale-110' : 'opacity-60 hover:opacity-100'}`}
-                            title={key}
+                            onClick={() => updateGiftSet(giftSet.localId, { badgeColor: hex })}
+                            className={`h-7 w-7 rounded-full border-2 transition-transform ${giftSet.badgeColor === hex ? 'border-gray-700 scale-110' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                            style={{ backgroundColor: hex }}
+                            title={hex}
                           />
                         ))}
+                        <Input
+                          value={giftSet.badgeColor}
+                          onChange={(e) => {
+                            const val = e.target.value.startsWith('#') ? e.target.value : '#' + e.target.value;
+                            updateGiftSet(giftSet.localId, { badgeColor: val });
+                          }}
+                          placeholder="#ef4444"
+                          className="w-24 font-mono text-xs"
+                          maxLength={7}
+                        />
                       </div>
                     </div>
-                    {giftSet.badgeText && (
+                    {giftSet.badgeText && isValidHex(giftSet.badgeColor) && (
                       <div className="shrink-0 pb-0.5">
                         <Label className="invisible">미리보기</Label>
-                        <div className={`rounded px-3 py-1 text-xs font-bold ${{
-                          red: 'bg-red-500 text-white',
-                          yellow: 'bg-yellow-400 text-gray-900',
-                          green: 'bg-emerald-500 text-white',
-                          blue: 'bg-blue-500 text-white',
-                          purple: 'bg-purple-500 text-white',
-                        }[giftSet.badgeColor] ?? 'bg-red-500 text-white'}`}>
+                        <div
+                          className="rounded px-3 py-1 text-xs font-bold"
+                          style={{ backgroundColor: giftSet.badgeColor, color: getContrastColor(giftSet.badgeColor) }}
+                        >
                           {giftSet.badgeText}
                         </div>
                       </div>
                     )}
+                  </div>
+
+                  {/* 품절 시 자동 숨김 */}
+                  <div className="flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2">
+                    <input
+                      type="checkbox"
+                      id={`hide-soldout-${giftSet.localId}`}
+                      checked={giftSet.hideWhenSoldout}
+                      onChange={(e) => updateGiftSet(giftSet.localId, { hideWhenSoldout: e.target.checked })}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <label htmlFor={`hide-soldout-${giftSet.localId}`} className="text-sm cursor-pointer select-none">
+                      모든 사은품 품절 시 해당 세트 자동 숨김
+                    </label>
+                    <span className="ml-auto text-xs text-gray-400">
+                      (체크 해제 시 품절 안내와 함께 세트가 계속 표시됩니다)
+                    </span>
                   </div>
 
                   {/* 사은품 구간 (tier) */}

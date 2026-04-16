@@ -13,6 +13,12 @@ export async function signUp(email: string, password: string, name: string) {
   });
 
   if (error) throw error;
+
+  // 웹훅 트리거 (fire-and-forget)
+  import('@/services/webhooks').then(({ triggerWebhook }) =>
+    triggerWebhook('member.created', { email }),
+  ).catch(() => {});
+
   return data;
 }
 

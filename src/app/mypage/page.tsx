@@ -13,8 +13,12 @@ export default function MyPage() {
   const { user, loading } = useAuth();
 
   useEffect(() => {
-    if (!loading && !user) {
-      navigate('/auth/login');
+    if (!loading) {
+      if (!user) {
+        navigate('/auth/login');
+      } else {
+        navigate('/mypage/orders', { replace: true });
+      }
     }
   }, [user, loading, navigate]);
 

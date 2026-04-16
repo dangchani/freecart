@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useAuth } from '@/hooks/useAuth';
+import { ArrowLeft } from 'lucide-react';
 import { format } from 'date-fns';
 import { createClient } from '@/lib/supabase/client';
 
@@ -112,7 +113,11 @@ export default function AdminSubscriptionsPage() {
 
   return (
     <div className="container py-8">
-      <h1 className="mb-6 text-3xl font-bold">정기배송 관리</h1>
+      <Link to="/admin" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+        <ArrowLeft className="mr-1 h-4 w-4" />대시보드로 돌아가기
+      </Link>
+
+      <h1 className="mb-6 mt-4 text-3xl font-bold">정기배송 관리</h1>
 
       {error && (
         <div className="mb-4 rounded-md bg-red-50 p-4 text-red-700">{error}</div>

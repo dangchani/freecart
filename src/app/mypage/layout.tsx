@@ -10,7 +10,6 @@ import {
   Wallet,
   Tag,
   MapPin,
-  Calendar,
   RefreshCw,
   MessageCircle,
   HelpCircle,
@@ -24,12 +23,11 @@ const navItems = [
   { href: '/mypage/orders', label: '주문 내역', icon: ShoppingBag },
   { href: '/mypage/reviews', label: '리뷰 관리', icon: Star },
   { href: '/mypage/wishlist', label: '찜 목록', icon: Heart },
-  { href: '/mypage/points', label: '포인트', icon: Coins },
-  { href: '/mypage/deposits', label: '예치금', icon: Wallet },
-  { href: '/mypage/coupons', label: '쿠폰', icon: Tag },
+  { href: '/mypage/points', label: '포인트', icon: Coins, featureFlag: 'use_points' as const },
+  { href: '/mypage/deposits', label: '예치금', icon: Wallet, featureFlag: 'use_deposit' as const },
+  { href: '/mypage/coupons', label: '쿠폰', icon: Tag, featureFlag: 'use_coupons' as const },
   { href: '/mypage/addresses', label: '배송지 관리', icon: MapPin },
-  { href: '/mypage/attendance', label: '출석 체크', icon: Calendar },
-  { href: '/mypage/subscriptions', label: '정기배송', icon: RefreshCw },
+  { href: '/mypage/subscriptions', label: '정기배송', icon: RefreshCw, featureFlag: 'use_subscriptions' as const },
   { href: '/mypage/qna', label: '상품 Q&A', icon: HelpCircle },
   { href: '/mypage/inquiries', label: '1:1 문의', icon: MessageCircle },
   { href: '/mypage/cash-receipts', label: '현금영수증', icon: Receipt },
@@ -43,6 +41,9 @@ export default function MypageLayout() {
   const { pathname } = useLocation();
   const { user, loading } = useAuth();
   const [usePointsEnabled, setUsePointsEnabled] = useState(true);
+  const [useSubscriptionsEnabled, setUseSubscriptionsEnabled] = useState(true);
+  const [useCouponsEnabled, setUseCouponsEnabled] = useState(true);
+  const [useDepositEnabled, setUseDepositEnabled] = useState(true);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -51,8 +52,16 @@ export default function MypageLayout() {
   }, [user, loading, navigate]);
 
   useEffect(() => {
-    getSystemSetting<boolean>('use_points').then(val => {
-      setUsePointsEnabled(val !== false);
+    Promise.all([
+      getSystemSetting<boolean>('use_points'),
+      getSystemSetting<boolean>('use_subscriptions'),
+      getSystemSetting<boolean>('use_coupons'),
+      getSystemSetting<boolean>('use_deposit'),
+    ]).then(([points, subscriptions, coupons, deposit]) => {
+      setUsePointsEnabled(points !== false);
+      setUseSubscriptionsEnabled(subscriptions !== false);
+      setUseCouponsEnabled(coupons !== false);
+      setUseDepositEnabled(deposit !== false);
     });
   }, []);
 
@@ -81,7 +90,13 @@ export default function MypageLayout() {
             </div>
           </div>
           <nav className="space-y-1">
-            {navItems.filter(item => item.href !== '/mypage/points' || usePointsEnabled).map(({ href, label, icon: Icon }) => {
+            {navItems.filter(item => {
+              if (item.featureFlag === 'use_points') return usePointsEnabled;
+              if (item.featureFlag === 'use_subscriptions') return useSubscriptionsEnabled;
+              if (item.featureFlag === 'use_coupons') return useCouponsEnabled;
+              if (item.featureFlag === 'use_deposit') return useDepositEnabled;
+              return true;
+            }).map(({ href, label, icon: Icon }) => {
               const isActive = pathname === href || pathname.startsWith(href + '/');
               return (
                 <Link

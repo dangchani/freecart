@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { PageSection } from '@/components/theme/PageSection';
 import {
   getProductBySlug,
@@ -34,7 +34,7 @@ import {
   type ProductSet,
 } from '@/services/relatedProducts';
 import { getGiftSets, getApplicableFreeCount, isGiftAddDisabled, resolveAutoGifts, type GiftSet, type GiftSelection, type AutoGiftResult } from '@/services/giftSets';
-import { getBundleItems, type BundleItem } from '@/services/bundles';
+import { getBundleItems, getEffectiveBundleStock, type BundleItem } from '@/services/bundles';
 import { requestStockAlert } from '@/services/stockAlert';
 import { addToRecentlyViewed } from '@/services/recentlyViewed';
 import { dispatchThemeEvent } from '@/lib/theme';
@@ -44,8 +44,8 @@ import { createClient } from '@/lib/supabase/client';
 import { getSystemSetting } from '@/lib/permissions';
 import { getSetting } from '@/services/settings';
 import { Button } from '@/components/ui/button';
-import { formatCurrency } from '@/lib/utils';
-import { Minus, Plus, ShoppingCart, Zap, ArrowLeft, Check, Star, ChevronDown, ChevronUp, Heart, AlertCircle, Crown } from 'lucide-react';
+import { formatCurrency, getContrastColor } from '@/lib/utils';
+import { Minus, Plus, ShoppingCart, Zap, ArrowLeft, Check, Star, ChevronDown, ChevronUp, Heart, AlertCircle, Crown, ThumbsUp, PenLine } from 'lucide-react';
 
 interface Review {
   id: string;
@@ -54,6 +54,11 @@ interface Review {
   rating: number;
   content: string;
   createdAt: string;
+  images: string[];
+  likeCount: number;
+  isBest: boolean;
+  adminReply: string | null;
+  adminRepliedAt: string | null;
 }
 
 interface QnA {
@@ -78,6 +83,9 @@ interface Product {
   stockQuantity: number;
   hasOptions?: boolean;
   productType?: 'single' | 'bundle';
+  bundleDescription?: string | null;
+  showStock?: boolean;
+  showGiftStock?: boolean;
   minPurchaseQuantity?: number | null;
   maxPurchaseQuantity?: number | null;
   shippingType?: string;
@@ -90,6 +98,7 @@ interface Product {
 export default function ProductDetailPage() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,7 +108,10 @@ export default function ProductDetailPage() {
   const [buyLoading, setBuyLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'detail' | 'reviews' | 'qna' | 'shipping'>('detail');
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewCount, setReviewCount] = useState<number>(0);
   const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [likedReviewIds, setLikedReviewIds] = useState<Set<string>>(new Set());
+  const [likingId, setLikingId] = useState<string | null>(null);
   const [qnaList, setQnaList] = useState<QnA[]>([]);
   const [qnaCount, setQnaCount] = useState<number>(0);
   const [qnaLoading, setQnaLoading] = useState(false);
@@ -121,6 +133,7 @@ export default function ProductDetailPage() {
 
   // 묶음상품 / 자동증정 state
   const [bundleItems, setBundleItems] = useState<BundleItem[]>([]);
+  const [bundleEffectiveStock, setBundleEffectiveStock] = useState<number | null>(null);
   const [autoGifts, setAutoGifts] = useState<AutoGiftResult[]>([]);
 
   // 회원 등급 가격 관련 state
@@ -175,6 +188,17 @@ export default function ProductDetailPage() {
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
   }, [slug]);
+
+  useEffect(() => {
+    if (!product) return;
+    const supabase = createClient();
+    supabase
+      .from('reviews')
+      .select('id', { count: 'exact', head: true })
+      .eq('product_id', product.id)
+      .eq('is_visible', true)
+      .then(({ count }) => setReviewCount(count ?? 0));
+  }, [product]);
 
   useEffect(() => {
     if (!user || !product) return;
@@ -262,9 +286,10 @@ export default function ProductDetailPage() {
       sets.forEach((s) => { initSelections[s.id] = []; });
       setGiftSelections(initSelections);
     });
-    // 묶음상품이면 구성 아이템 로드
+    // 묶음상품이면 구성 아이템 + 실효 재고 로드
     if (product.productType === 'bundle') {
       getBundleItems(product.id).then(setBundleItems);
+      getEffectiveBundleStock(product.id).then(setBundleEffectiveStock);
     }
   }, [product]);
 
@@ -324,8 +349,40 @@ export default function ProductDetailPage() {
       try {
         const { data: prod } = await supabase.from('products').select('id').eq('slug', slug).single();
         if (!prod) { setReviews([]); setReviewsLoading(false); return; }
-        const { data } = await supabase.from('reviews').select('*, users(name)').eq('product_id', prod.id).eq('is_visible', true);
-        setReviews(data?.map((r: any) => ({ ...r, userName: r.users?.name || '익명' })) || []);
+        const { data } = await supabase
+          .from('reviews')
+          .select('id, user_id, rating, content, created_at, like_count, is_best, admin_reply, admin_replied_at, users(name), review_images(url, sort_order)')
+          .eq('product_id', prod.id)
+          .eq('is_visible', true)
+          .order('is_best', { ascending: false })
+          .order('created_at', { ascending: false });
+        const mapped = (data || []).map((r: any) => ({
+          id: r.id,
+          userId: r.user_id,
+          userName: r.users?.name || '익명',
+          rating: r.rating,
+          content: r.content,
+          createdAt: r.created_at,
+          likeCount: r.like_count ?? 0,
+          isBest: r.is_best ?? false,
+          adminReply: r.admin_reply || null,
+          adminRepliedAt: r.admin_replied_at || null,
+          images: (r.review_images || [])
+            .sort((a: any, b: any) => a.sort_order - b.sort_order)
+            .map((img: any) => img.url),
+        }));
+        setReviews(mapped);
+        setReviewCount(mapped.length);
+        // 로그인 사용자의 좋아요 목록 조회
+        if (user && mapped.length > 0) {
+          const ids = mapped.map((r: any) => r.id);
+          const { data: likes } = await supabase
+            .from('review_likes')
+            .select('review_id')
+            .eq('user_id', user.id)
+            .in('review_id', ids);
+          setLikedReviewIds(new Set((likes || []).map((l: any) => l.review_id)));
+        }
       } catch { setReviews([]); } finally { setReviewsLoading(false); }
     }
     async function loadQna() {
@@ -352,9 +409,38 @@ export default function ProductDetailPage() {
     if (activeTab === 'qna' && qnaList.length === 0) loadQna();
   }, [activeTab, slug]);
 
+  // URL 파라미터 처리: tab=reviews, write=1
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    const write = searchParams.get('write');
+    const orderItemId = searchParams.get('orderItemId');
+    if (tab === 'reviews') setActiveTab('reviews');
+    if (write === '1') {
+      navigate(
+        `/products/${slug}/reviews/new${orderItemId ? `?orderItemId=${orderItemId}` : ''}`,
+        { replace: true },
+      );
+    }
+  }, []);
+
   function showToast(message: string, type: 'success' | 'error' = 'success') {
     setToast({ show: true, message, type });
     setTimeout(() => setToast((t) => ({ ...t, show: false })), 3000);
+  }
+
+  function validateGiftSelections(): boolean {
+    for (const giftSet of giftSets) {
+      if (giftSet.giftType !== 'select') continue;
+      const freeCount = getApplicableFreeCount(giftSet.tiers, quantity);
+      if (freeCount <= 0) continue;
+      const selections = giftSelections[giftSet.id] ?? [];
+      const totalSelected = selections.reduce((sum, s) => sum + s.quantity, 0);
+      if (totalSelected < freeCount) {
+        showToast(`사은품 "${giftSet.name}"에서 ${freeCount}개를 선택해주세요. (현재 ${totalSelected}개 선택)`, 'error');
+        return false;
+      }
+    }
+    return true;
   }
 
   async function handleAddToCart() {
@@ -365,6 +451,9 @@ export default function ProductDetailPage() {
       showToast('옵션을 선택해주세요.', 'error');
       return;
     }
+
+    // 사은품 선택 확인
+    if (!validateGiftSelections()) return;
 
     setCartLoading(true);
     try {
@@ -437,6 +526,9 @@ export default function ProductDetailPage() {
       showToast('옵션을 선택해주세요.', 'error');
       return;
     }
+
+    // 사은품 선택 확인
+    if (!validateGiftSelections()) return;
 
     setBuyLoading(true);
     try {
@@ -521,6 +613,31 @@ export default function ProductDetailPage() {
     );
   }
 
+  async function handleLikeToggle(reviewId: string) {
+    if (!user) { navigate('/auth/login'); return; }
+    if (likingId) return;
+    setLikingId(reviewId);
+    try {
+      const supabase = createClient();
+      const isLiked = likedReviewIds.has(reviewId);
+      if (isLiked) {
+        await supabase.from('review_likes').delete().eq('review_id', reviewId).eq('user_id', user.id);
+        await supabase.from('reviews').update({ like_count: Math.max(0, (reviews.find(r => r.id === reviewId)?.likeCount ?? 1) - 1) }).eq('id', reviewId);
+        setLikedReviewIds((prev) => { const next = new Set(prev); next.delete(reviewId); return next; });
+        setReviews((prev) => prev.map((r) => r.id === reviewId ? { ...r, likeCount: Math.max(0, r.likeCount - 1) } : r));
+      } else {
+        await supabase.from('review_likes').insert({ review_id: reviewId, user_id: user.id });
+        await supabase.from('reviews').update({ like_count: (reviews.find(r => r.id === reviewId)?.likeCount ?? 0) + 1 }).eq('id', reviewId);
+        setLikedReviewIds((prev) => new Set([...prev, reviewId]));
+        setReviews((prev) => prev.map((r) => r.id === reviewId ? { ...r, likeCount: r.likeCount + 1 } : r));
+      }
+    } catch (err) {
+      console.error('Failed to toggle like:', err);
+    } finally {
+      setLikingId(null);
+    }
+  }
+
   const avgRating = reviews.length > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
 
   // 옵션 상품일 경우 variant 기준, 아니면 기본 상품 기준
@@ -548,11 +665,14 @@ export default function ProductDetailPage() {
   const primaryImage = product.images?.find((img) => img.isPrimary) || product.images?.[0];
   const imageUrl = variantImage || primaryImage?.url || '/placeholder.png';
 
-  // 재고: variant가 있으면 variant 재고, 없으면 기본 재고
+  // 재고: variant가 있으면 variant 재고, 번들이면 실효 재고, 없으면 기본 재고
+  const bundleStockLoading = product.productType === 'bundle' && bundleEffectiveStock === null;
   const currentStock = hasProductOptions && selectedVariant
     ? selectedVariant.stockQuantity
-    : product.stockQuantity;
-  const isSoldOut = currentStock === 0;
+    : product.productType === 'bundle' && bundleEffectiveStock !== null
+      ? bundleEffectiveStock
+      : product.stockQuantity;
+  const isSoldOut = !bundleStockLoading && currentStock === 0;
 
   // 옵션 선택이 완료되었는지 확인 (필수 옵션만 체크)
   const requiredOptions = options.filter((opt) => opt.isRequired);
@@ -598,6 +718,18 @@ export default function ProductDetailPage() {
           {isSoldOut && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/40">
               <span className="rounded-lg bg-black/70 px-6 py-2 text-lg font-bold text-white">품절</span>
+            </div>
+          )}
+          {/* 하단 띠지 */}
+          {product.activeBadgeText && !isSoldOut && (
+            <div
+              className="absolute bottom-0 left-0 right-0 py-1.5 text-center text-sm font-bold tracking-wide"
+              style={{
+                backgroundColor: product.activeBadgeColor ?? '#ef4444',
+                color: getContrastColor(product.activeBadgeColor ?? '#ef4444'),
+              }}
+            >
+              {product.activeBadgeText}
             </div>
           )}
         </div>
@@ -693,6 +825,11 @@ export default function ProductDetailPage() {
                   </div>
                 ))}
               </div>
+              {product.bundleDescription && (
+                <p className="mt-3 border-t border-gray-200 pt-3 text-sm text-gray-600 whitespace-pre-line">
+                  {product.bundleDescription}
+                </p>
+              )}
             </div>
           )}
 
@@ -787,7 +924,9 @@ export default function ProductDetailPage() {
             </div>
             <div className="flex justify-between">
               <span className="text-gray-600">재고</span>
-              <span className={isSoldOut ? 'text-red-500 font-medium' : ''}>{isSoldOut ? '품절' : `${currentStock}개`}</span>
+              <span className={isSoldOut ? 'text-red-500 font-medium' : ''}>
+                {isSoldOut ? '품절' : product.showStock !== false ? `${currentStock}개` : '재고 있음'}
+              </span>
             </div>
           </div>
 
@@ -813,7 +952,7 @@ export default function ProductDetailPage() {
                 </div>
                 <div className="flex flex-col text-sm text-gray-500">
                   {effectiveMin > 1 && <span>최소 {effectiveMin}개</span>}
-                  <span>최대 {Math.min(effectiveMax, currentStock)}개</span>
+                  {product.showStock !== false && <span>최대 {Math.min(effectiveMax, currentStock)}개</span>}
                   {effectiveDailyLimit && <span>1일 {effectiveDailyLimit}개 제한</span>}
                 </div>
               </div>
@@ -963,40 +1102,58 @@ export default function ProductDetailPage() {
                   </div>
                 )}
 
+                {/* 모든 사은품 품절 안내 (showGiftStock=true일 때만) */}
+                {product.showGiftStock !== false && (() => {
+                  const allItemsSoldOut = giftSet.items.length > 0 && giftSet.items.every((i) => i.giftProductStock === 0);
+                  return allItemsSoldOut ? (
+                    <div className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                      현재 모든 사은품이 품절되어 선택하실 수 없습니다.
+                    </div>
+                  ) : null;
+                })()}
+
                 <div className="space-y-2">
                   {giftSet.items.map((item) => {
+                    const showGiftStock = product.showGiftStock !== false;
+                    const isItemSoldOut = showGiftStock && item.giftProductStock === 0;
                     const selectedQty = selections.find((g) => g.giftProductId === item.giftProductId)?.quantity ?? 0;
-                    const plusDisabled = !hasActiveTier || isGiftAddDisabled(freeCount, selections);
+                    const plusDisabled = !hasActiveTier || isGiftAddDisabled(freeCount, selections) || isItemSoldOut;
                     const minusDisabled = !hasActiveTier || selectedQty <= 0;
 
                     return (
-                      <div key={item.id} className="flex items-center gap-3 rounded-lg border bg-white p-2">
+                      <div key={item.id} className={`flex items-center gap-3 rounded-lg border bg-white p-2 ${isItemSoldOut ? 'opacity-50' : ''}`}>
                         {item.giftProductImageUrl && (
                           <img src={item.giftProductImageUrl} alt={item.giftProductName} className="h-10 w-10 rounded object-cover flex-shrink-0" />
                         )}
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium truncate">{item.giftProductName}</p>
-                          <p className="text-xs text-gray-400">사은품 0원</p>
+                          {isItemSoldOut ? (
+                            <p className="text-xs font-medium text-red-500">품절</p>
+                          ) : (
+                            <p className="text-xs text-gray-400">사은품 0원</p>
+                          )}
                         </div>
-                        <div className="flex items-center gap-1 flex-shrink-0">
-                          <button
-                            type="button"
-                            disabled={minusDisabled}
-                            onClick={() => changeGiftQty(item.giftProductId, -1)}
-                            className="flex h-7 w-7 items-center justify-center rounded border text-sm font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50"
-                          >
-                            −
-                          </button>
-                          <span className="w-6 text-center text-sm font-medium">{selectedQty}</span>
-                          <button
-                            type="button"
-                            disabled={plusDisabled}
-                            onClick={() => changeGiftQty(item.giftProductId, 1)}
-                            className="flex h-7 w-7 items-center justify-center rounded border text-sm font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50"
-                          >
-                            +
-                          </button>
-                        </div>
+                        {!isItemSoldOut && (
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <button
+                              type="button"
+                              disabled={minusDisabled}
+                              onClick={() => changeGiftQty(item.giftProductId, -1)}
+                              className="flex h-7 w-7 items-center justify-center rounded border text-sm font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50"
+                            >
+                              −
+                            </button>
+                            <span className="w-6 text-center text-sm font-medium">{selectedQty}</span>
+                            <button
+                              type="button"
+                              disabled={plusDisabled}
+                              onClick={() => changeGiftQty(item.giftProductId, 1)}
+                              className="flex h-7 w-7 items-center justify-center rounded border text-sm font-bold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50"
+                            >
+                              +
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1060,7 +1217,7 @@ export default function ProductDetailPage() {
 
       <div className="mt-12">
         <div className="flex border-b">
-          {([{ key: 'detail', label: '상품 상세' }, { key: 'reviews', label: `리뷰 (${reviews.length})` }, { key: 'qna', label: `Q&A (${qnaCount})` }, { key: 'shipping', label: '배송/환불 안내' }] as const).map((tab) => (
+          {([{ key: 'detail', label: '상품 상세' }, { key: 'reviews', label: `리뷰 (${reviewCount})` }, { key: 'qna', label: `Q&A (${qnaCount})` }, { key: 'shipping', label: '배송/환불 안내' }] as const).map((tab) => (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)} className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
               {tab.label}
             </button>
@@ -1074,25 +1231,107 @@ export default function ProductDetailPage() {
 
           {activeTab === 'reviews' && (
             <div>
-              {reviewsLoading ? <div className="flex justify-center py-12"><span className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" /></div>
-                : reviews.length === 0 ? <p className="text-center text-gray-400 py-12">첫 번째 리뷰를 작성해 주세요!</p>
-                : (
-                  <div className="space-y-6">
-                    <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
+              {reviewsLoading ? (
+                <div className="flex justify-center py-12">
+                  <span className="h-8 w-8 animate-spin rounded-full border-4 border-blue-600 border-t-transparent" />
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* 평점 요약 + 리뷰 작성 버튼 */}
+                  <div className="flex items-center justify-between gap-4 p-4 bg-gray-50 rounded-xl">
+                    <div className="flex items-center gap-3">
                       <span className="text-4xl font-bold">{avgRating.toFixed(1)}</span>
-                      <div className="flex">{Array.from({ length: 5 }).map((_, i) => <Star key={i} className={`h-5 w-5 ${i < Math.round(avgRating) ? 'fill-yellow-400 text-yellow-400' : 'fill-gray-200 text-gray-200'}`} />)}</div>
+                      <div>
+                        <div className="flex">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <Star key={i} className={`h-5 w-5 ${i < Math.round(avgRating) ? 'fill-yellow-400 text-yellow-400' : 'fill-gray-200 text-gray-200'}`} />
+                          ))}
+                        </div>
+                        <p className="text-xs text-gray-400 mt-0.5">총 {reviewCount}개 리뷰</p>
+                      </div>
                     </div>
-                    {reviews.map((review) => (
-                      <div key={review.id} className="border-b pb-4">
-                        <div className="flex justify-between mb-2">
-                          <span className="font-medium text-sm">{review.userName}</span>
+                    {user ? (
+                      <Link to={`/mypage/reviews`}>
+                        <Button size="sm" variant="outline">
+                          <PenLine className="mr-1.5 h-4 w-4" />리뷰 작성
+                        </Button>
+                      </Link>
+                    ) : (
+                      <Link to={`/auth/login?next=/products/${slug}`}>
+                        <Button size="sm" variant="outline">
+                          <PenLine className="mr-1.5 h-4 w-4" />로그인 후 작성
+                        </Button>
+                      </Link>
+                    )}
+                  </div>
+
+                  {reviews.length === 0 ? (
+                    <div className="py-12 text-center">
+                      <Star className="mx-auto mb-3 h-10 w-10 text-gray-200" />
+                      <p className="text-gray-400">첫 번째 리뷰를 작성해 주세요!</p>
+                    </div>
+                  ) : (
+                    reviews.map((review) => (
+                      <div key={review.id} className={`border-b pb-6 last:border-0 ${review.isBest ? 'rounded-xl border border-yellow-200 bg-yellow-50 p-4 mb-2' : ''}`}>
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm">{review.userName}</span>
+                              {review.isBest && (
+                                <span className="inline-flex items-center gap-0.5 rounded-full bg-yellow-400 px-2 py-0.5 text-xs font-semibold text-white">
+                                  <Star className="h-3 w-3 fill-white text-white" />
+                                  베스트
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              {Array.from({ length: 5 }).map((_, i) => (
+                                <Star key={i} className={`h-3.5 w-3.5 ${i < review.rating ? 'fill-yellow-400 text-yellow-400' : 'fill-gray-200 text-gray-200'}`} />
+                              ))}
+                            </div>
+                          </div>
                           <span className="text-xs text-gray-400">{new Date(review.createdAt).toLocaleDateString('ko-KR')}</span>
                         </div>
-                        <p className="text-sm text-gray-700">{review.content}</p>
+                        <p className="text-sm text-gray-700 whitespace-pre-wrap mb-3">{review.content}</p>
+                        {review.images.length > 0 && (
+                          <div className="flex gap-2 flex-wrap mb-3">
+                            {review.images.map((img, i) => (
+                              <div key={i} className="h-20 w-20 overflow-hidden rounded-lg border bg-gray-100">
+                                <img src={img} alt={`리뷰 이미지 ${i + 1}`} className="h-full w-full object-cover" />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleLikeToggle(review.id)}
+                          disabled={likingId === review.id}
+                          className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                            likedReviewIds.has(review.id)
+                              ? 'bg-blue-50 border-blue-300 text-blue-600'
+                              : 'border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600'
+                          }`}
+                        >
+                          <ThumbsUp className="h-3.5 w-3.5" />
+                          도움돼요 {review.likeCount > 0 && <span>{review.likeCount}</span>}
+                        </button>
+                        {/* 판매자 답변 */}
+                        {review.adminReply && (
+                          <div className="mt-3 rounded-lg bg-gray-50 border border-gray-200 px-4 py-3">
+                            <p className="mb-1 text-xs font-semibold text-gray-500">판매자 답변</p>
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap">{review.adminReply}</p>
+                            {review.adminRepliedAt && (
+                              <p className="mt-1 text-xs text-gray-400">
+                                {new Date(review.adminRepliedAt).toLocaleDateString('ko-KR')}
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           )}
 

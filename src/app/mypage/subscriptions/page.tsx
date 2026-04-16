@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { RefreshCw } from 'lucide-react';
+import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatCurrency } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/client';
@@ -131,7 +131,12 @@ export default function SubscriptionsPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold">정기배송</h1>
+      <Link to="/mypage" className="mb-6 inline-flex items-center text-sm text-gray-600 hover:text-gray-900">
+        <ArrowLeft className="mr-1 h-4 w-4" />
+        마이페이지로 돌아가기
+      </Link>
+
+      <h1 className="mb-6 mt-4 text-2xl font-bold">정기배송</h1>
 
       {subscriptions.length === 0 ? (
         <Card className="p-12 text-center">

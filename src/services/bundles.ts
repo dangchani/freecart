@@ -120,6 +120,19 @@ export async function getEffectiveBundleStock(bundleProductId: string): Promise<
 // Write (관리자)
 // =============================================================================
 
+/**
+ * 묶음상품 실효 재고를 계산하여 products.stock_quantity에 동기화
+ * saveBundleItems 호출 후 반드시 함께 호출할 것
+ */
+export async function syncBundleStock(bundleProductId: string): Promise<void> {
+  const effectiveStock = await getEffectiveBundleStock(bundleProductId);
+  const supabase = createClient();
+  await supabase
+    .from('products')
+    .update({ stock_quantity: effectiveStock })
+    .eq('id', bundleProductId);
+}
+
 /** 묶음상품 구성 아이템 전체 저장 (기존 삭제 후 재삽입) */
 export async function saveBundleItems(
   bundleProductId: string,

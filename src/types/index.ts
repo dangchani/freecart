@@ -62,6 +62,10 @@ export interface Product {
   reviewCount?: number;
   reviewAvg?: number;
   hasOptions: boolean;
+  productType?: 'single' | 'bundle';
+  bundleDescription?: string | null;
+  showStock?: boolean;
+  showGiftStock?: boolean;
   shippingType?: string;
   shippingFee?: number;
   shippingNotice?: string | null;

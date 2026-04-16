@@ -240,8 +240,12 @@ export default function AdminSettingsPage() {
   const [useUserLevels, setUseUserLevels] = useState(false);
   const [usePoints, setUsePoints] = useState(false);
   const [pointLabel, setPointLabel] = useState('포인트');
+  const [useDeposit, setUseDeposit] = useState(false);
   const [allowCustomerReturn,   setAllowCustomerReturn]   = useState(true);
   const [allowCustomerExchange, setAllowCustomerExchange] = useState(true);
+
+  const [useSubscriptions, setUseSubscriptions] = useState(false);
+  const [useCoupons, setUseCoupons] = useState(true);
   const [noticeBarEnabled, setNoticeBarEnabled] = useState(true);
   const [noticeBarColor, setNoticeBarColor] = useState('#2563eb');
   const [imageBannerEnabled, setImageBannerEnabled] = useState(true);
@@ -340,7 +344,7 @@ export default function AdminSettingsPage() {
       const { data: sysRows } = await supabase
         .from('system_settings')
         .select('key, value')
-        .in('key', ['require_signup_approval', 'enable_user_assignment', 'enable_user_tags', 'use_user_levels', 'use_points', 'point_label', 'allow_customer_return', 'allow_customer_exchange', 'order_list_columns', 'notice_bar_enabled', 'notice_bar_color', 'image_banner_enabled']);
+        .in('key', ['require_signup_approval', 'enable_user_assignment', 'enable_user_tags', 'use_user_levels', 'use_points', 'point_label', 'allow_customer_return', 'allow_customer_exchange', 'order_list_columns', 'notice_bar_enabled', 'notice_bar_color', 'image_banner_enabled', 'use_subscriptions', 'use_coupons', 'use_deposit']);
       for (const row of sysRows ?? []) {
         if (row.key === 'require_signup_approval') setRequireSignupApproval(row.value === true);
         if (row.key === 'enable_user_assignment') setEnableUserAssignment(row.value === true);
@@ -348,12 +352,15 @@ export default function AdminSettingsPage() {
         if (row.key === 'use_user_levels') setUseUserLevels(row.value === true);
         if (row.key === 'use_points') setUsePoints(row.value === true);
         if (row.key === 'point_label' && typeof row.value === 'string') setPointLabel(row.value);
+        if (row.key === 'use_deposit') setUseDeposit(row.value === true);
         if (row.key === 'allow_customer_return')   setAllowCustomerReturn(row.value !== false);
         if (row.key === 'allow_customer_exchange') setAllowCustomerExchange(row.value !== false);
         if (row.key === 'order_list_columns' && Array.isArray(row.value)) setOrderListColumns(row.value as string[]);
         if (row.key === 'notice_bar_enabled') setNoticeBarEnabled(row.value !== false);
         if (row.key === 'notice_bar_color' && typeof row.value === 'string') setNoticeBarColor(row.value);
         if (row.key === 'image_banner_enabled') setImageBannerEnabled(row.value !== false);
+        if (row.key === 'use_subscriptions') setUseSubscriptions(row.value === true);
+        if (row.key === 'use_coupons') setUseCoupons(row.value !== false);
       }
     } catch {
       setError('설정을 불러오는 중 오류가 발생했습니다.');
@@ -442,18 +449,20 @@ export default function AdminSettingsPage() {
         { key: 'use_user_levels', value: useUserLevels },
         { key: 'use_points', value: usePoints },
         { key: 'point_label', value: pointLabel },
+        { key: 'use_deposit', value: useDeposit },
         { key: 'allow_customer_return',   value: allowCustomerReturn },
         { key: 'allow_customer_exchange', value: allowCustomerExchange },
         { key: 'order_list_columns', value: orderListColumns },
         { key: 'notice_bar_enabled', value: noticeBarEnabled },
         { key: 'notice_bar_color', value: noticeBarColor },
         { key: 'image_banner_enabled', value: imageBannerEnabled },
+        { key: 'use_subscriptions', value: useSubscriptions },
+        { key: 'use_coupons', value: useCoupons },
       ];
       for (const { key, value } of sysUpdates) {
         const { error: sysError } = await supabase
           .from('system_settings')
-          .update({ value, updated_by: authUser?.id ?? null })
-          .eq('key', key);
+          .upsert({ key, value, updated_by: authUser?.id ?? null }, { onConflict: 'key' });
         if (sysError) throw sysError;
       }
 
@@ -1519,6 +1528,27 @@ export default function AdminSettingsPage() {
 
             <div className="border-t" />
 
+            {/* 예치금 기능 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">예치금 기능 사용</p>
+                <p className="text-xs text-gray-400 mt-0.5">켜면 사이드바에 예치금 관리 메뉴가 표시됩니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUseDeposit((prev) => !prev)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  useDeposit ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  useDeposit ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            <div className="border-t" />
+
             {/* 반품/교환 신청 설정 */}
             <div className="flex items-center justify-between">
               <div>
@@ -1554,6 +1584,48 @@ export default function AdminSettingsPage() {
               >
                 <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
                   allowCustomerExchange ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            <div className="border-t" />
+
+            {/* 정기배송 사용 설정 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">정기배송 기능 사용</p>
+                <p className="text-xs text-gray-400 mt-0.5">켜면 관리자 주문 관리 메뉴에 정기배송 탭이 표시되고, 사용자가 정기배송을 신청할 수 있습니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUseSubscriptions((prev) => !prev)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  useSubscriptions ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  useSubscriptions ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            <div className="border-t" />
+
+            {/* 쿠폰 기능 사용 설정 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">쿠폰 기능 사용</p>
+                <p className="text-xs text-gray-400 mt-0.5">끄면 관리자 프로모션 메뉴의 쿠폰 항목과 마이페이지의 쿠폰 메뉴가 숨겨집니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUseCoupons((prev) => !prev)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  useCoupons ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  useCoupons ? 'translate-x-6' : 'translate-x-1'
                 }`} />
               </button>
             </div>
