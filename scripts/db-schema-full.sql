@@ -2176,15 +2176,6 @@ CREATE INDEX IF NOT EXISTS idx_gf_delivery_logs_received_at   ON gf_delivery_log
 CREATE UNIQUE INDEX IF NOT EXISTS gf_delivery_logs_service_seq_unique
   ON gf_delivery_logs (gf_service_id, seq) WHERE seq IS NOT NULL;
 
--- 굿스플로 기본값 system_settings
-INSERT INTO system_settings (key, value) VALUES
-  ('gf_centers_prod',         '[]'),
-  ('gf_centers_test',         '[]'),
-  ('gf_contracts_prod',       '[]'),
-  ('gf_contracts_test',       '[]'),
-  ('gf_last_sync_at',         '""')
-ON CONFLICT (key) DO NOTHING;
-
 -- =============================================================================
 -- SECTION 17: SEARCH
 -- =============================================================================
@@ -3662,6 +3653,15 @@ INSERT INTO system_settings (key, value, description) VALUES
    '일괄배송 기능 사용 여부. true이면 관리자 주문 메뉴에 일괄 발송 메뉴가 표시됨'),
   ('notify_out_for_delivery', 'true'::jsonb,
    '배송 출발(out_for_delivery) 시 고객 알림 발송 여부')
+ON CONFLICT (key) DO NOTHING;
+
+-- 굿스플로 기본값
+INSERT INTO system_settings (key, value) VALUES
+  ('gf_centers_prod',         '[]'),
+  ('gf_centers_test',         '[]'),
+  ('gf_contracts_prod',       '[]'),
+  ('gf_contracts_test',       '[]'),
+  ('gf_last_sync_at',         '""')
 ON CONFLICT (key) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
