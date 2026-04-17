@@ -1,9 +1,16 @@
 import { createClient } from '@/lib/supabase/client';
 import { ORDER_RETURNABLE_STATUSES } from '@/constants/orderStatus';
 import type { OrderStatus } from '@/constants/orderStatus';
-import type { ReturnableItem } from '@/services/returns';
+import type { ReturnableItem } from '@/services/refund';
 
-export type ExchangeStatus = 'pending' | 'approved' | 'rejected' | 'collected' | 'reshipped' | 'completed';
+export type ExchangeStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'pickup_requested'
+  | 'collected'
+  | 'reshipped'
+  | 'completed';
 
 export interface ExchangeItem {
   order_item_id:       string;
@@ -37,12 +44,13 @@ export interface ExchangeRequest {
 }
 
 export const EXCHANGE_STATUS_LABELS: Record<ExchangeStatus, string> = {
-  pending:   '검토중',
-  approved:  '승인됨',
-  rejected:  '거부됨',
-  collected: '수거완료',
-  reshipped: '재발송',
-  completed: '완료',
+  pending:          '검토중',
+  approved:         '승인됨',
+  rejected:         '거부됨',
+  pickup_requested: '픽업요청',
+  collected:        '수거완료',
+  reshipped:        '재발송',
+  completed:        '완료',
 };
 
 export const EXCHANGE_REASONS: { value: string; label: string }[] = [
@@ -444,7 +452,7 @@ export async function createAdminExchange(params: {
     }
 
 
-    // 4. exchanges 레코드 삽입
+    // 4. exchanges 레코드 삽입 (approved 상태로 생성 — 상품 반송 후 완료 처리)
     const now = new Date().toISOString();
     const { data: inserted, error: insertErr } = await supabase
       .from('exchanges')
@@ -454,11 +462,10 @@ export async function createAdminExchange(params: {
         items:        params.items,
         reason:       params.reason,
         description:  params.description ?? null,
-        status:       'completed',
+        status:       'approved',
         price_diff:   totalPriceDiff,
         initiated_by: 'admin',
-        processed_at: now,
-        completed_at: now,
+        approved_at:  now,
         admin_memo:   params.adminMemo ?? null,
       })
       .select('id')
@@ -467,53 +474,88 @@ export async function createAdminExchange(params: {
     if (insertErr || !inserted) return { success: false, error: '교환 처리에 실패했습니다.' };
     const exchangeId = (inserted as any).id as string;
 
-    // 5. 원 상품 재고 복구 + 6. 교환 상품 재고 차감 + 7. order_items 업데이트
-    for (const exItem of params.items) {
-      const orderItem = (rawItems as any[]).find((o) => o.id === exItem.order_item_id);
-      if (!orderItem || orderItem.item_type === 'gift') continue;
-
-      // 원 상품 재고 복구
-      if (orderItem.variant_id) {
-        await supabase.rpc('increment_variant_stock', {
-          p_variant_id: orderItem.variant_id,
-          p_quantity:   exItem.quantity,
-        });
-      } else {
-        await supabase.rpc('increment_product_stock', {
-          p_product_id: orderItem.product_id,
-          p_quantity:   exItem.quantity,
-        });
-      }
-
-      // 교환 상품 재고 차감
-      await supabase.rpc('decrement_variant_stock', {
-        p_variant_id: exItem.exchange_variant_id,
-        p_quantity:   exItem.quantity,
-      });
-
-      // order_items.exchanged_quantity 업데이트
-      const newExchangedQty = (orderItem.exchanged_quantity ?? 0) + exItem.quantity;
-      const itemUpdate: Record<string, unknown> = { exchanged_quantity: newExchangedQty };
-      if (newExchangedQty >= orderItem.quantity) {
-        itemUpdate.status = 'exchanged';
-      }
-      await supabase
-        .from('order_items')
-        .update(itemUpdate)
-        .eq('id', orderItem.id);
-    }
-
-    // 8. 주문 상태 이력 기록
+    // 주문 상태 이력 기록
     await supabase.from('order_status_history').insert({
       order_id:    params.orderId,
       from_status: (order as any).status,
       to_status:   (order as any).status,
       changed_by:  params.adminId,
-      note:        `관리자 교환 처리 (exchange #${exchangeId}), 가격차이: ${totalPriceDiff.toLocaleString()}원`,
+      note:        `관리자 교환 처리 등록 (exchange #${exchangeId}), 가격차이: ${totalPriceDiff.toLocaleString()}원 — 상품 반송 후 완료 처리 필요`,
     });
 
     return { success: true, exchangeId, priceDiff: totalPriceDiff };
   } catch (err: any) {
     return { success: false, error: err.message ?? '교환 처리 중 오류가 발생했습니다.' };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 굿스플로 교환 픽업 요청
+// ─────────────────────────────────────────────────────────────────────────────
+export async function requestExchangePickup(params: {
+  exchangeId:          string;
+  centerCode:          string;
+  transporter:         string;
+  boxSize:             string;
+  pickupScheduledDate?: string;
+  fromName:            string;
+  fromPhoneNo:         string;
+  fromAddress1:        string;
+  fromAddress2?:       string;
+  fromZipcode:         string;
+  itemName:            string;
+  quantity:            number;
+  orderNumber:         string;
+  orderId:             string;
+}): Promise<{ success: boolean; gfReturnServiceId?: string; trackingNumber?: string; error?: string }> {
+  const supabase = createClient();
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gf-shipping-print`,
+      {
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          Authorization:   `Bearer ${token}`,
+          apikey:          import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
+          action:     'requestReturn',
+          exchangeId: params.exchangeId,
+          item: {
+            orderNumber:  params.orderNumber,
+            orderId:      params.orderId,
+            fromName:     params.fromName,
+            fromPhoneNo:  params.fromPhoneNo,
+            fromAddress1: params.fromAddress1,
+            fromAddress2: params.fromAddress2 ?? '',
+            fromZipcode:  params.fromZipcode,
+            itemName:     params.itemName,
+            quantity:     params.quantity,
+          },
+          options: {
+            centerCode:          params.centerCode,
+            transporter:         params.transporter,
+            boxSize:             params.boxSize,
+            pickupScheduledDate: params.pickupScheduledDate ?? null,
+          },
+        }),
+      },
+    );
+
+    const body = await res.json();
+    if (!body.ok) return { success: false, error: body.message ?? '픽업 요청에 실패했습니다.' };
+
+    return {
+      success:           true,
+      gfReturnServiceId: body.gfReturnServiceId,
+      trackingNumber:    body.trackingNumber,
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message ?? '픽업 요청 중 오류가 발생했습니다.' };
   }
 }

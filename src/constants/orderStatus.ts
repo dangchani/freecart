@@ -51,8 +51,8 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   delivered:        '배송완료',
   confirmed:        '구매확정',
   cancelled:        '취소완료',
-  return_requested: '반품신청',
-  returned:         '반품완료',
+  return_requested: '환불신청',
+  returned:         '환불완료',
 };
 
 /** 관리자 화면용 배지 색상 (Tailwind) */
@@ -102,7 +102,7 @@ export type OrderItemStatus =
 
 export const ORDER_ITEM_STATUS_LABELS: Record<OrderItemStatus, string> = {
   pending:   '정상',
-  returned:  '반품처리',
+  returned:  '환불처리',
   exchanged: '교환처리',
   cancelled: '취소',
 };

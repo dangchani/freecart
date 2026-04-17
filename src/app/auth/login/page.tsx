@@ -5,20 +5,23 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { signIn, PENDING_APPROVAL_ERROR } from '@/lib/auth';
+import { signIn, PENDING_APPROVAL_ERROR, EMAIL_NOT_VERIFIED_ERROR } from '@/lib/auth';
+import { createClient } from '@/lib/supabase/client';
 import { PageSection } from '@/components/theme/PageSection';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
-  const reason = searchParams.get('reason');
+  const reason = searchParams.get('reason') as string | null;
   const nextPath = searchParams.get('next') || '/';
 
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [unverifiedUserId, setUnverifiedUserId] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -29,14 +32,35 @@ export default function LoginPage() {
       await signIn(loginId, password);
       navigate(nextPath);
     } catch (err) {
-      // joy: 승인 대기 사용자는 별도 안내 메시지로 분기
       if (err instanceof Error && err.message === PENDING_APPROVAL_ERROR) {
         setError('관리자 승인 대기 중인 계정입니다. 승인 후 다시 시도해 주세요.');
+      } else if (err instanceof Error && err.message === 'MUST_CHANGE_PASSWORD') {
+        navigate('/auth/change-password', { replace: true });
+      } else if (err instanceof Error && err.message === EMAIL_NOT_VERIFIED_ERROR) {
+        const supabase = createClient();
+        const { data: userRow } = await supabase
+          .from('users').select('id').eq('login_id', loginId).maybeSingle();
+        setUnverifiedUserId(userRow?.id ?? null);
+        setError('이메일 인증이 완료되지 않았습니다. 가입 시 받은 인증 메일을 확인해주세요.');
       } else {
         setError('아이디 또는 비밀번호가 올바르지 않습니다.');
       }
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleResendVerification() {
+    if (!unverifiedUserId) return;
+    setResending(true);
+    try {
+      const supabase = createClient();
+      await supabase.functions.invoke('send-verification-email', { body: { userId: unverifiedUserId } });
+      alert('인증 메일을 재발송했습니다. 받은편지함을 확인해주세요.');
+    } catch {
+      alert('재발송 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setResending(false);
     }
   }
 
@@ -56,8 +80,25 @@ export default function LoginPage() {
                 이 쇼핑몰은 승인된 회원만 이용 가능합니다. 로그인 후 이용해 주세요.
               </div>
             )}
+            {reason === 'session_expired' && (
+              <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-700">
+                세션이 만료되었습니다. 다시 로그인해 주세요.
+              </div>
+            )}
             {error && (
-              <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">{error}</div>
+              <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">
+                <p>{error}</p>
+                {unverifiedUserId && (
+                  <button
+                    type="button"
+                    onClick={handleResendVerification}
+                    disabled={resending}
+                    className="mt-2 text-xs font-medium text-blue-600 hover:underline disabled:opacity-50"
+                  >
+                    {resending ? '발송 중...' : '인증 메일 재발송'}
+                  </button>
+                )}
+              </div>
             )}
 
             <div className="space-y-2">

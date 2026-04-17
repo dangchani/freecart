@@ -453,6 +453,113 @@ async function cancelShipping(
 }
 
 // ---------------------------------------------------------------------------
+// 반품 픽업 요청
+// ---------------------------------------------------------------------------
+
+async function requestReturn(
+  { apiKey, apiBase }: GfConfig,
+  supabase: ReturnType<typeof createClient>,
+  item: any,
+  options: { centerCode: string; transporter: string; boxSize: string; pickupScheduledDate?: string | null },
+  refundId?: string,
+  exchangeId?: string,
+  env?: 'prod' | 'test',
+) {
+  const center = await getCenterFromCache(supabase, options.centerCode, env ?? 'prod');
+
+  const uniqueId = `RTN-${item.orderNumber}-${Date.now()}`;
+
+  const gfItem: Record<string, any> = {
+    centerCode:            options.centerCode,
+    uniqueId,
+    boxSize:               options.boxSize,
+    transporter:           options.transporter,
+    fromName:              item.fromName,
+    fromPhoneNo:           item.fromPhoneNo.replace(/[^0-9]/g, ''),
+    fromAddress1:          item.fromAddress1,
+    fromAddress2:          item.fromAddress2 ?? '',
+    fromZipcode:           item.fromZipcode,
+    toName:                center?.fromName ?? '',
+    toPhoneNo:             (center?.fromPhoneNo ?? '').replace(/[^0-9]/g, ''),
+    toAddress1:            center?.fromAddress1 ?? '',
+    toAddress2:            center?.fromAddress2 ?? '',
+    toZipcode:             center?.fromZipcode ?? '',
+    deliveryPaymentMethod: 'SENDER_PAY',
+    deliveryItems: [{
+      orderNo:  item.orderNumber,
+      orderDate: new Date().toISOString().slice(0, 16).replace('T', ' '),
+      name:     item.itemName ?? '반품 상품',
+      quantity: item.quantity ?? 1,
+      price:    0,
+    }],
+  };
+
+  if (options.pickupScheduledDate) {
+    gfItem.pickupScheduledDate = options.pickupScheduledDate;
+  }
+
+  const url = `${apiBase}/api/deliveries/shipping/return/deliveryItems`;
+  const requestId = generateRequestId();
+  const requestBody = { requestId, contractType: 'USER', items: [gfItem] };
+
+  console.log(`[requestReturn] POST ${url}, requestId=${requestId}`);
+  console.log(`[requestReturn] 요청 body:`, JSON.stringify(requestBody, null, 2));
+
+  const res = await fetch(url, {
+    method:  'POST',
+    headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
+    body:    JSON.stringify(requestBody),
+  });
+  const body = await res.json();
+  console.log(`[requestReturn] 응답 status=${res.status}, body:`, JSON.stringify(body, null, 2));
+
+  if (!res.ok) throw new Error(body.error?.message ?? body.message ?? `굿스플로 반품 API 오류 (${res.status})`);
+
+  const gfResult = (body.data?.items ?? [])[0];
+  const success  = gfResult?.success === true;
+
+  if (!success) throw new Error(gfResult?.error?.message ?? '반품 픽업 요청 실패');
+
+  const gfReturnServiceId = gfResult.data?.serviceId as string;
+  const trackingNumber    = gfResult.data?.invoiceNo ?? null;
+  const now               = new Date().toISOString();
+
+  // refunds 또는 exchanges 테이블 업데이트
+  if (refundId) {
+    await supabase.from('refunds').update({
+      gf_return_service_id: gfReturnServiceId,
+      status:               'pickup_requested',
+      pickup_requested_at:  now,
+      ...(options.pickupScheduledDate ? { pickup_scheduled_date: options.pickupScheduledDate } : {}),
+      ...(trackingNumber ? { return_tracking_number: trackingNumber } : {}),
+    }).eq('id', refundId);
+  }
+
+  if (exchangeId) {
+    await supabase.from('exchanges').update({
+      gf_return_service_id: gfReturnServiceId,
+      status:               'pickup_requested',
+      pickup_requested_at:  now,
+      ...(options.pickupScheduledDate ? { pickup_scheduled_date: options.pickupScheduledDate } : {}),
+    }).eq('id', exchangeId);
+  }
+
+  // gf_delivery_logs 기록
+  const logFields: Record<string, any> = {
+    gf_service_id:   gfReturnServiceId,
+    delivery_status: 'RETURN_REQUESTED',
+    raw_payload:     { requestId, gfResult, refundId, exchangeId },
+  };
+  if (item.orderId) logFields.order_id = item.orderId;
+  if (refundId)     logFields.refund_id   = refundId;
+  if (exchangeId)   logFields.exchange_id = exchangeId;
+
+  await supabase.from('gf_delivery_logs').insert(logFields);
+
+  return { gfReturnServiceId, trackingNumber };
+}
+
+// ---------------------------------------------------------------------------
 // Pull 동기화 — 미수신 웹훅 이벤트 처리
 // ---------------------------------------------------------------------------
 
@@ -620,19 +727,28 @@ async function pullWebhookById(
     }
   }
 
-  // 주문 상태 전이 (최신 이벤트 기준, isValidTransition 검증)
-  const toStatus = GF_STATUS_TO_ORDER[latestStatus ?? ''];
-  if (toStatus) {
+  // 주문 상태 전이 — 이벤트를 seq 오름차순(발생 순서)으로 하나씩 적용
+  // 최신 이벤트만 적용하면 중간 단계를 건너뛰어 isValidTransition 실패 가능
+  // (예: shipped → TRANSFERRED → PICKUP → DLV_START 순서로 각각 전이해야 함)
+  {
     const { data: order } = await supabase
       .from('orders').select('status').eq('id', shipment.order_id).maybeSingle();
-    if (order && order.status !== toStatus && isValidTransition(order.status, toStatus)) {
+    let currentStatus: string = order?.status ?? '';
+
+    const sortedAsc = [...events].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+    for (const ev of sortedAsc) {
+      const toStatus = GF_STATUS_TO_ORDER[ev.deliveryStatus ?? ''];
+      if (!toStatus || currentStatus === toStatus) continue;
+      if (!isValidTransition(currentStatus, toStatus)) continue;
+
       await supabase.from('orders').update({ status: toStatus }).eq('id', shipment.order_id);
       await supabase.from('order_status_history').insert({
         order_id:    shipment.order_id,
-        from_status: order.status,
+        from_status: currentStatus,
         to_status:   toStatus,
-        note:        `굿스플로 개별 Pull 동기화: ${latestStatus}${invoiceNo ? ` (송장: ${invoiceNo})` : ''}`,
+        note:        `굿스플로 개별 Pull 동기화: ${ev.deliveryStatus}${ev.invoiceNo ? ` (송장: ${ev.invoiceNo})` : ''}`,
       });
+      currentStatus = toStatus;
     }
   }
 
@@ -703,6 +819,19 @@ serve(async (req) => {
         if (!pullId) { result = { ok: false, message: 'gfServiceId 필수' }; break; }
         const pullResult = await pullWebhookById(config, supabase, pullId);
         result = { ok: true, ...pullResult };
+        break;
+      }
+
+      case 'requestReturn': {
+        const { refundId: rRefundId, exchangeId: rExchangeId, item: rItem, options: rOptions } = params;
+        if (!rItem) { result = { ok: false, message: 'item 필수' }; break; }
+        if (!rOptions?.centerCode || !rOptions?.transporter || !rOptions?.boxSize) {
+          result = { ok: false, message: 'options.centerCode, transporter, boxSize 필수' }; break;
+        }
+        const returnResult = await requestReturn(
+          config, supabase, rItem, rOptions, rRefundId, rExchangeId, config.env,
+        );
+        result = { ok: true, ...returnResult };
         break;
       }
 

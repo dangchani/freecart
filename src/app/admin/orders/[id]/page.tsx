@@ -1517,7 +1517,12 @@ export default function AdminOrderDetailPage() {
                             await loadAll(id!);
                           }
                         } catch (e: any) {
-                          alert(`동기화 실패: ${e.message}`);
+                          const msg: string = e?.message ?? '';
+                          if (msg.includes('알 수 없는 action') || msg.includes('조회 실패') || msg.includes('not found')) {
+                            alert('배송 정보를 조회할 수 없습니다.\n아직 등록되지 않은 배송이거나, 굿스플로 연동 설정을 확인해주세요.');
+                          } else {
+                            alert(`동기화 실패: ${msg}`);
+                          }
                         } finally {
                           setGfSyncing(false);
                         }

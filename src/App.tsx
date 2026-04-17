@@ -17,7 +17,9 @@ import SignupPage from './app/auth/signup/page';
 import ForgotPasswordPage from './app/auth/forgot-password/page';
 import ForgotIdPage from './app/auth/forgot-id/page';
 import ResetPasswordPage from './app/auth/reset-password/page';
+import VerifyEmailPage from './app/auth/verify-email/page';
 import AuthCallbackPage from './app/auth/callback/page';
+import ChangePasswordPage from './app/auth/change-password/page';
 
 // Products
 import ProductsPage from './app/products/page';
@@ -176,6 +178,16 @@ function RequireAuth() {
   return <Outlet />;
 }
 
+// joy: must_change_password=true 인 사용자는 비밀번호 변경 페이지로 강제 이동
+function RequirePasswordChanged() {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="flex min-h-screen items-center justify-center">로딩 중...</div>;
+  if (user && user.mustChangePassword === true) {
+    return <Navigate to="/auth/change-password" replace />;
+  }
+  return <Outlet />;
+}
+
 function RequireAdmin() {
   const { user, loading, isAdmin } = useAuth();
   if (loading) return <div className="flex min-h-screen items-center justify-center">로딩 중...</div>;
@@ -204,12 +216,16 @@ export default function App() {
             <Route path="/auth/signup" element={<SignupPage />} />
             <Route path="/auth/forgot-id" element={<ForgotIdPage />} />
             <Route path="/auth/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/auth/verify-email" element={<VerifyEmailPage />} />
             <Route path="/auth/reset-password" element={<ResetPasswordPage />} />
             <Route path="/auth/callback" element={<AuthCallbackPage />} />
             <Route path="/auth/pending-approval" element={<PendingApprovalPage />} />
+            <Route path="/auth/change-password" element={<ChangePasswordPage />} />
 
             {/* 폐쇄몰 */}
             <Route element={<PrivateMallGuard scope="site" />}>
+            {/* must_change_password=true 인 사용자는 모든 페이지에서 비밀번호 변경 강제 */}
+            <Route element={<RequirePasswordChanged />}>
 
               <Route path="/" element={<HomePage />} />
               <Route path="/categories/:slug" element={<CategoryPage />} />
@@ -270,7 +286,8 @@ export default function App() {
                 </Route>
               </Route>
 
-            </Route>
+            </Route>{/* RequirePasswordChanged end */}
+            </Route>{/* PrivateMallGuard site end */}
 
             <Route path="*" element={<NotFoundPage />} />
           </Route>

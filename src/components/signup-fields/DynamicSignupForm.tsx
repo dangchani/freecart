@@ -210,6 +210,19 @@ export function DynamicSignupForm({ onSuccess, previewOnly, previewDefinitions, 
         }
       }
 
+      // 일반 가입이고 이메일 인증 필수 설정인 경우 인증메일 발송
+      if (!adminMode) {
+        const { data: emailConfirmRow } = await supabase
+          .from('settings')
+          .select('value')
+          .eq('key', 'email_confirm_required')
+          .maybeSingle();
+        const required = emailConfirmRow?.value === '"true"' || emailConfirmRow?.value === 'true';
+        if (required) {
+          await supabase.functions.invoke('send-verification-email', { body: { userId: newUserId } });
+        }
+      }
+
       onSuccess?.();
     } catch (e) {
       setServerError(

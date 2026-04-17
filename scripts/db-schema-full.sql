@@ -101,6 +101,7 @@ CREATE TABLE IF NOT EXISTS users (
   points              INTEGER NOT NULL DEFAULT 0,
   deposit             INTEGER NOT NULL DEFAULT 0,
   is_email_verified   BOOLEAN NOT NULL DEFAULT false,
+  email_verified_at   TIMESTAMPTZ,
   is_phone_verified   BOOLEAN NOT NULL DEFAULT false,
   is_dormant          BOOLEAN NOT NULL DEFAULT false,
   is_blocked          BOOLEAN NOT NULL DEFAULT false,
@@ -127,7 +128,31 @@ CREATE TRIGGER trg_users_updated_at
   BEFORE UPDATE ON users
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- 1.3 user_social_accounts (소셜 로그인)
+-- 1.3 이메일 인증 토큰 (가입 인증용, 만료 24시간)
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token      TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + interval '24 hours',
+  used_at    TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_evtoken_token   ON email_verification_tokens(token);
+CREATE INDEX IF NOT EXISTS idx_evtoken_user_id ON email_verification_tokens(user_id);
+
+-- 1.4 비밀번호 재설정 토큰 (만료 1시간)
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token      TEXT NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + interval '1 hour',
+  used_at    TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_pwreset_token   ON password_reset_tokens(token);
+CREATE INDEX IF NOT EXISTS idx_pwreset_user_id ON password_reset_tokens(user_id);
+
+-- 1.5 user_social_accounts (소셜 로그인)
 CREATE TABLE IF NOT EXISTS user_social_accounts (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1023,38 +1048,8 @@ CREATE TRIGGER trg_shipments_updated_at
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- 5.5 returns (반품)
--- 상태값: pending → approved → collected → completed | rejected
--- initiated_by: 'customer' (마이페이지 신청) | 'admin' (관리자 직접 처리)
--- items 구조: [{order_item_id: uuid, quantity: int}]
-CREATE TABLE IF NOT EXISTS returns (
-  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_id             UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  user_id              UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  items                JSONB NOT NULL DEFAULT '[]',
-  reason               VARCHAR(100) NOT NULL,
-  description          TEXT,
-  status               VARCHAR(30) NOT NULL DEFAULT 'pending',
-  refund_amount        INTEGER NOT NULL DEFAULT 0,   -- 반품 환불금액
-  refund_method        VARCHAR(30),                  -- 'card' | 'bank_transfer' | 'point' | 'deposit'
-  bank_name            VARCHAR(50),                  -- 무통장 환불 계좌
-  bank_account         VARCHAR(30),
-  account_holder       VARCHAR(50),
-  initiated_by         VARCHAR(20) NOT NULL DEFAULT 'customer',
-  admin_memo           TEXT,
-  tracking_number      VARCHAR(50),
-  tracking_company_id  UUID REFERENCES shipping_companies(id) ON DELETE SET NULL,
-  approved_at          TIMESTAMPTZ,
-  collected_at         TIMESTAMPTZ,
-  processed_at         TIMESTAMPTZ,
-  completed_at         TIMESTAMPTZ,
-  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_returns_order_id ON returns(order_id);
-CREATE INDEX IF NOT EXISTS idx_returns_user_id  ON returns(user_id);
-
--- 5.6 exchanges (교환)
--- 상태값: pending → approved → collected → reshipped → completed | rejected
+-- 5.5 exchanges (교환)
+-- 상태값: pending → approved → pickup_requested → collected → reshipped → completed | rejected
 -- initiated_by: 'customer' (마이페이지 신청) | 'admin' (관리자 직접 처리)
 -- items 구조: [{order_item_id: uuid, quantity: int, exchange_variant_id: uuid}]
 CREATE TABLE IF NOT EXISTS exchanges (
@@ -1067,10 +1062,16 @@ CREATE TABLE IF NOT EXISTS exchanges (
   price_diff               INTEGER NOT NULL DEFAULT 0,  -- 교환 가격차이 (양수=추가결제, 음수=환불)
   initiated_by             VARCHAR(20) NOT NULL DEFAULT 'customer',
   admin_memo               TEXT,
-  tracking_number          VARCHAR(50),
+  tracking_number          VARCHAR(50),                  -- 반품 수거 운송장
   tracking_company_id      UUID REFERENCES shipping_companies(id) ON DELETE SET NULL,
-  reship_tracking_number   VARCHAR(50),
+  gf_return_service_id     VARCHAR(30),                  -- GoodFlow 반품 수거 serviceId
+  pickup_requested_at      TIMESTAMPTZ,
+  pickup_scheduled_date    DATE,
+  reship_tracking_number   VARCHAR(50),                  -- 재발송 운송장
   reship_company_id        UUID REFERENCES shipping_companies(id) ON DELETE SET NULL,
+  exchange_product_id      UUID REFERENCES products(id) ON DELETE SET NULL,
+  exchange_product_name    VARCHAR(200),                 -- 교환 상품명 스냅샷
+  exchange_variant_attrs   JSONB,                        -- 교환 옵션 스냅샷
   approved_at              TIMESTAMPTZ,
   collected_at             TIMESTAMPTZ,
   processed_at             TIMESTAMPTZ,
@@ -1079,41 +1080,55 @@ CREATE TABLE IF NOT EXISTS exchanges (
   created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_exchanges_order_id ON exchanges(order_id);
-CREATE INDEX IF NOT EXISTS idx_exchanges_user_id  ON exchanges(user_id);
+CREATE INDEX IF NOT EXISTS idx_exchanges_order_id           ON exchanges(order_id);
+CREATE INDEX IF NOT EXISTS idx_exchanges_user_id            ON exchanges(user_id);
+CREATE INDEX IF NOT EXISTS idx_exchanges_gf_return_service  ON exchanges(gf_return_service_id) WHERE gf_return_service_id IS NOT NULL;
 
--- 5.7 refunds (환불)
+-- 5.6 refunds (환불 — 반품 포함 통합)
+-- type: 'refund' (직접환불) | 'return' (반품 후 환불) | 'exchange' (교환 관련 환불)
+-- status(반품): pending → approved → pickup_requested → collected → completed | rejected
+-- status(직접환불): pending → approved → completed | rejected
 CREATE TABLE IF NOT EXISTS refunds (
-  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_id          UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  order_item_id     UUID REFERENCES order_items(id) ON DELETE SET NULL,
-  payment_id        UUID REFERENCES payments(id) ON DELETE SET NULL,
-  user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  type              VARCHAR(20) NOT NULL DEFAULT 'refund',    -- refund | exchange | return
-  amount            INTEGER NOT NULL,
-  points_returned   INTEGER NOT NULL DEFAULT 0,
-  deposit_returned  INTEGER NOT NULL DEFAULT 0,
-  reason            TEXT NOT NULL,
-  reason_detail     TEXT,
-  status            VARCHAR(20) NOT NULL DEFAULT 'pending',
-  pg_tid            VARCHAR(100),
-  bank_name         VARCHAR(50),                              -- 무통장 환불 계좌
-  bank_account      VARCHAR(30),
-  account_holder    VARCHAR(50),
-  tracking_number   VARCHAR(50),                              -- 반품 회수 운송장
-  images            JSONB NOT NULL DEFAULT '[]',
-  items             JSONB NOT NULL DEFAULT '[]',              -- 환불 대상 상품 목록
-  approved_by       UUID,
-  approved_at       TIMESTAMPTZ,
-  processed_at      TIMESTAMPTZ,
-  completed_at      TIMESTAMPTZ,
-  rejected_reason   TEXT,
-  admin_memo        TEXT,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id                 UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  order_item_id            UUID REFERENCES order_items(id) ON DELETE SET NULL,
+  payment_id               UUID REFERENCES payments(id) ON DELETE SET NULL,
+  user_id                  UUID REFERENCES users(id) ON DELETE CASCADE,
+  type                     VARCHAR(20) NOT NULL DEFAULT 'refund',  -- refund | return | exchange
+  amount                   INTEGER NOT NULL DEFAULT 0,
+  points_returned          INTEGER NOT NULL DEFAULT 0,
+  deposit_returned         INTEGER NOT NULL DEFAULT 0,
+  reason                   TEXT NOT NULL DEFAULT '',
+  reason_detail            TEXT,
+  status                   VARCHAR(20) NOT NULL DEFAULT 'pending',
+  pg_tid                   VARCHAR(100),
+  refund_method            VARCHAR(30),                            -- card | bank_transfer | point | deposit
+  bank_name                VARCHAR(50),
+  bank_account             VARCHAR(30),
+  account_holder           VARCHAR(50),
+  initiated_by             VARCHAR(20) NOT NULL DEFAULT 'customer',
+  -- 반품 수거 관련
+  return_tracking_number   VARCHAR(50),
+  return_company_id        UUID REFERENCES shipping_companies(id) ON DELETE SET NULL,
+  gf_return_service_id     VARCHAR(30),                            -- GoodFlow 반품 수거 serviceId
+  pickup_requested_at      TIMESTAMPTZ,
+  pickup_scheduled_date    DATE,
+  collected_at             TIMESTAMPTZ,
+  -- 공통
+  images                   JSONB NOT NULL DEFAULT '[]',
+  items                    JSONB NOT NULL DEFAULT '[]',
+  approved_by              UUID,
+  approved_at              TIMESTAMPTZ,
+  processed_at             TIMESTAMPTZ,
+  completed_at             TIMESTAMPTZ,
+  rejected_reason          TEXT,
+  admin_memo               TEXT,
+  created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_refunds_order_id ON refunds(order_id);
-CREATE INDEX IF NOT EXISTS idx_refunds_user_id  ON refunds(user_id);
+CREATE INDEX IF NOT EXISTS idx_refunds_order_id          ON refunds(order_id);
+CREATE INDEX IF NOT EXISTS idx_refunds_user_id           ON refunds(user_id);
+CREATE INDEX IF NOT EXISTS idx_refunds_gf_return_service ON refunds(gf_return_service_id) WHERE gf_return_service_id IS NOT NULL;
 
 -- =============================================================================
 -- SECTION 6: REVIEW SYSTEM
@@ -3092,8 +3107,7 @@ INSERT INTO settings (key, value, description) VALUES
   ('store_api_url', '"https://freecart.kr"', '테마/스킨 스토어 API URL'),
   ('naver_client_id', '""', '네이버 소셜 로그인 Client ID'),
   -- 이메일 인증 / SMTP 설정
-  ('supabase_access_token', '""', 'Supabase Personal Access Token (Management API 용)'),
-  ('email_confirm_required', '"false"', '이메일 인증 필수 여부 (true/false)'),
+  ('email_confirm_required', '"false"', '이메일 인증 필수 여부. true이면 가입 후 SMTP 인증메일 발송, 미인증 시 로그인 차단'),
   ('smtp_host', '""', 'SMTP 호스트 (비어있으면 Supabase 기본 메일 사용)'),
   ('smtp_port', '"587"', 'SMTP 포트'),
   ('smtp_user', '""', 'SMTP 사용자명'),
@@ -3106,11 +3120,9 @@ INSERT INTO settings (key, value, description) VALUES
   ('bank_transfer_account_number', '""', '계좌번호'),
   ('bank_transfer_account_holder', '""', '예금주'),
   ('bank_transfer_deadline_hours', '"24"', '입금 기한 (시간)'),
-  ('resend_api_key',             '""',                   'Resend API Key (이메일 발송용)'),
   ('notification_from_email',    '"noreply@example.com"','알림 발신 이메일 주소'),
   ('notification_from_name',     '"프리카트"',            '알림 발신자 이름'),
   ('notification_email_enabled', '"true"',               '이메일 알림 활성화 여부 (true/false)'),
-  ('email_provider',             '"resend"',             '트랜잭션 이메일 발송 방식 (resend | smtp)'),
   -- 배송/환불 기본 안내
   ('default_shipping_notice',    '"배송 기간: 결제 후 1~3 영업일 이내 출고됩니다.\n기본 배송비: 3,000원 (50,000원 이상 구매 시 무료)\n도서·산간 지역은 추가 배송비가 발생할 수 있습니다."', '기본 배송 안내 텍스트'),
   ('default_return_notice',      '"교환/반품 신청 기간: 상품 수령 후 7일 이내\n상품 불량·오배송 시: 무료 교환 또는 전액 환불\n단순 변심 반품 시: 왕복 배송비 고객 부담\n사용·세탁·훼손된 상품은 교환/반품이 불가합니다."', '기본 환불·교환 안내 텍스트')
@@ -3592,8 +3604,10 @@ INSERT INTO system_settings (key, value, description) VALUES
    '포인트 명칭(예: 포인트, 적립금, 마일리지). UI 라벨에 사용됨'),
   ('enable_user_tags', 'false'::jsonb,
    '사용자 태그 기능 ON/OFF. true이면 회원 관리에서 태그 사이드바/태그 관리 탭이 표시됨'),
+  ('allow_customer_cancel', 'true'::jsonb,
+   '고객이 마이페이지에서 직접 주문 취소 가능 여부. false이면 취소 버튼 대신 고객센터 안내 메시지 표시'),
   ('allow_customer_return', 'true'::jsonb,
-   '고객이 마이페이지에서 직접 반품 신청 가능 여부. false이면 반품 신청 폼 대신 고객센터 안내 메시지 표시'),
+   '고객이 마이페이지에서 직접 환불 신청 가능 여부. false이면 환불 신청 폼 대신 고객센터 안내 메시지 표시'),
   ('allow_customer_exchange', 'true'::jsonb,
    '고객이 마이페이지에서 직접 교환 신청 가능 여부. false이면 교환 신청 폼 대신 고객센터 안내 메시지 표시'),
   ('order_list_columns', '["product","memo","deadline"]'::jsonb,
@@ -3834,6 +3848,15 @@ CREATE TRIGGER trg_user_field_values_updated_at
 -- ---------------------------------------------------------------------------
 -- 11) 헬퍼 함수 (SECURITY DEFINER로 RLS 재귀 회피) -- joy 작성
 -- ---------------------------------------------------------------------------
+
+-- Supabase 자체 이메일 발송 완전 차단 hook
+-- 모든 auth 이메일(가입인증, 비번재설정 등)을 no-op 처리. 우리 SMTP Edge Function에서 처리.
+CREATE OR REPLACE FUNCTION auth.hook_send_email(event jsonb)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  RETURN;
+END;
+$$;
 
 -- joy: 아이디 찾기용 RPC.
 --   이름 + 이메일 또는 이름 + 전화번호로 login_id와 가입일 반환.

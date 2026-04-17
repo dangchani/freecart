@@ -1,6 +1,13 @@
 import { createClient } from '@/lib/supabase/client';
 import { GF_STATUS_TO_ORDER_STATUS } from '@/constants/goodsflow';
 
+// Edge Function 호출 전 세션 갱신 — access token 만료 시 401 방지
+async function invokeGfFunction(body: Record<string, unknown>) {
+  const supabase = createClient();
+  await supabase.auth.getSession(); // 만료 시 자동 갱신 트리거
+  return supabase.functions.invoke('gf-shipping-print', { body });
+}
+
 // ---------------------------------------------------------------------------
 // 타입 정의
 // ---------------------------------------------------------------------------
@@ -138,12 +145,10 @@ export async function syncGfData(
   apiKey: string,
   apiBase: string,
 ): Promise<{ centers: GfCenter[]; contracts: GfContract[] }> {
-  const supabase = createClient();
-
   // 출고지 조회
-  const { data: centersData, error: centersError } = await supabase.functions.invoke('gf-shipping-print', {
-    body: { action: 'getCenters', overrideApiKey: apiKey, overrideApiBase: apiBase },
-  });
+  const { data: centersData, error: centersError } = await invokeGfFunction(
+    { action: 'getCenters', overrideApiKey: apiKey, overrideApiBase: apiBase },
+  );
   if (centersError) throw new Error(centersError.message);
   if (!centersData.ok) throw new Error(centersData.message ?? '출고지 조회 실패');
   const centers = centersData.centers as GfCenter[];
@@ -152,9 +157,9 @@ export async function syncGfData(
   let contracts: GfContract[] = [];
   if (centers.length > 0) {
     const codes = centers.map((c) => c.centerCode).join(',');
-    const { data: contractsData, error: contractsError } = await supabase.functions.invoke('gf-shipping-print', {
-      body: { action: 'getContracts', centerCodes: codes, overrideApiKey: apiKey, overrideApiBase: apiBase },
-    });
+    const { data: contractsData, error: contractsError } = await invokeGfFunction(
+      { action: 'getContracts', centerCodes: codes, overrideApiKey: apiKey, overrideApiBase: apiBase },
+    );
     if (!contractsError && contractsData?.ok) {
       contracts = contractsData.contracts as GfContract[];
     }
@@ -177,10 +182,9 @@ export async function getGfSellers(
   apiKey: string,
   apiBase: string,
 ): Promise<{ sellerCode: string; sellerName: string }[]> {
-  const supabase = createClient();
-  const { data, error } = await supabase.functions.invoke('gf-shipping-print', {
-    body: { action: 'getSellers', overrideApiKey: apiKey, overrideApiBase: apiBase },
-  });
+  const { data, error } = await invokeGfFunction(
+    { action: 'getSellers', overrideApiKey: apiKey, overrideApiBase: apiBase },
+  );
   if (error) throw new Error(error.message);
   if (!data.ok) throw new Error(data.message ?? '판매자 조회 실패');
   return data.sellers as { sellerCode: string; sellerName: string }[];
@@ -194,11 +198,8 @@ export async function printGfShippingLabels(
   items: GfShippingPrintItem[],
   options: { centerCode: string; transporter: string; boxSize: string },
 ): Promise<GfPrintResult[]> {
-  const supabase = createClient();
   console.log('[GF printGfShippingLabels] Edge Function 호출:', { action: 'print', items, options });
-  const { data, error } = await supabase.functions.invoke('gf-shipping-print', {
-    body: { action: 'print', items, options },
-  });
+  const { data, error } = await invokeGfFunction({ action: 'print', items, options });
   console.log('[GF printGfShippingLabels] Edge Function 응답:', { data, error });
   if (error) throw new Error(error.message);
   return data.results as GfPrintResult[];

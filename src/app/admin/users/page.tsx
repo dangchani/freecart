@@ -20,7 +20,9 @@ import {
   ChevronsRight,
   Download,
   KeyRound,
+  Upload,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { createClient } from '@/lib/supabase/client';
 import { getSystemSetting } from '@/lib/permissions';
 import { useAuth } from '@/hooks/useAuth';
@@ -56,6 +58,40 @@ interface TagRow {
   sort_order: number;
   created_by: string | null;
   memberCount?: number;
+}
+
+// 아임웹 회원 파싱 결과
+interface AiwebMember {
+  email:           string;
+  loginId:         string;
+  name:            string;
+  phone:           string;
+  group:           string;
+  companyName:     string;  // 상호
+  bizNum:          string;
+  ceoName:         string;
+  sector:          string;
+  bizType:         string;
+  managerName:     string;
+  zipCode:         string;
+  address1:        string;
+  address2:        string;
+  marketingAgreed: boolean;
+  joinDate:        string;
+  lastLoginDate:   string;
+  adminMemo:       string;
+}
+
+interface ImportResult {
+  email:        string;
+  loginId:      string;
+  name:         string;
+  tempPassword: string;
+}
+
+interface ImportError {
+  email: string;
+  error: string;
 }
 
 const PAGE_SIZE_OPTIONS = [20, 50, 100, 300] as const;
@@ -152,6 +188,17 @@ export default function AdminUsersPage() {
 
   // 엑셀 내보내기
   const [exporting, setExporting] = useState(false);
+
+  // 아임웹 가져오기 모달
+  const [showAiwebModal, setShowAiwebModal] = useState(false);
+  const [aiwebStep, setAiwebStep] = useState<1 | 2 | 3>(1);
+  const [aiwebMembers, setAiwebMembers] = useState<AiwebMember[]>([]);
+  const [aiwebSkipCount, setAiwebSkipCount] = useState(0);
+  const [aiwebImporting, setAiwebImporting] = useState(false);
+  const [aiwebResults, setAiwebResults] = useState<ImportResult[]>([]);
+  const [aiwebErrors, setAiwebErrors] = useState<ImportError[]>([]);
+  const [aiwebDetectedHeaders, setAiwebDetectedHeaders] = useState<string[]>([]);
+  const aiwebFileRef = useRef<HTMLInputElement>(null);
 
   // 임시 비밀번호 발급
   const [showTempPwModal, setShowTempPwModal] = useState(false);
@@ -660,6 +707,148 @@ export default function AdminUsersPage() {
     }
   }
 
+  /** 아임웹 Excel 파일 파싱 (열 인덱스 0-based) */
+  function parseAiwebExcel(file: File) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target!.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array', codepage: 949 });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+        // 헤더 행 탐색: '이메일' 셀이 있는 행을 찾음 (최대 10행 탐색)
+        let headerRowIdx = -1;
+        for (let i = 0; i < Math.min(rows.length, 10); i++) {
+          if (rows[i].some((cell: any) => String(cell).trim() === '이메일')) {
+            headerRowIdx = i;
+            break;
+          }
+        }
+        if (headerRowIdx === -1) throw new Error('헤더 행을 찾을 수 없습니다. "이메일" 컬럼이 있어야 합니다.');
+
+        // 컬럼명 → 인덱스 맵 구성
+        const headerRow = rows[headerRowIdx];
+        const colIdx: Record<string, number> = {};
+        const detectedHeaders: string[] = [];
+        headerRow.forEach((cell: any, idx: number) => {
+          const name = String(cell).trim();
+          if (name) {
+            colIdx[name] = idx;
+            detectedHeaders.push(name);
+          }
+        });
+        setAiwebDetectedHeaders(detectedHeaders);
+
+        // 여러 가능한 컬럼명 중 첫 번째 매치 반환
+        const get = (row: any[], names: string[]): string => {
+          for (const name of names) {
+            if (colIdx[name] !== undefined) {
+              return String(row[colIdx[name]] ?? '').trim();
+            }
+          }
+          return '';
+        };
+
+        const dataRows = rows.slice(headerRowIdx + 1);
+        const members: AiwebMember[] = [];
+        let skipCount = 0;
+
+        for (const row of dataRows) {
+          const email = get(row, ['이메일', 'Email', 'email']);
+          if (!email) { skipCount++; continue; }
+
+          members.push({
+            email,
+            loginId:         get(row, ['아이디', '로그인아이디', '로그인 아이디', 'ID']),
+            group:           get(row, ['회원 그룹', '그룹', '회원그룹']),
+            companyName:     get(row, ['상호', '회사명', '업체명', '상호명']),
+            // 아임웹 엑셀에는 "이름" 컬럼이 없음 → "대표자명"을 이름으로 사용
+            name:            get(row, ['대표자명', '이름', '회원명', '성명']),
+            bizNum:          get(row, ['사업자번호', '사업자등록번호']),
+            ceoName:         get(row, ['대표자명', '대표자', '대표이름']),
+            phone:           get(row, ['연락처', '휴대폰', '휴대전화', '전화번호', '핸드폰']),
+            sector:          get(row, ['종목', '업종']),
+            managerName:     get(row, ['담당자명', '담당자', '담당자 이름']),
+            zipCode:         get(row, ['우편번호', '우편 번호', '우편']),
+            address1:        get(row, ['사업장주소', '사업장 주소', '주소', '주소1']),
+            address2:        get(row, ['상세주소', '주소2', '상세 주소']),
+            bizType:         get(row, ['업태']),
+            marketingAgreed: get(row, ['메시지 수신 동의', '메시지수신동의', '마케팅수신동의', '수신동의']) === 'Y',
+            joinDate:        get(row, ['가입일', '가입 일자', '가입날짜', '등록일']),
+            lastLoginDate:   get(row, ['마지막 로그인', '마지막로그인', '최근로그인', '최근 로그인']),
+            adminMemo:       get(row, ['관리자 메모', '관리자메모', '메모']),
+          });
+        }
+
+        setAiwebMembers(members);
+        setAiwebSkipCount(skipCount);
+        setAiwebStep(2);
+      } catch (err) {
+        alert(`파일 파싱 오류: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  async function handleAiwebImport() {
+    if (aiwebMembers.length === 0) return;
+    setAiwebImporting(true);
+    try {
+      const supabase = createClient();
+      const { data: json, error: fnError } = await supabase.functions.invoke('import-aiweb-members', {
+        body: { members: aiwebMembers },
+      });
+
+      if (fnError) {
+        // FunctionsHttpError의 실제 응답 본문에서 에러 메시지 추출
+        let detail = fnError.message ?? '가져오기 실패';
+        try {
+          const body = await (fnError as any).context?.json?.();
+          if (body?.error) detail = body.error;
+        } catch {}
+        throw new Error(detail);
+      }
+      if (!json?.ok) throw new Error(json?.error ?? '가져오기 실패');
+
+      setAiwebResults(json.results ?? []);
+      setAiwebErrors(json.errors ?? []);
+      setAiwebStep(3);
+      await loadUsers();
+    } catch (err) {
+      alert(`오류: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setAiwebImporting(false);
+    }
+  }
+
+  function downloadAiwebResultCsv() {
+    const headers = ['이름', '아이디', '이메일', '임시비밀번호'];
+    const rows = aiwebResults.map((r) => [r.name, r.loginId, r.email, r.tempPassword]);
+    const csvContent = [
+      headers.join(','),
+      ...rows.map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')),
+    ].join('\n');
+    const bom = '\uFEFF';
+    const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `aiweb_import_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function resetAiwebModal() {
+    setShowAiwebModal(false);
+    setAiwebStep(1);
+    setAiwebMembers([]);
+    setAiwebSkipCount(0);
+    setAiwebResults([]);
+    setAiwebErrors([]);
+    if (aiwebFileRef.current) aiwebFileRef.current.value = '';
+  }
+
   async function handleExport() {
     try {
       setExporting(true);
@@ -752,6 +941,10 @@ export default function AdminUsersPage() {
           <Button variant="outline" onClick={() => setShowTempPwModal(true)}>
             <KeyRound className="mr-2 h-4 w-4" />
             임시 비밀번호 발급
+          </Button>
+          <Button variant="outline" onClick={() => { setShowAiwebModal(true); setAiwebStep(1); }}>
+            <Upload className="mr-2 h-4 w-4" />
+            아임웹 가져오기
           </Button>
           <Button variant="outline" onClick={handleExport} disabled={exporting}>
             <Download className="mr-2 h-4 w-4" />
@@ -1444,6 +1637,192 @@ export default function AdminUsersPage() {
               <Button type="button" variant="outline" className="mt-3 w-full" onClick={() => setShowAddModal(false)}>
                 취소
               </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 아임웹 가져오기 모달 */}
+      {showAiwebModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            {/* 헤더 */}
+            <div className="flex items-center justify-between border-b px-6 py-4">
+              <div>
+                <h2 className="text-lg font-bold">아임웹 회원 가져오기</h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {aiwebStep === 1 ? '1단계: 파일 업로드' : aiwebStep === 2 ? '2단계: 미리보기' : '3단계: 완료'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={resetAiwebModal}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-6 flex-1">
+              {/* Step 1: 파일 업로드 */}
+              {aiwebStep === 1 && (
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-600">
+                    아임웹 회원 관리 → 엑셀 내보내기로 받은 <strong>.xlsx</strong> 파일을 업로드해주세요.
+                  </p>
+                  <ul className="text-xs text-gray-500 space-y-1 bg-gray-50 p-3 rounded-md">
+                    <li>• 이메일이 없는 회원은 자동으로 건너뜁니다.</li>
+                    <li>• 이미 존재하는 이메일은 오류로 처리됩니다.</li>
+                    <li>• 임시 비밀번호가 자동 생성되며, 최초 로그인 시 변경이 강제됩니다.</li>
+                    <li>• 그룹, 담당자명, 관리자 메모는 회원 메모 필드에 저장됩니다.</li>
+                  </ul>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
+                    <Upload className="mx-auto h-10 w-10 text-gray-300 mb-3" />
+                    <p className="text-sm text-gray-500 mb-3">xlsx 파일을 선택하세요</p>
+                    <input
+                      ref={aiwebFileRef}
+                      type="file"
+                      accept=".xlsx,.xls"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) parseAiwebExcel(file);
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => aiwebFileRef.current?.click()}
+                    >
+                      파일 선택
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 2: 미리보기 */}
+              {aiwebStep === 2 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="rounded-lg bg-blue-50 p-3">
+                      <p className="text-2xl font-bold text-blue-600">{aiwebMembers.length}</p>
+                      <p className="text-xs text-gray-500 mt-1">가져올 회원</p>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <p className="text-2xl font-bold text-gray-500">{aiwebSkipCount}</p>
+                      <p className="text-xs text-gray-500 mt-1">이메일 없어 스킵</p>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <p className="text-2xl font-bold text-gray-700">{aiwebMembers.length + aiwebSkipCount}</p>
+                      <p className="text-xs text-gray-500 mt-1">파일 내 전체</p>
+                    </div>
+                  </div>
+
+                  {/* 감지된 엑셀 헤더 목록 */}
+                  <details className="rounded-lg border bg-gray-50 text-xs">
+                    <summary className="cursor-pointer px-3 py-2 font-medium text-gray-600 select-none">
+                      감지된 컬럼명 ({aiwebDetectedHeaders.length}개) — 이름·전화번호가 비어있으면 여기서 확인
+                    </summary>
+                    <div className="flex flex-wrap gap-1 px-3 pb-3 pt-1">
+                      {aiwebDetectedHeaders.map((h, i) => (
+                        <span key={i} className="rounded bg-white border px-2 py-0.5 text-gray-700">{h}</span>
+                      ))}
+                    </div>
+                  </details>
+
+                  <div className="overflow-x-auto rounded-lg border">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium text-gray-500">이름(대표자명)</th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-500">상호</th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-500">이메일</th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-500">연락처</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {aiwebMembers.slice(0, 10).map((m, i) => (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className={`px-3 py-2 ${!m.name ? 'text-red-400 italic' : ''}`}>{m.name || '(비어있음)'}</td>
+                            <td className="px-3 py-2">{m.companyName || '-'}</td>
+                            <td className="px-3 py-2">{m.email}</td>
+                            <td className={`px-3 py-2 ${!m.phone ? 'text-red-400 italic' : ''}`}>{m.phone || '(비어있음)'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {aiwebMembers.length > 10 && (
+                      <p className="px-3 py-2 text-xs text-gray-400 bg-gray-50 border-t">
+                        ... 외 {aiwebMembers.length - 10}명 더 있음
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => { setAiwebStep(1); setAiwebMembers([]); if (aiwebFileRef.current) aiwebFileRef.current.value = ''; }}
+                    >
+                      이전
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={handleAiwebImport}
+                      disabled={aiwebImporting || aiwebMembers.length === 0}
+                    >
+                      {aiwebImporting ? `가져오는 중...` : `${aiwebMembers.length}명 가져오기 시작`}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: 완료 */}
+              {aiwebStep === 3 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="rounded-lg bg-green-50 p-3">
+                      <p className="text-2xl font-bold text-green-600">{aiwebResults.length}</p>
+                      <p className="text-xs text-gray-500 mt-1">성공</p>
+                    </div>
+                    <div className="rounded-lg bg-red-50 p-3">
+                      <p className="text-2xl font-bold text-red-500">{aiwebErrors.length}</p>
+                      <p className="text-xs text-gray-500 mt-1">실패</p>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 p-3">
+                      <p className="text-2xl font-bold text-gray-600">{aiwebSkipCount}</p>
+                      <p className="text-xs text-gray-500 mt-1">스킵(이메일 없음)</p>
+                    </div>
+                  </div>
+
+                  {aiwebErrors.length > 0 && (
+                    <div className="rounded-lg bg-red-50 p-3 text-xs text-red-700 space-y-1 max-h-40 overflow-y-auto">
+                      <p className="font-semibold mb-1">실패 목록:</p>
+                      {aiwebErrors.map((e, i) => (
+                        <p key={i}>{e.email} — {e.error}</p>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-3">
+                    {aiwebResults.length > 0 && (
+                      <Button type="button" variant="outline" onClick={downloadAiwebResultCsv}>
+                        <Download className="mr-2 h-4 w-4" />
+                        임시 비밀번호 CSV 다운로드
+                      </Button>
+                    )}
+                    <Button type="button" onClick={resetAiwebModal}>
+                      닫기
+                    </Button>
+                  </div>
+
+                  {aiwebResults.length > 0 && (
+                    <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                      ⚠ 임시 비밀번호는 이 창을 닫으면 다시 확인할 수 없습니다. 반드시 CSV를 다운로드해주세요.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

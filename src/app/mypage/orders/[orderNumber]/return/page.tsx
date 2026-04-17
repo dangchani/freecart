@@ -4,10 +4,10 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { formatCurrency } from '@/lib/utils';
-import { ArrowLeft, Check } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
-import { RETURN_REASONS } from '@/services/returns';
+import { ArrowLeft } from 'lucide-react';
+import { RETURN_REASONS, createReturnRequest } from '@/services/refund';
 import { getCustomerRequestSettings } from '@/services/settings';
+import { createClient } from '@/lib/supabase/client';
 
 interface OrderItem {
   id: string;
@@ -32,7 +32,6 @@ export default function ReturnRequestPage() {
   const [submitting, setSubmitting] = useState(false);
   const [allowCustomerReturn, setAllowCustomerReturn] = useState(true);
 
-  // 선택된 아이템
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [reason, setReason] = useState('');
   const [description, setDescription] = useState('');
@@ -52,6 +51,7 @@ export default function ReturnRequestPage() {
       const supabase = createClient();
       const settings = await getCustomerRequestSettings();
       setAllowCustomerReturn(settings.allowCustomerReturn);
+
       const { data, error } = await supabase
         .from('orders')
         .select(`
@@ -69,24 +69,23 @@ export default function ReturnRequestPage() {
       }
 
       if (data.status !== 'delivered') {
-        alert('배송 완료된 주문만 반품 신청이 가능합니다.');
+        alert('배송 완료된 주문만 환불 신청이 가능합니다.');
         navigate(`/mypage/orders/${orderNumber}`);
         return;
       }
 
       setOrder({
-        id: data.id,
+        id:          data.id,
         orderNumber: data.order_number,
-        status: data.status,
-        items: (data.order_items || []).map((i: any) => ({
-          id: i.id,
+        status:      data.status,
+        items:       (data.order_items || []).map((i: any) => ({
+          id:          i.id,
           productName: i.product_name,
-          quantity: i.quantity,
-          price: i.unit_price,
+          quantity:    i.quantity,
+          price:       i.unit_price,
         })),
       });
 
-      // 기본으로 모든 아이템 선택
       setSelectedItems((data.order_items || []).map((i: any) => i.id));
     } catch (error) {
       console.error('Failed to load order:', error);
@@ -120,27 +119,27 @@ export default function ReturnRequestPage() {
     setSubmitting(true);
 
     try {
-      const supabase = createClient();
-      const { error } = await supabase.from('returns').insert({
-        order_id:    order!.id,
-        user_id:     user!.id,
+      const result = await createReturnRequest({
+        orderId:     order!.id,
+        userId:      user!.id,
         items:       selectedItems.map((id) => ({
           order_item_id: id,
-          quantity: order!.items.find((i) => i.id === id)?.quantity ?? 1,
+          quantity:      order!.items.find((i) => i.id === id)?.quantity ?? 1,
         })),
         reason,
-        description: description || null,
-        initiated_by: 'customer',
-        status:      'pending',
+        description: description || undefined,
       });
 
-      if (error) throw error;
+      if (!result.success) {
+        alert(result.error ?? '환불 신청 중 오류가 발생했습니다.');
+        return;
+      }
 
-      alert('반품 신청이 완료되었습니다. 관리자 승인 후 처리됩니다.');
+      alert('환불 신청이 완료되었습니다. 관리자 승인 후 처리됩니다.');
       navigate(`/mypage/orders/${orderNumber}`);
     } catch (error) {
       console.error('Failed to submit return:', error);
-      alert('반품 신청 중 오류가 발생했습니다.');
+      alert('환불 신청 중 오류가 발생했습니다.');
     } finally {
       setSubmitting(false);
     }
@@ -165,9 +164,9 @@ export default function ReturnRequestPage() {
           주문 상세로 돌아가기
         </Link>
         <Card className="p-8 text-center">
-          <h1 className="mb-3 text-xl font-bold">반품 신청 안내</h1>
-          <p className="text-gray-600 mb-2">현재 온라인 반품 신청이 운영되지 않습니다.</p>
-          <p className="text-gray-500 text-sm">반품을 원하시면 고객센터로 문의해 주세요.</p>
+          <h1 className="mb-3 text-xl font-bold">환불 신청 안내</h1>
+          <p className="text-gray-600 mb-2">현재 온라인 환불 신청이 운영되지 않습니다.</p>
+          <p className="text-gray-500 text-sm">환불을 원하시면 고객센터로 문의해 주세요.</p>
         </Card>
       </div>
     );
@@ -183,12 +182,12 @@ export default function ReturnRequestPage() {
         주문 상세로 돌아가기
       </Link>
 
-      <h1 className="mb-6 text-2xl font-bold">반품 신청</h1>
+      <h1 className="mb-6 text-2xl font-bold">환불 신청</h1>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* 상품 선택 */}
         <Card className="p-6">
-          <h2 className="mb-4 text-lg font-semibold">반품할 상품 선택</h2>
+          <h2 className="mb-4 text-lg font-semibold">환불할 상품 선택</h2>
           <div className="space-y-3">
             {order.items.map((item) => (
               <label
@@ -215,7 +214,7 @@ export default function ReturnRequestPage() {
 
         {/* 반품 사유 */}
         <Card className="p-6">
-          <h2 className="mb-4 text-lg font-semibold">반품 사유</h2>
+          <h2 className="mb-4 text-lg font-semibold">환불 사유</h2>
           <div className="space-y-2">
             {RETURN_REASONS.map((r) => (
               <label
@@ -240,7 +239,7 @@ export default function ReturnRequestPage() {
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="반품 사유에 대한 상세한 설명을 입력해주세요."
+              placeholder="환불 사유에 대한 상세한 설명을 입력해주세요."
               className="w-full rounded-lg border px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               rows={4}
             />
@@ -249,12 +248,12 @@ export default function ReturnRequestPage() {
 
         {/* 안내 사항 */}
         <Card className="bg-gray-50 p-6">
-          <h3 className="mb-3 font-semibold">반품 안내</h3>
+          <h3 className="mb-3 font-semibold">환불 안내</h3>
           <ul className="space-y-1 text-sm text-gray-600">
-            <li>• 반품 신청 후 관리자 승인 절차가 진행됩니다.</li>
+            <li>• 환불 신청 후 관리자 승인 절차가 진행됩니다.</li>
             <li>• 단순 변심의 경우 왕복 배송비가 부과될 수 있습니다.</li>
-            <li>• 상품 불량/오배송의 경우 무료로 반품 처리됩니다.</li>
-            <li>• 반품 접수 후 7일 이내에 상품을 발송해주세요.</li>
+            <li>• 상품 불량/오배송의 경우 무료로 환불 처리됩니다.</li>
+            <li>• 환불 접수 후 7일 이내에 상품을 발송해주세요.</li>
           </ul>
         </Card>
 
@@ -268,7 +267,7 @@ export default function ReturnRequestPage() {
             취소
           </Button>
           <Button type="submit" disabled={submitting || selectedItems.length === 0 || !reason}>
-            {submitting ? '처리 중...' : '반품 신청'}
+            {submitting ? '처리 중...' : '환불 신청'}
           </Button>
         </div>
       </form>

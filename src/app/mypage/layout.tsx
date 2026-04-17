@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation, Link, Outlet } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { signOut } from '@/lib/auth';
 import { getSystemSetting } from '@/lib/permissions';
 import {
   ShoppingBag,
@@ -17,6 +18,7 @@ import {
   User,
   Receipt,
   FileText,
+  LogOut,
 } from 'lucide-react';
 
 const navItems = [
@@ -38,6 +40,11 @@ const navItems = [
 
 export default function MypageLayout() {
   const navigate = useNavigate();
+
+  async function handleLogout() {
+    await signOut();
+    navigate('/auth/login');
+  }
   const { pathname } = useLocation();
   const { user, loading } = useAuth();
   const [usePointsEnabled, setUsePointsEnabled] = useState(true);
@@ -113,6 +120,15 @@ export default function MypageLayout() {
                 </Link>
               );
             })}
+            <div className="pt-2 border-t mt-2">
+              <button
+                onClick={handleLogout}
+                className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-sm text-red-600 transition-colors hover:bg-red-50"
+              >
+                <LogOut className="h-4 w-4 shrink-0" />
+                로그아웃
+              </button>
+            </div>
           </nav>
         </aside>
 

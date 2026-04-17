@@ -26,7 +26,17 @@ export function useAuth() {
     // 인증 상태 변경 감지
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      // 세션 만료 시 강제 로그아웃 후 로그인 페이지로 이동
+      if (event === 'TOKEN_REFRESHED' && !session) {
+        supabase.auth.signOut().finally(() => {
+          setUser(null);
+          setPendingApproval(false);
+          setLoading(false);
+          window.location.href = '/auth/login?reason=session_expired';
+        });
+        return;
+      }
       if (session?.user) {
         loadUserProfile(session.user.id);
       } else {
@@ -112,6 +122,7 @@ export function useAuth() {
       phone: profile.phone,
       role: profile.role,
       isApproved: profile.is_approved,
+      mustChangePassword: profile.must_change_password ?? false,
       permissions,
       createdAt: profile.created_at,
       updatedAt: profile.updated_at,
@@ -127,6 +138,7 @@ export function useAuth() {
     isAuthenticated: !!user,
     isAdmin: user?.role === 'admin' || user?.role === 'super_admin',
     isSuperAdmin: user?.role === 'super_admin',
+    mustChangePassword: user?.mustChangePassword ?? false,
     permissions: user?.permissions ?? [],
   };
 }
