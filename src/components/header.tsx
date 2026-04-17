@@ -1,9 +1,10 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
-import { ShoppingCart, User, Menu, Search, X, Shield, ChevronDown } from 'lucide-react';
+import { ShoppingCart, User, Menu, Search, X, Shield, ChevronDown, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/store/cart';
 import { useAuth } from '@/hooks/useAuth';
+import { signOut } from '@/lib/auth';
 import { getSetting } from '@/services/settings';
 import { useMenuItems, type MenuItem } from '@/hooks/useMenuItems';
 import { NotificationBell } from '@/components/layout/NotificationBell';
@@ -85,6 +86,11 @@ export function Header() {
     if (q) navigate(`/products/search?q=${encodeURIComponent(q)}`);
   }
 
+  async function handleLogout() {
+    await signOut();
+    navigate('/auth/login');
+  }
+
   function toggleMobileExpand(id: string) {
     setExpandedMobileIds((prev) => {
       const next = new Set(prev);
@@ -149,10 +155,13 @@ export function Header() {
                 </Link>
               )}
               <Link to="/mypage">
-                <Button variant="ghost" size="sm">
+                <Button variant="ghost" size="sm" title="마이페이지">
                   <User className="h-5 w-5" />
                 </Button>
               </Link>
+              <Button variant="ghost" size="sm" title="로그아웃" onClick={handleLogout}>
+                <LogOut className="h-5 w-5" />
+              </Button>
             </div>
           ) : (
             <Link to="/auth/login">
@@ -202,6 +211,15 @@ export function Header() {
       {mobileMenuOpen && (
         <div className="border-t md:hidden bg-white">
           <nav className="container py-3 space-y-0.5">
+            {user && (
+              <button
+                onClick={() => { setMobileMenuOpen(false); handleLogout(); }}
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50"
+              >
+                <LogOut className="h-4 w-4" />
+                로그아웃
+              </button>
+            )}
             {menuItems.map((item) => (
                 <div key={item.id}>
                   {item.children.length > 0 ? (

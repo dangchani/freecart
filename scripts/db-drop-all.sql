@@ -25,6 +25,7 @@ DROP FUNCTION IF EXISTS public.auto_confirm_user CASCADE;
 DROP FUNCTION IF EXISTS public.update_updated_at_column CASCADE;
 DROP FUNCTION IF EXISTS public.get_email_by_login_id CASCADE;
 DROP FUNCTION IF EXISTS public.find_login_id_by_contact CASCADE;
+DROP FUNCTION IF EXISTS auth.hook_send_email CASCADE;
 DROP FUNCTION IF EXISTS public.decrement_variant_stock CASCADE;
 DROP FUNCTION IF EXISTS public.decrement_product_stock CASCADE;
 DROP FUNCTION IF EXISTS public.increment_variant_stock CASCADE;
@@ -49,6 +50,8 @@ DROP FUNCTION IF EXISTS public.is_admin() CASCADE;
 -- 외래키 의존성 역순으로 테이블 삭제 (CASCADE로 한번에)
 DROP TABLE IF EXISTS
   -- 2026.04.07 윌리엄 추가 (joy) — 권한/담당자/동적 필드 테이블 (users 앞에 배치)
+  email_verification_tokens,
+  password_reset_tokens,
   user_field_values,
   signup_field_definitions,
   user_managers,

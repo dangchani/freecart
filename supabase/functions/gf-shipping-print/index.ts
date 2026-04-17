@@ -8,6 +8,59 @@ const CORS_HEADERS = {
 
 const GF_API_DEFAULT = 'https://api.goodsflow.io';
 
+// 굿스플로 택배사 코드 → shipping_companies.code 매핑
+const GF_TRANSPORTER_TO_CODE: Record<string, string> = {
+  KOREX:  'cj',
+  HANJIN: 'hanjin',
+  LOTTE:  'lotte',
+  EPOST:  'epost',
+  LOGEN:  'logen',
+  KDEXP:  'kdexp',
+  DAESIN: 'daeshin',
+  ILYANG: 'ilyang',
+  CVSNET: 'gspostbox',
+};
+
+// 굿스플로 배송 상태 → 주문 상태 매핑
+const GF_STATUS_TO_ORDER: Record<string, string> = {
+  TRANSFERRED: 'transferred',
+  PICKUP:      'picked_up',
+  DLV_START:   'out_for_delivery',
+  COMPLETED:   'delivered',
+  CANCELED:    'cancelled',
+  RETURNED:    'cancelled',
+};
+
+// 굿스플로 배송 상태 → shipments.status 매핑
+const GF_STATUS_TO_SHIPMENT: Record<string, string> = {
+  TRANSFERRED:   'transferred',
+  PICKUP:        'picked_up',
+  DLV_START:     'out_for_delivery',
+  COMPLETED:     'delivered',
+  CANCELED:      'cancelled',
+  RETURNED:      'cancelled',
+};
+
+// 주문 상태 전이 규칙 (인라인, src/constants/orderStatus.ts 와 동기화 유지)
+const ORDER_STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending:          ['paid', 'cancelled'],
+  paid:             ['processing', 'pending', 'cancelled'],
+  processing:       ['shipped', 'paid', 'cancelled'],
+  shipped:          ['transferred', 'delivered', 'processing'],
+  transferred:      ['picked_up'],
+  picked_up:        ['out_for_delivery'],
+  out_for_delivery: ['delivered'],
+  delivered:        ['confirmed', 'return_requested'],
+  confirmed:        [],
+  cancelled:        [],
+  return_requested: ['returned'],
+  returned:         [],
+};
+
+function isValidTransition(from: string, to: string): boolean {
+  return (ORDER_STATUS_TRANSITIONS[from] ?? []).includes(to);
+}
+
 // ---------------------------------------------------------------------------
 // 굿스플로 연동 정보 조회 (API Key + Base URL)
 // ---------------------------------------------------------------------------
@@ -169,7 +222,7 @@ async function printLabels(
 
   const gfItems = items.map((item: any) => ({
     centerCode:            options.centerCode,
-    uniqueId:              item.orderNumber,
+    uniqueId:              `${item.orderNumber}-${Date.now()}`,
     boxSize:               options.boxSize,
     transporter:           options.transporter,
     fromName:              center?.fromName ?? '',
@@ -234,6 +287,20 @@ async function printLabels(
 
     if (success) {
       const gfServiceId = gfResult.data?.serviceId;
+      const invoiceNo   = gfResult.data?.invoiceNo ?? null;
+
+      // transporter → shipping_company_id 매핑
+      let shippingCompanyId: string | null = null;
+      const companyCode = GF_TRANSPORTER_TO_CODE[options.transporter];
+      if (companyCode) {
+        const { data: company } = await supabase
+          .from('shipping_companies')
+          .select('id')
+          .eq('code', companyCode)
+          .maybeSingle();
+        if (company) shippingCompanyId = company.id;
+      }
+
       // shipments 테이블 upsert
       const { data: existing } = await supabase
         .from('shipments')
@@ -241,19 +308,18 @@ async function printLabels(
         .eq('order_id', item.orderId)
         .maybeSingle();
 
+      const shipmentFields: Record<string, any> = {
+        gf_service_id: gfServiceId,
+        status: 'shipped',
+        shipped_at: new Date().toISOString(),
+      };
+      if (invoiceNo) shipmentFields.tracking_number = invoiceNo;
+      if (shippingCompanyId) shipmentFields.shipping_company_id = shippingCompanyId;
+
       if (existing) {
-        await supabase.from('shipments').update({
-          gf_service_id: gfServiceId,
-          status: 'shipped',
-          shipped_at: new Date().toISOString(),
-        }).eq('id', existing.id);
+        await supabase.from('shipments').update(shipmentFields).eq('id', existing.id);
       } else {
-        await supabase.from('shipments').insert({
-          order_id:      item.orderId,
-          gf_service_id: gfServiceId,
-          status:        'shipped',
-          shipped_at:    new Date().toISOString(),
-        });
+        await supabase.from('shipments').insert({ order_id: item.orderId, ...shipmentFields });
       }
 
       // 주문 상태 전이 (processing → shipped)
@@ -275,7 +341,7 @@ async function printLabels(
         });
       }
 
-      results.push({ orderId: item.orderId, orderNumber: item.orderNumber, success: true, gfServiceId });
+      results.push({ orderId: item.orderId, orderNumber: item.orderNumber, success: true, gfServiceId, trackingNumber: invoiceNo });
     } else {
       results.push({
         orderId:     item.orderId,
@@ -293,15 +359,36 @@ async function printLabels(
 // 송장 출력 URI 생성
 // ---------------------------------------------------------------------------
 
-async function getPrintUri({ apiKey, apiBase }: GfConfig, gfServiceIds: string[]) {
-  const res = await fetch(`${apiBase}/api/deliveries/shipping/print-uri?idType=serviceId`, {
+async function getPrintUri(
+  { apiKey, apiBase }: GfConfig,
+  supabase: ReturnType<typeof createClient>,
+  gfServiceIds: string[],
+) {
+  const url = `${apiBase}/api/deliveries/shipping/print-uri?idType=serviceId&includePrinted=true`;
+  console.log(`[getPrintUri] PUT ${url}, ids=${gfServiceIds.join(',')}`);
+
+  const res = await fetch(url, {
     method:  'PUT',
     headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
     body:    JSON.stringify(gfServiceIds),
   });
   const body = await res.json();
-  if (!res.ok || !body.success) throw new Error(body.error?.message ?? '출력 URI 생성 실패');
-  return body.data?.uri as string;
+  console.log(`[getPrintUri] 응답 status=${res.status}, body:`, JSON.stringify(body, null, 2));
+  if (!res.ok || !body.success) throw new Error(body.error?.message ?? body.message ?? '출력 URI 생성 실패');
+
+  // 출력 상태 DB 업데이트
+  for (const sid of gfServiceIds) {
+    await supabase.from('shipments')
+      .update({ gf_printed: true, gf_printed_at: new Date().toISOString() })
+      .eq('gf_service_id', sid);
+  }
+
+  return {
+    uri:            body.data?.uri as string,
+    requestCount:   body.data?.requestCount ?? 0,
+    printCount:     body.data?.printCount ?? 0,
+    expireDateTime: body.data?.expireDateTime ?? '',
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +453,113 @@ async function cancelShipping(
 }
 
 // ---------------------------------------------------------------------------
+// 반품 픽업 요청
+// ---------------------------------------------------------------------------
+
+async function requestReturn(
+  { apiKey, apiBase }: GfConfig,
+  supabase: ReturnType<typeof createClient>,
+  item: any,
+  options: { centerCode: string; transporter: string; boxSize: string; pickupScheduledDate?: string | null },
+  refundId?: string,
+  exchangeId?: string,
+  env?: 'prod' | 'test',
+) {
+  const center = await getCenterFromCache(supabase, options.centerCode, env ?? 'prod');
+
+  const uniqueId = `RTN-${item.orderNumber}-${Date.now()}`;
+
+  const gfItem: Record<string, any> = {
+    centerCode:            options.centerCode,
+    uniqueId,
+    boxSize:               options.boxSize,
+    transporter:           options.transporter,
+    fromName:              item.fromName,
+    fromPhoneNo:           item.fromPhoneNo.replace(/[^0-9]/g, ''),
+    fromAddress1:          item.fromAddress1,
+    fromAddress2:          item.fromAddress2 ?? '',
+    fromZipcode:           item.fromZipcode,
+    toName:                center?.fromName ?? '',
+    toPhoneNo:             (center?.fromPhoneNo ?? '').replace(/[^0-9]/g, ''),
+    toAddress1:            center?.fromAddress1 ?? '',
+    toAddress2:            center?.fromAddress2 ?? '',
+    toZipcode:             center?.fromZipcode ?? '',
+    deliveryPaymentMethod: 'SENDER_PAY',
+    deliveryItems: [{
+      orderNo:  item.orderNumber,
+      orderDate: new Date().toISOString().slice(0, 16).replace('T', ' '),
+      name:     item.itemName ?? '반품 상품',
+      quantity: item.quantity ?? 1,
+      price:    0,
+    }],
+  };
+
+  if (options.pickupScheduledDate) {
+    gfItem.pickupScheduledDate = options.pickupScheduledDate;
+  }
+
+  const url = `${apiBase}/api/deliveries/shipping/return/deliveryItems`;
+  const requestId = generateRequestId();
+  const requestBody = { requestId, contractType: 'USER', items: [gfItem] };
+
+  console.log(`[requestReturn] POST ${url}, requestId=${requestId}`);
+  console.log(`[requestReturn] 요청 body:`, JSON.stringify(requestBody, null, 2));
+
+  const res = await fetch(url, {
+    method:  'POST',
+    headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
+    body:    JSON.stringify(requestBody),
+  });
+  const body = await res.json();
+  console.log(`[requestReturn] 응답 status=${res.status}, body:`, JSON.stringify(body, null, 2));
+
+  if (!res.ok) throw new Error(body.error?.message ?? body.message ?? `굿스플로 반품 API 오류 (${res.status})`);
+
+  const gfResult = (body.data?.items ?? [])[0];
+  const success  = gfResult?.success === true;
+
+  if (!success) throw new Error(gfResult?.error?.message ?? '반품 픽업 요청 실패');
+
+  const gfReturnServiceId = gfResult.data?.serviceId as string;
+  const trackingNumber    = gfResult.data?.invoiceNo ?? null;
+  const now               = new Date().toISOString();
+
+  // refunds 또는 exchanges 테이블 업데이트
+  if (refundId) {
+    await supabase.from('refunds').update({
+      gf_return_service_id: gfReturnServiceId,
+      status:               'pickup_requested',
+      pickup_requested_at:  now,
+      ...(options.pickupScheduledDate ? { pickup_scheduled_date: options.pickupScheduledDate } : {}),
+      ...(trackingNumber ? { return_tracking_number: trackingNumber } : {}),
+    }).eq('id', refundId);
+  }
+
+  if (exchangeId) {
+    await supabase.from('exchanges').update({
+      gf_return_service_id: gfReturnServiceId,
+      status:               'pickup_requested',
+      pickup_requested_at:  now,
+      ...(options.pickupScheduledDate ? { pickup_scheduled_date: options.pickupScheduledDate } : {}),
+    }).eq('id', exchangeId);
+  }
+
+  // gf_delivery_logs 기록
+  const logFields: Record<string, any> = {
+    gf_service_id:   gfReturnServiceId,
+    delivery_status: 'RETURN_REQUESTED',
+    raw_payload:     { requestId, gfResult, refundId, exchangeId },
+  };
+  if (item.orderId) logFields.order_id = item.orderId;
+  if (refundId)     logFields.refund_id   = refundId;
+  if (exchangeId)   logFields.exchange_id = exchangeId;
+
+  await supabase.from('gf_delivery_logs').insert(logFields);
+
+  return { gfReturnServiceId, trackingNumber };
+}
+
+// ---------------------------------------------------------------------------
 // Pull 동기화 — 미수신 웹훅 이벤트 처리
 // ---------------------------------------------------------------------------
 
@@ -377,43 +571,188 @@ async function pullWebhooks({ apiKey, apiBase }: GfConfig, supabase: ReturnType<
   if (!res.ok || !body.success) return;
 
   const events: any[] = body.data ?? [];
-  const GF_STATUS_MAP: Record<string, string> = {
-    COMPLETED: 'delivered',
-    CANCELED:  'cancelled',
-  };
 
   for (const event of events) {
-    const { serviceId, deliveryStatus } = event;
+    const { serviceId, deliveryStatus, invoiceNo, transporter, seq } = event;
 
     const { data: shipment } = await supabase
       .from('shipments')
-      .select('order_id')
+      .select('id, order_id, shipping_company_id')
       .eq('gf_service_id', serviceId)
       .maybeSingle();
 
     if (!shipment?.order_id) continue;
 
-    await supabase.from('gf_delivery_logs').insert({
+    // invoiceNo + shipping_company_id + 배송 상태 업데이트
+    const updateFields: Record<string, any> = {};
+    if (invoiceNo) updateFields.tracking_number = invoiceNo;
+    if (!shipment.shipping_company_id && transporter) {
+      const companyCode = GF_TRANSPORTER_TO_CODE[transporter];
+      if (companyCode) {
+        const { data: company } = await supabase
+          .from('shipping_companies')
+          .select('id')
+          .eq('code', companyCode)
+          .maybeSingle();
+        if (company) updateFields.shipping_company_id = company.id;
+      }
+    }
+    const newShipmentStatus = GF_STATUS_TO_SHIPMENT[deliveryStatus];
+    if (newShipmentStatus) {
+      updateFields.status = newShipmentStatus;
+      if (deliveryStatus === 'COMPLETED') updateFields.delivered_at = new Date().toISOString();
+    }
+    if (Object.keys(updateFields).length > 0) {
+      await supabase.from('shipments').update(updateFields).eq('id', shipment.id);
+    }
+
+    // gf_delivery_logs 기록 (seq 중복 시 skip)
+    const { error: logError } = await supabase.from('gf_delivery_logs').insert({
       order_id:        shipment.order_id,
       gf_service_id:   serviceId,
       delivery_status: deliveryStatus,
       raw_payload:     event,
+      seq:             seq ?? null,
     });
+    if (logError && logError.code !== '23505') {
+      console.error(`[pullWebhooks] log insert error (seq=${seq}):`, logError.message);
+    }
 
-    const toStatus = GF_STATUS_MAP[deliveryStatus];
+    // 주문 상태 전이
+    const toStatus = GF_STATUS_TO_ORDER[deliveryStatus];
     if (toStatus) {
       const { data: order } = await supabase.from('orders').select('status').eq('id', shipment.order_id).maybeSingle();
-      if (order && order.status !== toStatus) {
+      if (order && order.status !== toStatus && isValidTransition(order.status, toStatus)) {
         await supabase.from('orders').update({ status: toStatus }).eq('id', shipment.order_id);
         await supabase.from('order_status_history').insert({
           order_id:    shipment.order_id,
           from_status: order.status,
           to_status:   toStatus,
-          note:        `굿스플로 Pull 동기화: ${deliveryStatus}`,
+          note:        `굿스플로 Pull 동기화: ${deliveryStatus}${invoiceNo ? ` (송장: ${invoiceNo})` : ''}`,
         });
+        // out_for_delivery 알림은 webhook-receiver 에서 처리 (설정: notify_out_for_delivery)
       }
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// 특정 serviceId 웹훅 Pull
+// ---------------------------------------------------------------------------
+
+async function pullWebhookById(
+  { apiKey, apiBase }: GfConfig,
+  supabase: ReturnType<typeof createClient>,
+  gfServiceId: string,
+): Promise<{ processed: number; latestStatus: string | null; events: unknown[] }> {
+  const url = `${apiBase}/api/deliveries/webhooks/${gfServiceId}?idType=serviceId`;
+  console.log(`[pullWebhookById] GET ${url}`);
+
+  const res = await fetch(url, { headers: { Authorization: apiKey } });
+  const body = await res.json();
+  console.log(`[pullWebhookById] 응답:`, JSON.stringify(body));
+
+  if (!res.ok || !body.success) {
+    throw new Error(body.error?.message ?? body.message ?? '조회 실패');
+  }
+
+  const events: any[] = body.data ?? [];
+  if (events.length === 0) return { processed: 0, latestStatus: null, events: [] };
+
+  // seq 내림차순 정렬 → 가장 최신 이벤트 먼저
+  events.sort((a, b) => (b.seq ?? 0) - (a.seq ?? 0));
+  const latestEvent = events[0];
+  const latestStatus: string | null = latestEvent?.deliveryStatus ?? null;
+
+  const { data: shipment } = await supabase
+    .from('shipments')
+    .select('id, order_id, shipping_company_id')
+    .eq('gf_service_id', gfServiceId)
+    .maybeSingle();
+
+  if (!shipment?.order_id) {
+    // shipment 못 찾아도 로그는 기록 (seq 중복 skip)
+    for (const event of events) {
+      const { error: logError } = await supabase.from('gf_delivery_logs').insert({
+        gf_service_id:   gfServiceId,
+        delivery_status: event.deliveryStatus,
+        raw_payload:     event,
+        seq:             event.seq ?? null,
+      });
+      if (logError && logError.code !== '23505') {
+        console.error(`[pullWebhookById] log insert error (seq=${event.seq}):`, logError.message);
+      }
+    }
+    return { processed: 0, latestStatus, events };
+  }
+
+  // shipments 업데이트: 최신 이벤트 기준
+  const { invoiceNo, transporter } = latestEvent;
+  const updateFields: Record<string, any> = {};
+  if (invoiceNo) updateFields.tracking_number = invoiceNo;
+
+  if (!shipment.shipping_company_id && transporter) {
+    const companyCode = GF_TRANSPORTER_TO_CODE[transporter];
+    if (companyCode) {
+      const { data: company } = await supabase
+        .from('shipping_companies').select('id').eq('code', companyCode).maybeSingle();
+      if (company) updateFields.shipping_company_id = company.id;
+    }
+  }
+  const newShipmentStatus = GF_STATUS_TO_SHIPMENT[latestStatus ?? ''];
+  if (newShipmentStatus) {
+    updateFields.status = newShipmentStatus;
+    if (latestStatus === 'COMPLETED') updateFields.delivered_at = new Date().toISOString();
+  }
+  if (Object.keys(updateFields).length > 0) {
+    await supabase.from('shipments').update(updateFields).eq('id', shipment.id);
+  }
+
+  // 모든 이벤트를 gf_delivery_logs에 기록 (seq 중복 skip)
+  let processed = 0;
+  for (const event of events) {
+    const { error: logError } = await supabase.from('gf_delivery_logs').insert({
+      order_id:        shipment.order_id,
+      gf_service_id:   gfServiceId,
+      delivery_status: event.deliveryStatus,
+      raw_payload:     event,
+      seq:             event.seq ?? null,
+    });
+    if (logError) {
+      if (logError.code !== '23505') {
+        console.error(`[pullWebhookById] log insert error (seq=${event.seq}):`, logError.message);
+      }
+    } else {
+      processed++;
+    }
+  }
+
+  // 주문 상태 전이 — 이벤트를 seq 오름차순(발생 순서)으로 하나씩 적용
+  // 최신 이벤트만 적용하면 중간 단계를 건너뛰어 isValidTransition 실패 가능
+  // (예: shipped → TRANSFERRED → PICKUP → DLV_START 순서로 각각 전이해야 함)
+  {
+    const { data: order } = await supabase
+      .from('orders').select('status').eq('id', shipment.order_id).maybeSingle();
+    let currentStatus: string = order?.status ?? '';
+
+    const sortedAsc = [...events].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+    for (const ev of sortedAsc) {
+      const toStatus = GF_STATUS_TO_ORDER[ev.deliveryStatus ?? ''];
+      if (!toStatus || currentStatus === toStatus) continue;
+      if (!isValidTransition(currentStatus, toStatus)) continue;
+
+      await supabase.from('orders').update({ status: toStatus }).eq('id', shipment.order_id);
+      await supabase.from('order_status_history').insert({
+        order_id:    shipment.order_id,
+        from_status: currentStatus,
+        to_status:   toStatus,
+        note:        `굿스플로 개별 Pull 동기화: ${ev.deliveryStatus}${ev.invoiceNo ? ` (송장: ${ev.invoiceNo})` : ''}`,
+      });
+      currentStatus = toStatus;
+    }
+  }
+
+  return { processed, latestStatus, events };
 }
 
 // ---------------------------------------------------------------------------
@@ -459,8 +798,8 @@ serve(async (req) => {
         break;
 
       case 'printUri': {
-        const uri = await getPrintUri(config, params.gfServiceIds);
-        result = { ok: true, uri };
+        const printUriResult = await getPrintUri(config, supabase, params.gfServiceIds);
+        result = { ok: true, ...printUriResult };
         break;
       }
 
@@ -474,6 +813,49 @@ serve(async (req) => {
         await pullWebhooks(config, supabase);
         result = { ok: true };
         break;
+
+      case 'pullWebhookById': {
+        const { gfServiceId: pullId } = params;
+        if (!pullId) { result = { ok: false, message: 'gfServiceId 필수' }; break; }
+        const pullResult = await pullWebhookById(config, supabase, pullId);
+        result = { ok: true, ...pullResult };
+        break;
+      }
+
+      case 'requestReturn': {
+        const { refundId: rRefundId, exchangeId: rExchangeId, item: rItem, options: rOptions } = params;
+        if (!rItem) { result = { ok: false, message: 'item 필수' }; break; }
+        if (!rOptions?.centerCode || !rOptions?.transporter || !rOptions?.boxSize) {
+          result = { ok: false, message: 'options.centerCode, transporter, boxSize 필수' }; break;
+        }
+        const returnResult = await requestReturn(
+          config, supabase, rItem, rOptions, rRefundId, rExchangeId, config.env,
+        );
+        result = { ok: true, ...returnResult };
+        break;
+      }
+
+      case 'testChangeStatus': {
+        if (config.env !== 'test') {
+          result = { ok: false, message: '테스트 환경(use_test)에서만 사용 가능합니다.' };
+          break;
+        }
+        const { serviceId: tsId, deliveryStatus: tsStatus } = params;
+        if (!tsId || !tsStatus) {
+          result = { ok: false, message: 'serviceId, deliveryStatus 필수' };
+          break;
+        }
+        const tsUrl = `${config.apiBase}/api/test/changeStatus/${tsId}/${tsStatus}`;
+        console.log(`[testChangeStatus] PUT ${tsUrl}`);
+        const tsRes = await fetch(tsUrl, {
+          method: 'PUT',
+          headers: { Authorization: config.apiKey },
+        });
+        const tsBody = await tsRes.json();
+        console.log(`[testChangeStatus] 응답:`, JSON.stringify(tsBody));
+        result = { ok: tsRes.ok, data: tsBody };
+        break;
+      }
 
       default:
         result = { ok: false, message: `알 수 없는 action: ${action}` };

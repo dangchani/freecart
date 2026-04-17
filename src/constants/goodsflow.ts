@@ -196,31 +196,67 @@ export const GF_TRANSPORTERS: Record<string, string> = {
 
 // 배송 상태 코드
 export const GF_DELIVERY_STATUS: Record<string, string> = {
-  PRINTED:     '송장 출력 완료',
-  TRANSFERRED: '택배사 전송 완료',
-  PICKUP:      '픽업 완료',
-  IN_TRANSIT:  '이동 중',
-  DLV_START:   '배송 출발',
-  DLV_FAILED:  '배송 실패 (부재)',
-  COMPLETED:   '배송 완료',
-  RETURNED:    '반송 완료',
-  CANCELED:    '취소',
-  ERROR:       '오류',
+  RECEIVED:      '접수 완료',
+  PRINTED:       '송장 출력 완료',
+  TRANSFERRED:   '택배사 전송 완료',
+  PICKUP_FAILED: '미픽업',
+  PICKUP:        '픽업 완료',
+  IN_TRANSIT:    '이동 중',
+  DLV_START:     '배송 출발',
+  DLV_FAILED:    '배송 실패 (부재)',
+  COMPLETED:     '배송 완료',
+  RETURNED:      '반송 완료',
+  CANCELED:      '취소',
+  ERROR:         '오류',
 };
 
 // 굿스플로 배송 상태 → Freecart 주문 상태 매핑 (전이 대상만)
 export const GF_STATUS_TO_ORDER_STATUS: Partial<Record<string, string>> = {
-  COMPLETED: 'delivered',
-  CANCELED:  'cancelled',
+  TRANSFERRED: 'transferred',
+  PICKUP:      'picked_up',
+  DLV_START:   'out_for_delivery',
+  COMPLETED:   'delivered',
+  CANCELED:    'cancelled',
+  RETURNED:    'cancelled',
 };
 
-// 취소 사유 코드
+// 굿스플로 배송 상태 → shipments.status 매핑
+export const GF_STATUS_TO_SHIPMENT_STATUS: Partial<Record<string, string>> = {
+  TRANSFERRED:   'transferred',
+  PICKUP:        'picked_up',
+  DLV_START:     'out_for_delivery',
+  COMPLETED:     'delivered',
+  CANCELED:      'cancelled',
+  RETURNED:      'cancelled',
+};
+
+// 굿스플로 택배사 코드 → Freecart shipping_companies.code 매핑
+// shipping_companies 테이블에 등록된 code와 1:1 매칭
+export const GF_TRANSPORTER_TO_COMPANY_CODE: Record<string, string> = {
+  KOREX:   'cj',
+  HANJIN:  'hanjin',
+  LOTTE:   'lotte',
+  EPOST:   'epost',
+  LOGEN:   'logen',
+  KDEXP:   'kdexp',
+  DAESIN:  'daeshin',
+  ILYANG:  'ilyang',
+  CVSNET:  'gspostbox',
+  BGF:     'coupang',
+};
+
+// 취소 사유 코드 (굿스플로 API 기준)
 export const GF_CANCEL_REASONS = [
-  { code: 'NOT_SEND',      label: '미발송' },
-  { code: 'RE_RECEIVED',   label: '취소 후 재신청' },
-  { code: 'OTHER_SERVICE', label: '다른 배송사 이용' },
-  { code: 'PICKUP_DELAY',  label: '집화 지연' },
-  { code: 'ETC',           label: '기타' },
+  { code: 'EXCEED_BOX',          label: '박스규격 초과' },
+  { code: 'POOR_PACKAGE',        label: '포장불량' },
+  { code: 'NO_ITEM',             label: '물품없음' },
+  { code: 'PICKUP_FAIL',         label: '미픽업 자동 취소' },
+  { code: 'CHANGE_MIND',         label: '고객변심' },
+  { code: 'DIRECT_SEND',         label: '직접배송' },
+  { code: 'OTHER_SERVICE_USAGE', label: '타 배송사 이용' },
+  { code: 'ERROR_CONTACT',       label: '연락처오류' },
+  { code: 'RECEIPT_FAIL',        label: '접수실패' },
+  { code: 'ERROR_ADDRESS',       label: '주소오류' },
 ] as const;
 
 // 배송비 납부 방식

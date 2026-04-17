@@ -42,7 +42,6 @@ interface Settings {
   bankTransferAccountHolder: string;
   bankTransferDeadlineHours: string;
   // 이메일 / SMTP 설정
-  supabaseAccessToken: string;
   emailConfirmRequired: string; // 'true' | 'false'
   smtpHost: string;
   smtpPort: string;
@@ -54,8 +53,6 @@ interface Settings {
   notificationEmailEnabled: string; // 'true' | 'false'
   notificationFromName: string;
   notificationFromEmail: string;
-  resendApiKey: string;
-  emailProvider: string; // 'resend' | 'smtp'
   // 폐쇄몰 설정
   closedMallEnabled: string; // 'true' | 'false'
   closedMallMode: string;    // 'full' | 'product'
@@ -91,9 +88,6 @@ const defaultSettings: Settings = {
   notificationEmailEnabled: 'true',
   notificationFromName: '',
   notificationFromEmail: '',
-  resendApiKey: '',
-  emailProvider: 'resend',
-  supabaseAccessToken: '',
   emailConfirmRequired: 'false',
   smtpHost: '',
   smtpPort: '587',
@@ -137,9 +131,6 @@ const keyMap: Record<keyof Settings, string> = {
   notificationEmailEnabled: 'notification_email_enabled',
   notificationFromName: 'notification_from_name',
   notificationFromEmail: 'notification_from_email',
-  resendApiKey: 'resend_api_key',
-  emailProvider: 'email_provider',
-  supabaseAccessToken: 'supabase_access_token',
   emailConfirmRequired: 'email_confirm_required',
   smtpHost: 'smtp_host',
   smtpPort: 'smtp_port',
@@ -225,13 +216,9 @@ export default function AdminSettingsPage() {
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [applyingSmtp, setApplyingSmtp] = useState(false);
-  const [applyingEmailConfirm, setApplyingEmailConfirm] = useState(false);
   const [smtpProvider, setSmtpProvider] = useState<SmtpProviderId>('custom');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [applyError, setApplyError] = useState('');
-  const [applySuccess, setApplySuccess] = useState('');
 
   // system_settings 상태
   const [requireSignupApproval, setRequireSignupApproval] = useState(false);
@@ -241,11 +228,14 @@ export default function AdminSettingsPage() {
   const [usePoints, setUsePoints] = useState(false);
   const [pointLabel, setPointLabel] = useState('포인트');
   const [useDeposit, setUseDeposit] = useState(false);
+  const [allowCustomerCancel,   setAllowCustomerCancel]   = useState(true);
   const [allowCustomerReturn,   setAllowCustomerReturn]   = useState(true);
   const [allowCustomerExchange, setAllowCustomerExchange] = useState(true);
 
   const [useSubscriptions, setUseSubscriptions] = useState(false);
   const [useCoupons, setUseCoupons] = useState(true);
+  const [useBulkShipment, setUseBulkShipment] = useState(true);
+  const [notifyOutForDelivery, setNotifyOutForDelivery] = useState(true);
   const [noticeBarEnabled, setNoticeBarEnabled] = useState(true);
   const [noticeBarColor, setNoticeBarColor] = useState('#2563eb');
   const [imageBannerEnabled, setImageBannerEnabled] = useState(true);
@@ -344,7 +334,7 @@ export default function AdminSettingsPage() {
       const { data: sysRows } = await supabase
         .from('system_settings')
         .select('key, value')
-        .in('key', ['require_signup_approval', 'enable_user_assignment', 'enable_user_tags', 'use_user_levels', 'use_points', 'point_label', 'allow_customer_return', 'allow_customer_exchange', 'order_list_columns', 'notice_bar_enabled', 'notice_bar_color', 'image_banner_enabled', 'use_subscriptions', 'use_coupons', 'use_deposit']);
+        .in('key', ['require_signup_approval', 'enable_user_assignment', 'enable_user_tags', 'use_user_levels', 'use_points', 'point_label', 'allow_customer_cancel', 'allow_customer_return', 'allow_customer_exchange', 'order_list_columns', 'notice_bar_enabled', 'notice_bar_color', 'image_banner_enabled', 'use_subscriptions', 'use_coupons', 'use_deposit', 'use_bulk_shipment', 'notify_out_for_delivery']);
       for (const row of sysRows ?? []) {
         if (row.key === 'require_signup_approval') setRequireSignupApproval(row.value === true);
         if (row.key === 'enable_user_assignment') setEnableUserAssignment(row.value === true);
@@ -353,6 +343,7 @@ export default function AdminSettingsPage() {
         if (row.key === 'use_points') setUsePoints(row.value === true);
         if (row.key === 'point_label' && typeof row.value === 'string') setPointLabel(row.value);
         if (row.key === 'use_deposit') setUseDeposit(row.value === true);
+        if (row.key === 'allow_customer_cancel')   setAllowCustomerCancel(row.value !== false);
         if (row.key === 'allow_customer_return')   setAllowCustomerReturn(row.value !== false);
         if (row.key === 'allow_customer_exchange') setAllowCustomerExchange(row.value !== false);
         if (row.key === 'order_list_columns' && Array.isArray(row.value)) setOrderListColumns(row.value as string[]);
@@ -361,6 +352,8 @@ export default function AdminSettingsPage() {
         if (row.key === 'image_banner_enabled') setImageBannerEnabled(row.value !== false);
         if (row.key === 'use_subscriptions') setUseSubscriptions(row.value === true);
         if (row.key === 'use_coupons') setUseCoupons(row.value !== false);
+        if (row.key === 'use_bulk_shipment') setUseBulkShipment(row.value !== false);
+        if (row.key === 'notify_out_for_delivery') setNotifyOutForDelivery(row.value !== false);
       }
     } catch {
       setError('설정을 불러오는 중 오류가 발생했습니다.');
@@ -450,6 +443,7 @@ export default function AdminSettingsPage() {
         { key: 'use_points', value: usePoints },
         { key: 'point_label', value: pointLabel },
         { key: 'use_deposit', value: useDeposit },
+        { key: 'allow_customer_cancel',   value: allowCustomerCancel },
         { key: 'allow_customer_return',   value: allowCustomerReturn },
         { key: 'allow_customer_exchange', value: allowCustomerExchange },
         { key: 'order_list_columns', value: orderListColumns },
@@ -458,6 +452,8 @@ export default function AdminSettingsPage() {
         { key: 'image_banner_enabled', value: imageBannerEnabled },
         { key: 'use_subscriptions', value: useSubscriptions },
         { key: 'use_coupons', value: useCoupons },
+        { key: 'use_bulk_shipment', value: useBulkShipment },
+        { key: 'notify_out_for_delivery', value: notifyOutForDelivery },
       ];
       for (const { key, value } of sysUpdates) {
         const { error: sysError } = await supabase
@@ -485,7 +481,7 @@ export default function AdminSettingsPage() {
       const { error } = await supabase.functions.invoke('send-email', {
         body: {
           userId:      authUser.id,
-          subject:     '[프리카트] 이메일 발송 테스트',
+          subject:     `[${settings.siteName || '쇼핑몰'}] 이메일 발송 테스트`,
           content:     '이 메일은 이메일 발송 설정 테스트입니다.',
           htmlContent: '<p style="font-family:sans-serif;color:#333;">이 메일은 <strong>이메일 발송 설정 테스트</strong>입니다. 정상적으로 수신되었다면 설정이 완료된 것입니다.</p>',
           template:    'test',
@@ -500,76 +496,8 @@ export default function AdminSettingsPage() {
     }
   }
 
-  function getProjectRef() {
-    return import.meta.env.VITE_SUPABASE_URL.replace('https://', '').split('.')[0];
-  }
-
-  async function callSupabaseAuthApi(body: Record<string, unknown>) {
-    if (!settings.supabaseAccessToken) {
-      throw new Error('Supabase Personal Access Token을 먼저 입력하고 저장하세요.');
-    }
-    const res = await fetch(
-      `https://api.supabase.com/v1/projects/${getProjectRef()}/config/auth`,
-      {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${settings.supabaseAccessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      }
-    );
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || `응답 오류: ${res.status}`);
-    }
-  }
-
-  // SMTP 설정만 Supabase Auth에 적용 (이메일 인증 여부는 건드리지 않음)
-  async function handleApplySmtp() {
-    setApplyingSmtp(true);
-    setApplyError('');
-    setApplySuccess('');
-    try {
-      if (!settings.smtpHost.trim()) {
-        throw new Error('SMTP 호스트를 입력해주세요.');
-      }
-      await callSupabaseAuthApi({
-        smtp_host:        settings.smtpHost.trim(),
-        smtp_port:        parseInt(settings.smtpPort) || 587,
-        smtp_user:        settings.smtpUser,
-        smtp_pass:        settings.smtpPass,
-        smtp_sender_name: settings.smtpSenderName,
-        smtp_admin_email: settings.smtpSenderEmail,
-      });
-      setApplySuccess('SMTP 설정이 Supabase에 적용되었습니다. 비밀번호 재설정 등 인증 메일이 이 SMTP를 통해 발송됩니다.');
-    } catch (err) {
-      setApplyError(err instanceof Error ? err.message : 'SMTP 적용 중 오류가 발생했습니다.');
-    } finally {
-      setApplyingSmtp(false);
-    }
-  }
-
-  // 이메일 인증 필수 여부만 Supabase Auth에 적용 (SMTP는 건드리지 않음)
-  async function handleApplyEmailConfirm() {
-    setApplyingEmailConfirm(true);
-    setApplyError('');
-    setApplySuccess('');
-    try {
-      await callSupabaseAuthApi({
-        mailer_autoconfirm: settings.emailConfirmRequired !== 'true',
-        enable_signup: true,
-      });
-      setApplySuccess(
-        settings.emailConfirmRequired === 'true'
-          ? '이메일 인증 필수로 설정되었습니다.'
-          : '이메일 인증 없이 즉시 로그인 가능하도록 설정되었습니다.'
-      );
-    } catch (err) {
-      setApplyError(err instanceof Error ? err.message : '이메일 인증 설정 적용 중 오류가 발생했습니다.');
-    } finally {
-      setApplyingEmailConfirm(false);
-    }
+  function isSmtpConfigured() {
+    return !!(settings.smtpHost.trim() && settings.smtpUser.trim() && settings.smtpPass.trim());
   }
 
   if (authLoading || loading) return <div className="container py-8">로딩 중...</div>;
@@ -907,7 +835,7 @@ export default function AdminSettingsPage() {
                       value={settings.notificationFromName}
                       onChange={handleChange}
                       className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="프리카트"
+                      placeholder={settings.siteName || '사이트 이름'}
                     />
                   </div>
                   <div>
@@ -922,70 +850,6 @@ export default function AdminSettingsPage() {
                     />
                   </div>
                 </div>
-
-                {/* 발송 방식 */}
-                <div>
-                  <p className="mb-2 text-sm font-medium text-gray-700">발송 방식</p>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <label
-                      className={`flex cursor-pointer flex-col gap-1 rounded-md border-2 p-4 transition-colors ${
-                        settings.emailProvider !== 'smtp' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        className="sr-only"
-                        checked={settings.emailProvider !== 'smtp'}
-                        onChange={() => setSettings((prev) => ({ ...prev, emailProvider: 'resend' }))}
-                      />
-                      <span className="font-medium text-gray-800">Resend API</span>
-                      <span className="text-xs text-gray-500">API Key로 직접 발송 (권장)</span>
-                      <span className="mt-1 inline-block rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">
-                        무료 3,000건/월
-                      </span>
-                    </label>
-                    <label
-                      className={`flex cursor-pointer flex-col gap-1 rounded-md border-2 p-4 transition-colors ${
-                        settings.emailProvider === 'smtp' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        className="sr-only"
-                        checked={settings.emailProvider === 'smtp'}
-                        onChange={() => setSettings((prev) => ({ ...prev, emailProvider: 'smtp' }))}
-                      />
-                      <span className="font-medium text-gray-800">SMTP</span>
-                      <span className="text-xs text-gray-500">아래 '이메일 인증 설정'의 SMTP 공유</span>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Resend API Key 입력 */}
-                {settings.emailProvider !== 'smtp' && (
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-700">Resend API Key</label>
-                    <input
-                      type="password"
-                      name="resendApiKey"
-                      value={settings.resendApiKey}
-                      onChange={handleChange}
-                      className="w-full rounded-md border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="re_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                    />
-                    <p className="mt-1 text-xs text-gray-500">
-                      resend.com에서 발급한 API Key를 입력하세요.
-                    </p>
-                  </div>
-                )}
-
-                {/* SMTP 선택 시 안내 */}
-                {settings.emailProvider === 'smtp' && (
-                  <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-                    아래 <strong>'이메일 인증 설정'</strong> 섹션에서 입력한 SMTP 정보가 트랜잭션 이메일에도 함께 사용됩니다.
-                    SMTP 호스트·포트·계정 정보를 해당 섹션에서 설정해 주세요.
-                  </div>
-                )}
 
                 {/* 테스트 발송 */}
                 <div className="flex items-center gap-3">
@@ -1121,44 +985,6 @@ export default function AdminSettingsPage() {
               </div>
             </div>
 
-            {/* PAT */}
-            <div className="rounded-md border border-dashed p-4">
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Supabase Personal Access Token
-              </label>
-              <input
-                type="password"
-                name="supabaseAccessToken"
-                value={settings.supabaseAccessToken}
-                onChange={handleChange}
-                className="w-full rounded-md border bg-white px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="sbp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-              />
-              <p className="mt-1 text-xs text-gray-500">
-                Supabase Auth 이메일에 SMTP를 적용할 때 필요합니다.{' '}
-                <span className="font-medium text-gray-600">
-                  supabase.com → 우측 상단 아이콘 → Account → Access Tokens
-                </span>
-                에서 발급 후 저장하세요.
-              </p>
-            </div>
-
-            {applyError && (
-              <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{applyError}</div>
-            )}
-            {applySuccess && (
-              <div className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-600">{applySuccess}</div>
-            )}
-
-            <Button
-              type="button"
-              variant="outline"
-              disabled={applyingSmtp}
-              onClick={handleApplySmtp}
-              className="w-full md:w-auto"
-            >
-              {applyingSmtp ? '적용 중...' : 'Supabase에 SMTP 적용'}
-            </Button>
           </div>
         </Card>
 
@@ -1177,12 +1003,16 @@ export default function AdminSettingsPage() {
               </div>
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
+                  if (settings.emailConfirmRequired !== 'true' && !isSmtpConfigured()) {
+                    alert('SMTP 설정을 먼저 완료해주세요. 이메일 인증 발송에 SMTP가 필요합니다.');
+                    return;
+                  }
                   setSettings((prev) => ({
                     ...prev,
                     emailConfirmRequired: prev.emailConfirmRequired === 'true' ? 'false' : 'true',
-                  }))
-                }
+                  }));
+                }}
                 className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none ${
                   settings.emailConfirmRequired === 'true' ? 'bg-blue-600' : 'bg-gray-300'
                 }`}
@@ -1195,15 +1025,9 @@ export default function AdminSettingsPage() {
               </button>
             </div>
 
-            <Button
-              type="button"
-              variant="outline"
-              disabled={applyingEmailConfirm}
-              onClick={handleApplyEmailConfirm}
-              className="w-full md:w-auto"
-            >
-              {applyingEmailConfirm ? '적용 중...' : '이메일 인증 설정 적용'}
-            </Button>
+            {!isSmtpConfigured() && (
+              <p className="text-xs text-amber-600">SMTP 설정이 완료되어야 이메일 인증을 사용할 수 있습니다.</p>
+            )}
           </div>
         </Card>
 
@@ -1549,11 +1373,31 @@ export default function AdminSettingsPage() {
 
             <div className="border-t" />
 
-            {/* 반품/교환 신청 설정 */}
+            {/* 취소/환불/교환 신청 설정 */}
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium text-sm">고객 반품 신청 허용</p>
-                <p className="text-xs text-gray-400 mt-0.5">끄면 마이페이지 반품 신청 폼 대신 고객센터 문의 안내가 표시됩니다.</p>
+                <p className="font-medium text-sm">고객 주문 취소 허용</p>
+                <p className="text-xs text-gray-400 mt-0.5">끄면 마이페이지 주문 상세에서 취소 버튼이 숨겨지고 고객센터 문의 안내가 표시됩니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAllowCustomerCancel((prev) => !prev)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  allowCustomerCancel ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  allowCustomerCancel ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            <div className="border-t" />
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">고객 환불 신청 허용</p>
+                <p className="text-xs text-gray-400 mt-0.5">끄면 마이페이지 환불 신청 폼 대신 고객센터 문의 안내가 표시됩니다.</p>
               </div>
               <button
                 type="button"
@@ -1626,6 +1470,45 @@ export default function AdminSettingsPage() {
               >
                 <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
                   useCoupons ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            <div className="border-t" />
+
+            {/* 일괄배송 기능 사용 설정 */}
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">일괄배송 기능 사용</p>
+                <p className="text-xs text-gray-400 mt-0.5">끄면 관리자 주문 관리 메뉴에서 일괄 발송 메뉴가 숨겨집니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUseBulkShipment((prev) => !prev)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  useBulkShipment ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  useBulkShipment ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-sm">배송 출발 시 고객 알림 발송</p>
+                <p className="text-xs text-gray-400 mt-0.5">굿스플로 '배송 출발(DLV_START)' 이벤트 수신 시 고객에게 알림을 발송합니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNotifyOutForDelivery((prev) => !prev)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                  notifyOutForDelivery ? 'bg-blue-600' : 'bg-gray-200'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  notifyOutForDelivery ? 'translate-x-6' : 'translate-x-1'
                 }`} />
               </button>
             </div>

@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import type { Product } from '@/types';
 import { Search, SlidersHorizontal, ChevronLeft, ChevronRight, ChevronDown, ChevronRight as ChevronRightIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/hooks/useAuth';
 
 interface Category {
   id: string;
@@ -56,6 +57,7 @@ function buildCategoryTree(flat: Category[]): Category[] {
 }
 
 export default function ProductsPage() {
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -66,6 +68,7 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [showFilters, setShowFilters] = useState(false);
+  const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
   // 사이드바에서 펼쳐진 루트 카테고리 ID
   const [expandedCatIds, setExpandedCatIds] = useState<Set<string>>(new Set());
 
@@ -110,6 +113,31 @@ export default function ProductsPage() {
     }
     loadMeta();
   }, []);
+
+  // 찜 목록 로드
+  useEffect(() => {
+    if (!user) { setWishlistIds(new Set()); return; }
+    const supabase = createClient();
+    supabase
+      .from('user_wishlist')
+      .select('product_id')
+      .eq('user_id', user.id)
+      .then(({ data }) => {
+        setWishlistIds(new Set((data || []).map((w: any) => w.product_id)));
+      });
+  }, [user]);
+
+  async function handleWishlistToggle(productId: string, currentlyWishlisted: boolean) {
+    if (!user) return;
+    const supabase = createClient();
+    if (currentlyWishlisted) {
+      await supabase.from('user_wishlist').delete().eq('user_id', user.id).eq('product_id', productId);
+      setWishlistIds((prev) => { const next = new Set(prev); next.delete(productId); return next; });
+    } else {
+      await supabase.from('user_wishlist').insert({ user_id: user.id, product_id: productId });
+      setWishlistIds((prev) => new Set([...prev, productId]));
+    }
+  }
 
   // 선택된 카테고리가 바뀌면 해당 루트 카테고리 자동 펼침
   useEffect(() => {
@@ -655,7 +683,12 @@ export default function ProductsPage() {
             ) : (
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
                 {products.map((product) => (
-                  <ProductCard key={product.id} product={product} />
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    wishlisted={wishlistIds.has(product.id)}
+                    onWishlistToggle={handleWishlistToggle}
+                  />
                 ))}
               </div>
             )}

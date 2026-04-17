@@ -1,6 +1,13 @@
 import { createClient } from '@/lib/supabase/client';
 import { GF_STATUS_TO_ORDER_STATUS } from '@/constants/goodsflow';
 
+// Edge Function 호출 전 세션 갱신 — access token 만료 시 401 방지
+async function invokeGfFunction(body: Record<string, unknown>) {
+  const supabase = createClient();
+  await supabase.auth.getSession(); // 만료 시 자동 갱신 트리거
+  return supabase.functions.invoke('gf-shipping-print', { body });
+}
+
 // ---------------------------------------------------------------------------
 // 타입 정의
 // ---------------------------------------------------------------------------
@@ -138,12 +145,10 @@ export async function syncGfData(
   apiKey: string,
   apiBase: string,
 ): Promise<{ centers: GfCenter[]; contracts: GfContract[] }> {
-  const supabase = createClient();
-
   // 출고지 조회
-  const { data: centersData, error: centersError } = await supabase.functions.invoke('gf-shipping-print', {
-    body: { action: 'getCenters', overrideApiKey: apiKey, overrideApiBase: apiBase },
-  });
+  const { data: centersData, error: centersError } = await invokeGfFunction(
+    { action: 'getCenters', overrideApiKey: apiKey, overrideApiBase: apiBase },
+  );
   if (centersError) throw new Error(centersError.message);
   if (!centersData.ok) throw new Error(centersData.message ?? '출고지 조회 실패');
   const centers = centersData.centers as GfCenter[];
@@ -152,9 +157,9 @@ export async function syncGfData(
   let contracts: GfContract[] = [];
   if (centers.length > 0) {
     const codes = centers.map((c) => c.centerCode).join(',');
-    const { data: contractsData, error: contractsError } = await supabase.functions.invoke('gf-shipping-print', {
-      body: { action: 'getContracts', centerCodes: codes, overrideApiKey: apiKey, overrideApiBase: apiBase },
-    });
+    const { data: contractsData, error: contractsError } = await invokeGfFunction(
+      { action: 'getContracts', centerCodes: codes, overrideApiKey: apiKey, overrideApiBase: apiBase },
+    );
     if (!contractsError && contractsData?.ok) {
       contracts = contractsData.contracts as GfContract[];
     }
@@ -177,10 +182,9 @@ export async function getGfSellers(
   apiKey: string,
   apiBase: string,
 ): Promise<{ sellerCode: string; sellerName: string }[]> {
-  const supabase = createClient();
-  const { data, error } = await supabase.functions.invoke('gf-shipping-print', {
-    body: { action: 'getSellers', overrideApiKey: apiKey, overrideApiBase: apiBase },
-  });
+  const { data, error } = await invokeGfFunction(
+    { action: 'getSellers', overrideApiKey: apiKey, overrideApiBase: apiBase },
+  );
   if (error) throw new Error(error.message);
   if (!data.ok) throw new Error(data.message ?? '판매자 조회 실패');
   return data.sellers as { sellerCode: string; sellerName: string }[];
@@ -194,11 +198,8 @@ export async function printGfShippingLabels(
   items: GfShippingPrintItem[],
   options: { centerCode: string; transporter: string; boxSize: string },
 ): Promise<GfPrintResult[]> {
-  const supabase = createClient();
   console.log('[GF printGfShippingLabels] Edge Function 호출:', { action: 'print', items, options });
-  const { data, error } = await supabase.functions.invoke('gf-shipping-print', {
-    body: { action: 'print', items, options },
-  });
+  const { data, error } = await invokeGfFunction({ action: 'print', items, options });
   console.log('[GF printGfShippingLabels] Edge Function 응답:', { data, error });
   if (error) throw new Error(error.message);
   return data.results as GfPrintResult[];
@@ -208,14 +209,28 @@ export async function printGfShippingLabels(
 // 송장 출력 URI 생성
 // ---------------------------------------------------------------------------
 
-export async function getGfPrintUri(gfServiceIds: string[]): Promise<string> {
+export interface GfPrintUriResult {
+  uri: string;
+  requestCount: number;
+  printCount: number;
+  expireDateTime: string;
+}
+
+export async function getGfPrintUri(gfServiceIds: string[]): Promise<GfPrintUriResult> {
   const supabase = createClient();
+  console.log('[GF getGfPrintUri] 요청:', gfServiceIds);
   const { data, error } = await supabase.functions.invoke('gf-shipping-print', {
     body: { action: 'printUri', gfServiceIds },
   });
+  console.log('[GF getGfPrintUri] 응답:', { data, error });
   if (error) throw new Error(error.message);
   if (!data.ok) throw new Error(data.message ?? '출력 URI 생성 실패');
-  return data.uri as string;
+  return {
+    uri:            data.uri as string,
+    requestCount:   data.requestCount ?? 0,
+    printCount:     data.printCount ?? 0,
+    expireDateTime: data.expireDateTime ?? '',
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +250,22 @@ export async function cancelGfShipping(
   console.log('[GF cancelGfShipping] 응답:', { data, error });
   if (error) throw new Error(error.message);
   if (!data.ok) throw new Error(data.message ?? '취소 실패');
+}
+
+// ---------------------------------------------------------------------------
+// 테스트 상태 변경 (개발 테스트용 — use_test 환경에서만 동작)
+// ---------------------------------------------------------------------------
+
+export async function testGfChangeStatus(
+  serviceId: string,
+  deliveryStatus: string,
+): Promise<{ ok: boolean; data?: unknown; message?: string }> {
+  const supabase = createClient();
+  const { data, error } = await supabase.functions.invoke('gf-shipping-print', {
+    body: { action: 'testChangeStatus', serviceId, deliveryStatus },
+  });
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 // ---------------------------------------------------------------------------
@@ -267,6 +298,22 @@ export async function syncGfWebhookEvents(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// 특정 serviceId Pull 동기화 (수동 재동기화용)
+// ---------------------------------------------------------------------------
+
+export async function syncGfWebhookEventById(
+  gfServiceId: string,
+): Promise<{ processed: number; latestStatus: string | null }> {
+  const supabase = createClient();
+  const { data, error } = await supabase.functions.invoke('gf-shipping-print', {
+    body: { action: 'pullWebhookById', gfServiceId },
+  });
+  if (error) throw new Error(error.message);
+  if (!data?.ok) throw new Error(data?.message ?? '조회 실패');
+  return { processed: data.processed ?? 0, latestStatus: data.latestStatus ?? null };
+}
+
+// ---------------------------------------------------------------------------
 // Pull 이벤트 DB 반영
 // ---------------------------------------------------------------------------
 
@@ -279,11 +326,25 @@ export async function applyGfDeliveryStatus(
 
   const { data: shipment } = await supabase
     .from('shipments')
-    .select('order_id')
+    .select('id, order_id')
     .eq('gf_service_id', gfServiceId)
     .maybeSingle();
 
   if (!shipment?.order_id) return;
+
+  // shipments 업데이트: invoiceNo + 배송 상태
+  const invoiceNo = rawPayload.invoiceNo as string | undefined;
+  const shipmentUpdate: Record<string, unknown> = {};
+  if (invoiceNo) shipmentUpdate.tracking_number = invoiceNo;
+  if (deliveryStatus === 'COMPLETED') {
+    shipmentUpdate.status = 'delivered';
+    shipmentUpdate.delivered_at = new Date().toISOString();
+  } else if (deliveryStatus === 'CANCELED' || deliveryStatus === 'RETURNED') {
+    shipmentUpdate.status = 'cancelled';
+  }
+  if (Object.keys(shipmentUpdate).length > 0) {
+    await supabase.from('shipments').update(shipmentUpdate).eq('id', shipment.id);
+  }
 
   await supabase.from('gf_delivery_logs').insert({
     order_id:       shipment.order_id,
@@ -296,7 +357,7 @@ export async function applyGfDeliveryStatus(
   if (toStatus) {
     const { transitionOrderStatus } = await import('@/services/orders');
     await transitionOrderStatus(shipment.order_id, toStatus as any, {
-      note: `굿스플로 배송 상태: ${deliveryStatus}`,
+      note: `굿스플로 배송 상태: ${deliveryStatus}${invoiceNo ? ` (송장: ${invoiceNo})` : ''}`,
     });
   }
 }

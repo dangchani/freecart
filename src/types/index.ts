@@ -28,6 +28,7 @@ export interface User {
   points?: number;
   deposit?: number;
   isApproved?: boolean;
+  mustChangePassword?: boolean;
   permissions?: string[];
   createdAt: string;
   updatedAt: string;

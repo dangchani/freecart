@@ -94,6 +94,10 @@ export default function AdminUserDetailPage() {
   const [addresses, setAddresses] = useState<AddressItem[]>([]);
   const [deletingAddressId, setDeletingAddressId] = useState<string | null>(null);
 
+  const [deletingUser, setDeletingUser] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
+
   const [useLevels, setUseLevels] = useState(true);
   const [usePoints, setUsePoints] = useState(true);
   const [pointLabel, setPointLabel] = useState('포인트');
@@ -208,8 +212,14 @@ export default function AdminUserDetailPage() {
       setMemo(detail.memo);
       setSelectedLevel(detail.level || 'bronze');
       setBasicForm({ loginId: detail.loginId, name: detail.name, phone: detail.phone });
-    } catch {
-      setError('회원 정보를 불러오는 중 오류가 발생했습니다.');
+    } catch (err: any) {
+      const msg = err?.message ?? String(err);
+      // auth.users는 있지만 public.users 레코드가 없는 경우 (깨진 마이그레이션)
+      if (msg.includes('JSON object requested') || msg.includes('PGRST116')) {
+        setError('회원 DB 레코드가 없습니다. (auth 계정만 존재) 회원을 삭제 후 재등록해주세요.');
+      } else {
+        setError(`회원 정보 로드 오류: ${msg}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -497,6 +507,33 @@ export default function AdminUserDetailPage() {
     }
   }
 
+  async function handleDeleteUser() {
+    if (!userDetail) return;
+    setDeletingUser(true);
+    try {
+      const supabase = createClient();
+      const { data: json, error: fnError } = await supabase.functions.invoke('delete-user', {
+        body: { targetUserId: userId },
+      });
+      if (fnError) {
+        let detail = fnError.message ?? '삭제 실패';
+        try {
+          const body = await (fnError as any).context?.json?.();
+          if (body?.error) detail = body.error;
+        } catch {}
+        throw new Error(detail);
+      }
+      if (!json?.ok) throw new Error(json?.error ?? '삭제 실패');
+
+      navigate('/admin/users', { replace: true });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '삭제 중 오류가 발생했습니다.');
+    } finally {
+      setDeletingUser(false);
+      setShowDeleteConfirm(false);
+    }
+  }
+
   async function handleDeleteAddress(id: string) {
     if (!confirm('배송지를 삭제하시겠습니까?')) return;
     setDeletingAddressId(id);
@@ -549,13 +586,63 @@ export default function AdminUserDetailPage() {
 
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">회원 상세: {userDetail.name}</h1>
-        <Button
-          variant={userDetail.isBlocked ? 'outline' : 'destructive'}
-          onClick={handleToggleBlock}
-        >
-          {userDetail.isBlocked ? '차단 해제' : '회원 차단'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={userDetail.isBlocked ? 'outline' : 'destructive'}
+            onClick={handleToggleBlock}
+          >
+            {userDetail.isBlocked ? '차단 해제' : '회원 차단'}
+          </Button>
+          <Button
+            variant="outline"
+            className="border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400"
+            onClick={() => { setDeleteConfirmInput(''); setShowDeleteConfirm(true); }}
+          >
+            회원 삭제
+          </Button>
+        </div>
       </div>
+
+      {/* 회원 삭제 확인 모달 */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl">
+            <h2 className="mb-2 text-lg font-bold text-red-600">회원 삭제</h2>
+            <p className="mb-1 text-sm text-gray-700">
+              <span className="font-semibold">{userDetail.name}</span> ({userDetail.email}) 회원을 영구 삭제합니다.
+            </p>
+            <p className="mb-4 text-sm text-gray-500">
+              삭제 시 주문 내역·포인트·배송지 등 모든 데이터가 삭제되며 복구할 수 없습니다.<br />
+              확인하려면 아래에 회원 이메일을 입력하세요.
+            </p>
+            <input
+              type="text"
+              value={deleteConfirmInput}
+              onChange={(e) => setDeleteConfirmInput(e.target.value)}
+              placeholder={userDetail.email}
+              className="mb-4 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+            />
+            <div className="flex gap-2">
+              <Button
+                variant="destructive"
+                className="flex-1"
+                disabled={deleteConfirmInput !== userDetail.email || deletingUser}
+                onClick={handleDeleteUser}
+              >
+                {deletingUser ? '삭제 중...' : '영구 삭제'}
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1"
+                disabled={deletingUser}
+                onClick={() => setShowDeleteConfirm(false)}
+              >
+                취소
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* joy: 권한 + 담당자 + 커스텀 필드 섹션 */}
       {userId && (

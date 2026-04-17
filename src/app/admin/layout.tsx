@@ -54,7 +54,7 @@ type NavItem = {
   exact?: boolean;       // 정확 일치 매칭 (예: /admin/users)
   children?: NavItem[];
   // joy: system_settings 토글 키. 해당 설정이 true일 때만 메뉴 노출
-  featureFlag?: 'require_signup_approval' | 'enable_user_assignment' | 'use_user_levels' | 'use_subscriptions' | 'use_coupons' | 'use_deposit';
+  featureFlag?: 'require_signup_approval' | 'enable_user_assignment' | 'use_user_levels' | 'use_subscriptions' | 'use_coupons' | 'use_deposit' | 'use_bulk_shipment';
 };
 
 // joy: 업무 흐름 기준 그룹화 (기존 아이콘 재사용)
@@ -89,7 +89,7 @@ const navItems: NavItem[] = [
     permission: 'orders.read',
     children: [
       { href: '/admin/orders', label: '전체 주문', icon: ShoppingCart, permission: 'orders.read', exact: true },
-      { href: '/admin/orders/bulk-shipment', label: '일괄 발송', icon: Truck, permission: 'orders.write' },
+      { href: '/admin/orders/bulk-shipment', label: '일괄 발송', icon: Truck, permission: 'orders.write', featureFlag: 'use_bulk_shipment' },
       { href: '/admin/refunds', label: '환불/반품', icon: RefreshCcw, permission: 'orders.cancel' },
       { href: '/admin/subscriptions', label: '정기배송', icon: Repeat, permission: 'orders.read', featureFlag: 'use_subscriptions' },
       { href: '/admin/deposits', label: '예치금', icon: CreditCard, permission: 'orders.read', featureFlag: 'use_deposit' },
@@ -226,13 +226,14 @@ export default function AdminLayout() {
   const [flags, setFlags] = useState<Record<string, boolean>>({});
   useEffect(() => {
     (async () => {
-      const [approval, assignment, userLevels, subscriptions, coupons, deposit] = await Promise.all([
+      const [approval, assignment, userLevels, subscriptions, coupons, deposit, bulkShipment] = await Promise.all([
         getSystemSetting<boolean>('require_signup_approval'),
         getSystemSetting<boolean>('enable_user_assignment'),
         getSystemSetting<boolean>('use_user_levels'),
         getSystemSetting<boolean>('use_subscriptions'),
         getSystemSetting<boolean>('use_coupons'),
         getSystemSetting<boolean>('use_deposit'),
+        getSystemSetting<boolean>('use_bulk_shipment'),
       ]);
       setFlags({
         require_signup_approval: approval === true,
@@ -241,6 +242,7 @@ export default function AdminLayout() {
         use_subscriptions: subscriptions === true,
         use_coupons: coupons !== false,
         use_deposit: deposit === true,
+        use_bulk_shipment: bulkShipment !== false,
       });
     })();
   }, []);

@@ -179,6 +179,8 @@ export async function createOrder(
   ;(async () => {
     const { sendNotification, NOTIFICATION_TEMPLATES } = await import('@/services/notification');
     const { buildOrderPlacedEmail } = await import('@/lib/emailTemplates');
+    const { getSystemSetting } = await import('@/lib/permissions');
+    const siteName = (await getSystemSetting<string>('site_name')) || '쇼핑몰';
     const tpl = NOTIFICATION_TEMPLATES.order_placed;
     const { html } = buildOrderPlacedEmail({
       orderNumber:    order.order_number,
@@ -190,6 +192,7 @@ export async function createOrder(
       totalAmount,
       paymentMethod,
       paymentDeadline,
+      siteName,
     });
     await sendNotification(userId, 'order_placed', tpl.title, tpl.message({ orderNumber: order.order_number }), {
       link:          `/mypage/orders/${order.order_number}`,
@@ -362,6 +365,8 @@ async function _sendOrderNotification(
 ): Promise<void> {
   const { sendNotification, NOTIFICATION_TEMPLATES } = await import('@/services/notification');
   const { buildShippedEmail, buildCancelledEmail } = await import('@/lib/emailTemplates');
+  const { getSystemSetting } = await import('@/lib/permissions');
+  const siteName = (await getSystemSetting<string>('site_name')) || '쇼핑몰';
 
   const orderNumber = order.order_number;
   const userId      = order.user_id;
@@ -380,6 +385,7 @@ async function _sendOrderNotification(
         orderNumber,
         trackingNumber:  options?.trackingNumber,
         shippingCompany: options?.shippingCompany,
+        siteName,
       });
       await sendNotification(userId, 'order_shipped', tpl.title, msg, {
         link,
@@ -410,6 +416,7 @@ async function _sendOrderNotification(
         cancelReason: order.cancel_reason ?? undefined,
         ordererName:  order.orderer_name ?? undefined,
         totalAmount:  order.total_amount ?? undefined,
+        siteName,
       });
       await sendNotification(userId, 'order_cancelled', tpl.title, msg, {
         link,
@@ -772,6 +779,8 @@ export async function createAdminOrder(
     ;(async () => {
       const { sendNotification, NOTIFICATION_TEMPLATES } = await import('@/services/notification');
       const { buildOrderPlacedEmail } = await import('@/lib/emailTemplates');
+      const { getSystemSetting } = await import('@/lib/permissions');
+      const siteName = (await getSystemSetting<string>('site_name')) || '쇼핑몰';
       const tpl = NOTIFICATION_TEMPLATES.order_placed;
       const { html } = buildOrderPlacedEmail({
         orderNumber:    order.order_number,
@@ -783,6 +792,7 @@ export async function createAdminOrder(
         totalAmount,
         paymentMethod:  data.paymentMethod,
         paymentDeadline,
+        siteName,
       });
       await sendNotification(userId, 'order_placed', tpl.title, tpl.message({ orderNumber: order.order_number }), {
         link:          `/mypage/orders/${order.order_number}`,

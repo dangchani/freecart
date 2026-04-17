@@ -26,17 +26,22 @@ interface Order {
 }
 
 const statusLabels: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  pending: { label: '결제 대기', variant: 'secondary' },
-  paid: { label: '결제 완료', variant: 'default' },
-  preparing: { label: '배송 준비중', variant: 'default' },
-  shipping: { label: '배송중', variant: 'default' },
-  shipped: { label: '배송 완료', variant: 'outline' },
-  delivered: { label: '배송 완료', variant: 'outline' },
-  confirmed: { label: '구매확정', variant: 'outline' },
-  cancelled: { label: '취소됨', variant: 'destructive' },
-  refunded: { label: '환불완료', variant: 'destructive' },
+  pending:          { label: '결제 대기',   variant: 'secondary' },
+  paid:             { label: '결제 완료',   variant: 'default' },
+  processing:       { label: '상품 준비중', variant: 'default' },
+  preparing:        { label: '배송 준비중', variant: 'default' },
+  shipped:          { label: '배송중',      variant: 'default' },
+  transferred:      { label: '배송중',      variant: 'default' },
+  picked_up:        { label: '배송중',      variant: 'default' },
+  out_for_delivery: { label: '배송 출발',   variant: 'default' },
+  shipping:         { label: '배송중',      variant: 'default' },
+  delivered:        { label: '배송 완료',   variant: 'outline' },
+  confirmed:        { label: '구매확정',    variant: 'outline' },
+  cancelled:        { label: '취소됨',      variant: 'destructive' },
+  refunded:         { label: '환불완료',    variant: 'destructive' },
   exchange_requested: { label: '교환 신청', variant: 'secondary' },
-  return_requested: { label: '반품 신청', variant: 'secondary' },
+  return_requested: { label: '반품 신청',   variant: 'secondary' },
+  returned:         { label: '반품완료',    variant: 'secondary' },
 };
 
 export default function OrdersPage() {

@@ -50,17 +50,22 @@ interface OrderDetail {
 }
 
 const statusLabels: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-  pending: { label: '결제 대기', variant: 'secondary' },
-  paid: { label: '결제 완료', variant: 'default' },
-  preparing: { label: '배송 준비중', variant: 'default' },
-  shipping: { label: '배송중', variant: 'default' },
-  shipped: { label: '배송 완료', variant: 'outline' },
-  delivered: { label: '배송 완료', variant: 'outline' },
-  confirmed: { label: '구매확정', variant: 'outline' },
-  cancelled: { label: '취소됨', variant: 'destructive' },
-  refunded: { label: '환불완료', variant: 'destructive' },
+  pending:          { label: '결제 대기',   variant: 'secondary' },
+  paid:             { label: '결제 완료',   variant: 'default' },
+  processing:       { label: '상품 준비중', variant: 'default' },
+  preparing:        { label: '배송 준비중', variant: 'default' },
+  shipped:          { label: '배송중',      variant: 'default' },
+  transferred:      { label: '배송중',      variant: 'default' },
+  picked_up:        { label: '배송중',      variant: 'default' },
+  out_for_delivery: { label: '배송 출발',   variant: 'default' },
+  shipping:         { label: '배송중',      variant: 'default' },
+  delivered:        { label: '배송 완료',   variant: 'outline' },
+  confirmed:        { label: '구매확정',    variant: 'outline' },
+  cancelled:        { label: '취소됨',      variant: 'destructive' },
+  refunded:         { label: '환불완료',    variant: 'destructive' },
   exchange_requested: { label: '교환 신청', variant: 'secondary' },
-  return_requested: { label: '반품 신청', variant: 'secondary' },
+  return_requested: { label: '반품 신청',   variant: 'secondary' },
+  returned:         { label: '반품완료',    variant: 'secondary' },
 };
 
 export default function OrderDetailPage() {
@@ -350,7 +355,7 @@ export default function OrderDetailPage() {
           </Card>
 
           {/* 배송 추적 */}
-          {(order.status === 'shipping' || order.status === 'delivered' || order.shipment) && (
+          {(order.status === 'shipped' || order.status === 'delivered' || order.shipment) && (
             <Card className="p-6">
               <h2 className="mb-4 flex items-center gap-2 text-xl font-bold">
                 <Truck className="h-5 w-5" />
@@ -364,7 +369,7 @@ export default function OrderDetailPage() {
                     <div className="flex items-center gap-3">
                       {order.shipment.status === 'delivered' ? (
                         <CheckCircle2 className="h-8 w-8 text-green-500" />
-                      ) : order.shipment.status === 'shipping' ? (
+                      ) : ['shipped', 'transferred', 'picked_up', 'out_for_delivery'].includes(order.shipment.status) ? (
                         <Truck className="h-8 w-8 text-blue-500" />
                       ) : (
                         <Package className="h-8 w-8 text-gray-400" />
@@ -372,7 +377,8 @@ export default function OrderDetailPage() {
                       <div>
                         <p className="font-semibold">
                           {order.shipment.status === 'delivered' && '배송 완료'}
-                          {order.shipment.status === 'shipping' && '배송 중'}
+                          {order.shipment.status === 'out_for_delivery' && '배송 출발'}
+                          {['shipped', 'transferred', 'picked_up'].includes(order.shipment.status) && '배송 중'}
                           {order.shipment.status === 'pending' && '배송 준비 중'}
                         </p>
                         {order.shipment.deliveredAt && (

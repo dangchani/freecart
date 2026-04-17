@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import type { Product } from '@/types';
 import { ChevronRight, ChevronLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/hooks/useAuth';
 
 const LIMIT = 20;
 
@@ -26,6 +27,7 @@ interface Category {
 }
 
 export default function CategoryPage() {
+  const { user } = useAuth();
   const { slug } = useParams<{ slug: string }>();
 
   const [category, setCategory] = useState<Category | null>(null);
@@ -40,6 +42,32 @@ export default function CategoryPage() {
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState('newest');
   const [notFound, setNotFound] = useState(false);
+  const [wishlistIds, setWishlistIds] = useState<Set<string>>(new Set());
+
+  // 찜 목록 로드
+  useEffect(() => {
+    if (!user) { setWishlistIds(new Set()); return; }
+    const supabase = createClient();
+    supabase
+      .from('user_wishlist')
+      .select('product_id')
+      .eq('user_id', user.id)
+      .then(({ data }) => {
+        setWishlistIds(new Set((data || []).map((w: any) => w.product_id)));
+      });
+  }, [user]);
+
+  async function handleWishlistToggle(productId: string, currentlyWishlisted: boolean) {
+    if (!user) return;
+    const supabase = createClient();
+    if (currentlyWishlisted) {
+      await supabase.from('user_wishlist').delete().eq('user_id', user.id).eq('product_id', productId);
+      setWishlistIds((prev) => { const next = new Set(prev); next.delete(productId); return next; });
+    } else {
+      await supabase.from('user_wishlist').insert({ user_id: user.id, product_id: productId });
+      setWishlistIds((prev) => new Set([...prev, productId]));
+    }
+  }
 
   // slug 변경 시 처음부터 전체 로드
   useEffect(() => {
@@ -258,7 +286,12 @@ export default function CategoryPage() {
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {products.map((product) => (
-              <ProductCard key={product.id} product={product} />
+              <ProductCard
+                key={product.id}
+                product={product}
+                wishlisted={wishlistIds.has(product.id)}
+                onWishlistToggle={handleWishlistToggle}
+              />
             ))}
           </div>
         )}

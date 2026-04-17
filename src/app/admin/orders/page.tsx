@@ -117,8 +117,9 @@ interface OrderStats {
 }
 
 const ALL_STATUSES: OrderStatus[] = [
-  'pending', 'paid', 'processing', 'shipped', 'delivered',
-  'confirmed', 'cancelled', 'return_requested', 'returned',
+  'pending', 'paid', 'processing', 'shipped',
+  'transferred', 'picked_up', 'out_for_delivery',
+  'delivered', 'confirmed', 'cancelled', 'return_requested', 'returned',
 ];
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
@@ -719,8 +720,8 @@ export default function AdminOrdersPage() {
     if (serviceIds.length === 0) return;
     setGfPrintLoading(true);
     try {
-      const uri = await getGfPrintUri(serviceIds);
-      window.open(uri, '_blank');
+      const printResult = await getGfPrintUri(serviceIds);
+      window.open(printResult.uri, '_blank');
     } catch (e: any) {
       alert(e.message ?? '출력 URI 생성 실패');
     } finally {

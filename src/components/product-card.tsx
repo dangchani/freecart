@@ -6,17 +6,34 @@ import { formatCurrency, getContrastColor } from '@/lib/utils';
 import { addToCart } from '@/services/cart';
 import { useAuth } from '@/hooks/useAuth';
 import { useCartStore } from '@/store/cart';
+import { Heart } from 'lucide-react';
 import type { Product } from '@/types';
 
 interface ProductCardProps {
   product: Product;
+  wishlisted?: boolean;
+  onWishlistToggle?: (productId: string, currentlyWishlisted: boolean) => void;
 }
 
-export function ProductCard({ product }: ProductCardProps) {
+export function ProductCard({ product, wishlisted = false, onWishlistToggle }: ProductCardProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
+  const [wishlistLoading, setWishlistLoading] = useState(false);
+
+  async function handleWishlistClick(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!user) { navigate('/auth/login'); return; }
+    if (wishlistLoading || !onWishlistToggle) return;
+    setWishlistLoading(true);
+    try {
+      await onWishlistToggle(product.id, wishlisted);
+    } finally {
+      setWishlistLoading(false);
+    }
+  }
 
   const primaryImage = product.images?.find((img) => img.isPrimary) || product.images?.[0];
   const thumbnail = primaryImage?.url || '/placeholder.png';
@@ -76,6 +93,22 @@ export function ProductCard({ product }: ProductCardProps) {
             <div className="absolute inset-0 flex items-center justify-center bg-black/50">
               <span className="text-lg font-bold text-white">품절</span>
             </div>
+          )}
+          {/* 찜 버튼 */}
+          {onWishlistToggle && (
+            <button
+              type="button"
+              onClick={handleWishlistClick}
+              disabled={wishlistLoading}
+              className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/80 shadow backdrop-blur-sm transition-colors hover:bg-white disabled:opacity-60"
+              aria-label={wishlisted ? '찜 해제' : '찜하기'}
+            >
+              <Heart
+                className={`h-4 w-4 transition-colors ${
+                  wishlisted ? 'fill-red-500 text-red-500' : 'text-gray-400'
+                }`}
+              />
+            </button>
           )}
           {/* 하단 띠지 */}
           {badgeText && !isSoldOut && (
