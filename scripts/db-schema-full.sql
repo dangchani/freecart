@@ -3287,9 +3287,9 @@ VALUES (
   'themes',
   true,
   5242880,  -- 5MB
-  ARRAY['text/css', 'image/jpeg', 'image/png', 'image/webp', 'application/zip']
+  ARRAY['text/css', 'text/html', 'text/plain', 'image/jpeg', 'image/png', 'image/webp', 'application/zip']
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET allowed_mime_types = EXCLUDED.allowed_mime_types;
 
 -- 테마 버킷 RLS: 누구나 조회 (CSS, 썸네일 공개 접근)
 DROP POLICY IF EXISTS "themes_storage_select" ON storage.objects;
