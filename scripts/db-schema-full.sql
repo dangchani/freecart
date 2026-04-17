@@ -1442,6 +1442,23 @@ CREATE TRIGGER trg_banners_updated_at
   BEFORE UPDATE ON banners
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+-- is_admin / is_super_admin 함수 사전 정의 (첫 사용 전에 선언)
+CREATE OR REPLACE FUNCTION is_super_admin(uid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM users WHERE id = uid AND role = 'super_admin'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION is_admin(uid UUID)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM users WHERE id = uid AND role IN ('admin', 'super_admin')
+  );
+$$;
+
 ALTER TABLE banners ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "banners_select_public" ON banners
   FOR SELECT USING (is_active = true);
