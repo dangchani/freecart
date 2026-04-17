@@ -43,7 +43,17 @@ export default function LoginPage() {
         setUnverifiedUserId(userRow?.id ?? null);
         setError('이메일 인증이 완료되지 않았습니다. 가입 시 받은 인증 메일을 확인해주세요.');
       } else {
-        setError('아이디 또는 비밀번호가 올바르지 않습니다.');
+        const msg = err instanceof Error ? err.message : '';
+        // GoTrue 에러 메시지를 한국어로 변환
+        if (msg.toLowerCase().includes('email not confirmed')) {
+          setError('이메일 인증이 완료되지 않았습니다. 관리자에게 문의하거나 인증 메일을 확인해주세요.');
+        } else if (msg.toLowerCase().includes('invalid login credentials') || msg.toLowerCase().includes('invalid password')) {
+          setError('아이디 또는 비밀번호가 올바르지 않습니다.');
+        } else if (msg) {
+          setError(`로그인 실패: ${msg}`);
+        } else {
+          setError('아이디 또는 비밀번호가 올바르지 않습니다.');
+        }
       }
     } finally {
       setLoading(false);

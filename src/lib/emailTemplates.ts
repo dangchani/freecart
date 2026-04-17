@@ -1,5 +1,5 @@
 /** 공통 래퍼 */
-function layout(title: string, body: string): string {
+function layout(title: string, body: string, siteName: string): string {
   return `<!DOCTYPE html>
 <html lang="ko">
 <head>
@@ -14,7 +14,7 @@ function layout(title: string, body: string): string {
         <!-- 헤더 -->
         <tr>
           <td style="background:#1a1a1a;padding:20px 32px;">
-            <span style="color:#ffffff;font-size:20px;font-weight:700;">프리카트</span>
+            <span style="color:#ffffff;font-size:20px;font-weight:700;">${siteName}</span>
           </td>
         </tr>
         <!-- 본문 -->
@@ -28,7 +28,7 @@ function layout(title: string, body: string): string {
           <td style="background:#f9f9f9;padding:16px 32px;border-top:1px solid #eee;">
             <p style="margin:0;font-size:11px;color:#999;line-height:1.6;">
               본 메일은 발신 전용입니다. 문의사항은 고객센터를 이용해 주세요.<br />
-              © 프리카트. All rights reserved.
+              © ${siteName}. All rights reserved.
             </p>
           </td>
         </tr>
@@ -45,8 +45,10 @@ export function buildShippedEmail(data: {
   trackingNumber?: string;
   shippingCompany?: string;
   recipientName?: string;
+  siteName?: string;
 }): { subject: string; html: string } {
-  const subject = `[프리카트] 주문번호 ${data.orderNumber} 배송이 시작되었습니다`;
+  const name = data.siteName || '쇼핑몰';
+  const subject = `[${name}] 주문번호 ${data.orderNumber} 배송이 시작되었습니다`;
 
   const trackingBlock = data.trackingNumber
     ? `<table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f9fa;border-radius:6px;margin:20px 0;">
@@ -85,7 +87,7 @@ export function buildShippedEmail(data: {
       배송 완료 후 구매 확정을 해주시면 포인트가 적립됩니다.
     </p>`;
 
-  return { subject, html: layout(subject, body) };
+  return { subject, html: layout(subject, body, name) };
 }
 
 /** 주문 완료 이메일 */
@@ -99,8 +101,10 @@ export function buildOrderPlacedEmail(data: {
   totalAmount: number;
   paymentMethod: string;
   paymentDeadline?: string | null;
+  siteName?: string;
 }): { subject: string; html: string } {
-  const subject = `[프리카트] 주문번호 ${data.orderNumber} 주문이 접수되었습니다`;
+  const name = data.siteName || '쇼핑몰';
+  const subject = `[${name}] 주문번호 ${data.orderNumber} 주문이 접수되었습니다`;
 
   const paymentMethodLabel: Record<string, string> = {
     bank_transfer: '무통장입금',
@@ -227,7 +231,7 @@ export function buildOrderPlacedEmail(data: {
       문의사항은 고객센터를 이용해 주세요.
     </p>`;
 
-  return { subject, html: layout(subject, body) };
+  return { subject, html: layout(subject, body, name) };
 }
 
 /** 주문 취소 이메일 */
@@ -236,8 +240,10 @@ export function buildCancelledEmail(data: {
   cancelReason?: string;
   ordererName?: string;
   totalAmount?: number;
+  siteName?: string;
 }): { subject: string; html: string } {
-  const subject = `[프리카트] 주문번호 ${data.orderNumber} 취소가 완료되었습니다`;
+  const name = data.siteName || '쇼핑몰';
+  const subject = `[${name}] 주문번호 ${data.orderNumber} 취소가 완료되었습니다`;
 
   const body = `
     <h2 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#1a1a1a;">주문이 취소되었습니다</h2>
@@ -289,5 +295,5 @@ export function buildCancelledEmail(data: {
       취소 관련 문의사항은 고객센터로 연락해 주세요.
     </p>`;
 
-  return { subject, html: layout(subject, body) };
+  return { subject, html: layout(subject, body, name) };
 }

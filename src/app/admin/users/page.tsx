@@ -670,7 +670,15 @@ export default function AdminUsersPage() {
         body: { userIds, sendEmail: tempPwSendEmail },
       });
 
-      if (error) throw new Error(error.message);
+      if (error) {
+        // Edge Function 호출 자체 오류 — response body에서 상세 메시지 추출
+        let detail = error.message ?? '알 수 없는 오류';
+        try {
+          const body = await (error as any).context?.json?.();
+          if (body?.error) detail = body.error;
+        } catch {}
+        throw new Error(detail);
+      }
       if (!data?.ok) throw new Error(data?.error || '발급 실패');
 
       const results: { login_id: string; name: string; email: string; temp_password: string; email_sent: boolean; error?: string }[] = data.results;
@@ -938,7 +946,10 @@ export default function AdminUsersPage() {
               태그 관리
             </Button>
           )}
-          <Button variant="outline" onClick={() => setShowTempPwModal(true)}>
+          <Button variant="outline" onClick={() => {
+            setTempPwScope(selectedUserIds.size > 0 ? 'selected' : 'all');
+            setShowTempPwModal(true);
+          }}>
             <KeyRound className="mr-2 h-4 w-4" />
             임시 비밀번호 발급
           </Button>
@@ -1352,18 +1363,16 @@ export default function AdminUsersPage() {
             <table className="w-full table-fixed text-sm">
               <thead className="border-b bg-gray-50">
                 <tr>
-                  {enableUserTags && (
-                    <th className="w-10 px-2 py-3 text-center">
-                      <input
-                        type="checkbox"
-                        checked={users.length > 0 && selectedUserIds.size === users.length}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedUserIds(new Set(users.map((u) => u.id)));
-                          else setSelectedUserIds(new Set());
-                        }}
-                      />
-                    </th>
-                  )}
+                  <th className="w-10 px-2 py-3 text-center">
+                    <input
+                      type="checkbox"
+                      checked={users.length > 0 && selectedUserIds.size === users.length}
+                      onChange={(e) => {
+                        if (e.target.checked) setSelectedUserIds(new Set(users.map((u) => u.id)));
+                        else setSelectedUserIds(new Set());
+                      }}
+                    />
+                  </th>
                   <th className="w-[60px] px-2 py-3 font-medium text-gray-600 text-center whitespace-nowrap">
                     No.
                   </th>
@@ -1418,22 +1427,20 @@ export default function AdminUsersPage() {
                     className="cursor-pointer hover:bg-gray-50 transition-colors"
                     onClick={() => navigate(`/admin/users/${u.id}`)}
                   >
-                    {enableUserTags && (
-                      <td className="w-10 px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={selectedUserIds.has(u.id)}
-                          onChange={(e) => {
-                            setSelectedUserIds((prev) => {
-                              const next = new Set(prev);
-                              if (e.target.checked) next.add(u.id);
-                              else next.delete(u.id);
-                              return next;
-                            });
-                          }}
-                        />
-                      </td>
-                    )}
+                    <td className="w-10 px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedUserIds.has(u.id)}
+                        onChange={(e) => {
+                          setSelectedUserIds((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(u.id);
+                            else next.delete(u.id);
+                            return next;
+                          });
+                        }}
+                      />
+                    </td>
                     <td className="w-[60px] px-2 py-3 text-center text-gray-500">
                       {(page - 1) * pageSize + idx + 1}
                     </td>

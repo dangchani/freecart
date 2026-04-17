@@ -481,7 +481,7 @@ export default function AdminSettingsPage() {
       const { error } = await supabase.functions.invoke('send-email', {
         body: {
           userId:      authUser.id,
-          subject:     '[프리카트] 이메일 발송 테스트',
+          subject:     `[${settings.siteName || '쇼핑몰'}] 이메일 발송 테스트`,
           content:     '이 메일은 이메일 발송 설정 테스트입니다.',
           htmlContent: '<p style="font-family:sans-serif;color:#333;">이 메일은 <strong>이메일 발송 설정 테스트</strong>입니다. 정상적으로 수신되었다면 설정이 완료된 것입니다.</p>',
           template:    'test',
@@ -835,7 +835,7 @@ export default function AdminSettingsPage() {
                       value={settings.notificationFromName}
                       onChange={handleChange}
                       className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="프리카트"
+                      placeholder={settings.siteName || '사이트 이름'}
                     />
                   </div>
                   <div>

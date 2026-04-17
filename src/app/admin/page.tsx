@@ -346,7 +346,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* 빠른 메뉴 */}
-      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
           { href: '/admin/products', label: '상품 관리', desc: '상품 등록, 수정, 삭제 및 재고 관리' },
           { href: '/admin/orders', label: '주문 관리', desc: '주문 내역 조회 및 배송 상태 관리' },
@@ -360,7 +360,7 @@ export default function AdminDashboard() {
             </Card>
           </Link>
         ))}
-      </div>
+      </div> */}
     </div>
   );
 }

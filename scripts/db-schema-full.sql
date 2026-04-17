@@ -3121,7 +3121,7 @@ INSERT INTO settings (key, value, description) VALUES
   ('bank_transfer_account_holder', '""', '예금주'),
   ('bank_transfer_deadline_hours', '"24"', '입금 기한 (시간)'),
   ('notification_from_email',    '"noreply@example.com"','알림 발신 이메일 주소'),
-  ('notification_from_name',     '"프리카트"',            '알림 발신자 이름'),
+  ('notification_from_name',     '""',                   '알림 발신자 이름'),
   ('notification_email_enabled', '"true"',               '이메일 알림 활성화 여부 (true/false)'),
   -- 배송/환불 기본 안내
   ('default_shipping_notice',    '"배송 기간: 결제 후 1~3 영업일 이내 출고됩니다.\n기본 배송비: 3,000원 (50,000원 이상 구매 시 무료)\n도서·산간 지역은 추가 배송비가 발생할 수 있습니다."', '기본 배송 안내 텍스트'),
@@ -3170,6 +3170,27 @@ BEGIN
     jsonb_build_object('name', p_name, 'phone', COALESCE(p_phone, '')),
     'authenticated',
     'authenticated',
+    now(),
+    now()
+  );
+
+  -- auth.identities 레코드 생성 (없으면 GoTrue Admin API가 User not found 반환)
+  INSERT INTO auth.identities (
+    id,
+    user_id,
+    identity_data,
+    provider,
+    provider_id,
+    last_sign_in_at,
+    created_at,
+    updated_at
+  ) VALUES (
+    new_id,
+    new_id,
+    jsonb_build_object('sub', new_id::text, 'email', p_email),
+    'email',
+    p_email,
+    now(),
     now(),
     now()
   );
@@ -3917,6 +3938,77 @@ LANGUAGE sql STABLE SECURITY DEFINER AS $$
   SELECT EXISTS (
     SELECT 1 FROM users WHERE id = uid AND role IN ('admin', 'super_admin')
   );
+$$;
+
+-- delete_auth_user_direct: auth.users 직접 삭제 RPC
+-- GoTrue Admin API(deleteUser)가 auth.identities 없는 경우 "User not found" 반환할 때
+-- fallback으로 auth.users 관련 레코드를 직접 삭제하기 위해 사용
+CREATE OR REPLACE FUNCTION public.delete_auth_user_direct(p_user_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = auth, public
+AS $$
+BEGIN
+  DELETE FROM auth.identities WHERE user_id = p_user_id;
+  DELETE FROM auth.sessions WHERE user_id = p_user_id;
+  DELETE FROM auth.refresh_tokens WHERE user_id = p_user_id;
+  DELETE FROM auth.mfa_factors WHERE user_id = p_user_id;
+  DELETE FROM auth.users WHERE id = p_user_id;
+END;
+$$;
+
+-- ensure_auth_identity: auth.identities 레코드가 없으면 생성하는 RPC
+-- 관리자 직접 생성 회원은 auth.identities 없이 생성됨 → signInWithPassword 거부
+-- 임시 비밀번호 발급 전 자동으로 identity 레코드를 보완
+CREATE OR REPLACE FUNCTION public.ensure_auth_identity(
+  p_user_id uuid,
+  p_email   text
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = auth, public
+AS $$
+BEGIN
+  INSERT INTO auth.identities (
+    id, user_id, identity_data, provider, provider_id,
+    last_sign_in_at, created_at, updated_at
+  )
+  SELECT
+    p_user_id, p_user_id,
+    jsonb_build_object('sub', p_user_id::text, 'email', p_email),
+    'email', p_email, now(), now(), now()
+  WHERE NOT EXISTS (
+    SELECT 1 FROM auth.identities WHERE user_id = p_user_id
+  );
+END;
+$$;
+
+-- update_user_password_direct: auth.users 비밀번호 직접 업데이트 RPC
+-- GoTrue Admin API(updateUserById)는 auth.identities 없으면 "User not found" 반환.
+-- 관리자 직접 생성 회원도 비밀번호 변경 가능하도록 auth.users를 직접 업데이트.
+CREATE OR REPLACE FUNCTION public.update_user_password_direct(
+  p_user_id  uuid,
+  p_password text
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = auth, extensions, public
+AS $$
+BEGIN
+  UPDATE auth.users
+  SET
+    encrypted_password  = crypt(p_password, gen_salt('bf')),
+    updated_at          = now(),
+    email_confirmed_at  = COALESCE(email_confirmed_at, now())
+  WHERE id = p_user_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'User not found: %', p_user_id;
+  END IF;
+END;
 $$;
 
 -- 권한 보유 여부 (super_admin은 모든 권한)
